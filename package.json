@@ -6,12 +6,23 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db": "node scripts/db.mjs",
+    "seed": "node scripts/seed.mjs",
+    "test": "node scripts/pruebas.mjs",
+    "test:excel": "node scripts/probar-excel.mjs",
+    "test:pantallas": "node scripts/probar-pantallas.mjs"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.5",
+    "@supabase/supabase-js": "^2.112.4",
+    "clsx": "^2.1.1",
+    "exceljs": "^4.4.0",
     "next": "16.3.3",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -22,5 +33,6 @@
     "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
     "typescript": "^5"
-  }
+  },
+  "description": "ERP de Ventas, Almacenes y Despachos · Industrial Pesquera Santa Mónica"
 }

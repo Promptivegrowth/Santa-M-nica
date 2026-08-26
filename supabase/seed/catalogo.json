@@ -1,0 +1,2253 @@
+{
+ "skus": [
+  {
+   "codigo": "01",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "ANILLAS MIXTAS  S-P C-PZ",
+   "clasificacion": "ANILLAS MIXTAS"
+  },
+  {
+   "codigo": "02",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "ANILLAS MIXTAS S-P S-PZ",
+   "clasificacion": "ANILLAS MIXTAS"
+  },
+  {
+   "codigo": "03",
+   "especie": "POTA",
+   "formato": "POTA",
+   "corte": "ENTERA \"1-2\"",
+   "clasificacion": "POTILLA ENTERA"
+  },
+  {
+   "codigo": "04",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"A\" 1000-2000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "05",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "RECORTE A",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "06",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "RECORTE B",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "07",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "RECORTE MEMBRANA",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "08",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "RECORTE (TELILLA FRESCA)",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "09",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "RECORTE LABIO",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "10",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "BOTON C/PIEL",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "11",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "BOTON S/PIEL",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "12",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "BOTON C/PIEL-C/MEMBRANA",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "13",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "RECORTE S/PIEL",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "14",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "RECORTE C/PIEL(ANILLAS)",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "15",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "RECORTE C/PIEL",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "16",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "CONOS  DE POTA",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "17",
+   "especie": "POTA",
+   "formato": "LAMINADO",
+   "corte": "RECORTE PARA COCINA",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "18",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"A\" 0-500",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "19",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"A\" 500-1000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "20",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"A\" 1000-1500",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "21",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"A\" 2000-4000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "22",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"A\" 4000-UP",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "23",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"B\" 500-1000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "24",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"B\" 1000-2000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "25",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"B\" 2000-4000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "26",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"B\" 4000-UP",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "27",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"B\" 0-500",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "28",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"B\" INTERFOLEADO 2-4",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "29",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "POR LAMINAR",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "30",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "PIGMENTADO",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "31",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "S/CLASIFICAR",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "32",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "S/PIEL-S/PANZA",
+   "clasificacion": "FILETE FRESCO SP SM"
+  },
+  {
+   "codigo": "33",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "S/PIEL-C/PANZA 1000-3000",
+   "clasificacion": "FILETE FRESCO SP SM"
+  },
+  {
+   "codigo": "34",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "S/PIEL-S/PANZA 4000-UP",
+   "clasificacion": "FILETE FRESCO SP SM"
+  },
+  {
+   "codigo": "35",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "PARA COCINA",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "36",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"B\" 1000-1500",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "37",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"B\" 1500-2000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "38",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "S/UÑA 0-300",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "39",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "S/UÑA 300-500",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "40",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "S/UÑA 500-1000",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "41",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "S/UÑA 1000-2000",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "42",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "S/UÑA 2000-3000",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "43",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/UÑA 0-300",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "44",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/UÑA 300-500",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "45",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/UÑA 500-1000",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "46",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "REPRODUCTOR C/PUNTA",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "47",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "REPRODUCTOR S/PUNTA",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "48",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "REPRODUCTOR C/PUNTA-C/UÑA",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "49",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "300-500",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "50",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/UÑA 2000-3000",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "51",
+   "especie": "POTA",
+   "formato": "NUCAS",
+   "corte": "0-100",
+   "clasificacion": "NUCAS"
+  },
+  {
+   "codigo": "52",
+   "especie": "POTA",
+   "formato": "NUCAS",
+   "corte": "100-300",
+   "clasificacion": "NUCAS"
+  },
+  {
+   "codigo": "53",
+   "especie": "POTA",
+   "formato": "NUCAS",
+   "corte": "300-500",
+   "clasificacion": "NUCAS"
+  },
+  {
+   "codigo": "54",
+   "especie": "POTA",
+   "formato": "NUCAS",
+   "corte": "500-UP",
+   "clasificacion": "NUCAS"
+  },
+  {
+   "codigo": "55",
+   "especie": "POTA",
+   "formato": "NUCAS",
+   "corte": "MERCADO NACIONAL",
+   "clasificacion": "NUCAS"
+  },
+  {
+   "codigo": "56",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/UÑA 100-300",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "57",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/REPRODUCTOR 0 - 90",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "58",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "0-500",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "59",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "500-1000",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "60",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "1000-UP",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "61",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "0-300",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "62",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/REPRODUCTOR  90 -350",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "63",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "ALETA TUBO",
+   "clasificacion": "ALETA TUBO"
+  },
+  {
+   "codigo": "64",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "TUBO 1000-1500",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "65",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "TUBO 1500-2000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "66",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "TUBO 500-1000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "67",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "TUBO 1000-UP",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "68",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "CORTADA",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "69",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "\"B\" 0-500",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "70",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "ALETA S/PIEL",
+   "clasificacion": "ALAS PRECOCIDAS"
+  },
+  {
+   "codigo": "71",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "DARUMA A",
+   "clasificacion": "FILETE DARUMA"
+  },
+  {
+   "codigo": "72",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "DARUMA B",
+   "clasificacion": "FILETE DARUMA"
+  },
+  {
+   "codigo": "73",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "DARUMA PANZA",
+   "clasificacion": "FILETE DARUMA"
+  },
+  {
+   "codigo": "74",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "DARUMA A 1.0-1.5",
+   "clasificacion": "FILETE DARUMA"
+  },
+  {
+   "codigo": "75",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "DARUMA A 1.5-2.0",
+   "clasificacion": "FILETE DARUMA"
+  },
+  {
+   "codigo": "76",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "DARUMA A 2.0-2.5",
+   "clasificacion": "FILETE DARUMA"
+  },
+  {
+   "codigo": "77",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "DARUMA B C/PANZA",
+   "clasificacion": "FILETE DARUMA"
+  },
+  {
+   "codigo": "78",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "DARUMA 0-500",
+   "clasificacion": "FILETE DARUMA"
+  },
+  {
+   "codigo": "79",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "RECORTE S/PIEL-C/PANZA",
+   "clasificacion": "RECORTES PRECOCIDOS"
+  },
+  {
+   "codigo": "80",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "PIEL (MEMBRANA)",
+   "clasificacion": "RECORTES PRECOCIDOS"
+  },
+  {
+   "codigo": "81",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "TELILLA",
+   "clasificacion": "RECORTES PRECOCIDOS"
+  },
+  {
+   "codigo": "82",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "RECORTE S/PIEL-S/PANZA",
+   "clasificacion": "RECORTES PRECOCIDOS"
+  },
+  {
+   "codigo": "83",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "RECORTE C/PIEL-C/PANZA",
+   "clasificacion": "RECORTES PRECOCIDOS"
+  },
+  {
+   "codigo": "84",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "RECORTE",
+   "clasificacion": "RECORTES PRECOCIDOS"
+  },
+  {
+   "codigo": "85",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "PULPA POTA-FB100",
+   "clasificacion": "PULPA PRECOCIDA"
+  },
+  {
+   "codigo": "86",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "MEMBRANA PARA COCINA",
+   "clasificacion": "RECORTES PRECOCIDOS"
+  },
+  {
+   "codigo": "87",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "PIGMENTADO \"0-500\"",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "88",
+   "especie": "POTA",
+   "formato": "CONOS",
+   "corte": "CONOS",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "89",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "PIGMENTADO \"500-1000\"",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "90",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "SALCHICHA \"A\"",
+   "clasificacion": "MERLUZA SALCHICHA"
+  },
+  {
+   "codigo": "91",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "LOMO",
+   "clasificacion": "MERLUZA FILETE SP SE"
+  },
+  {
+   "codigo": "92",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "\"FB\" 132",
+   "clasificacion": "MERLUZA FILETE SP SE"
+  },
+  {
+   "codigo": "93",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "\"FB\" 133",
+   "clasificacion": "MERLUZA FILETE SP SE"
+  },
+  {
+   "codigo": "94",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "\"FB\" 133 BP",
+   "clasificacion": "MERLUZA FILETE SP SE"
+  },
+  {
+   "codigo": "95",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "\"FB\" 200",
+   "clasificacion": "MERLUZA FILETE SP SE"
+  },
+  {
+   "codigo": "96",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "\"FB-2\"",
+   "clasificacion": "MERLUZA FILETE SP SE"
+  },
+  {
+   "codigo": "97",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "PALITOS 7*2*1 cm. \"A\"",
+   "clasificacion": "MERLUZA FILETE SP SE"
+  },
+  {
+   "codigo": "98",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "TROZOS POR MOLER",
+   "clasificacion": "MERLUZA FILETE SP SE"
+  },
+  {
+   "codigo": "99",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "PALITOS 7*2*1 cm. \"B\"",
+   "clasificacion": "MERLUZA FILETE SP SE"
+  },
+  {
+   "codigo": "100",
+   "especie": "MERLUZA",
+   "formato": "FILETE",
+   "corte": "SALCHICHA \"B\"",
+   "clasificacion": "MERLUZA SALCHICHA"
+  },
+  {
+   "codigo": "101",
+   "especie": "MERLUZA",
+   "formato": "FILETE INTERF",
+   "corte": "60-120",
+   "clasificacion": "MERLUZA FILETE INTERFOLIADO SP SE"
+  },
+  {
+   "codigo": "102",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"EXP.\" 30-50",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "103",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"EXP.\" 50-100",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "104",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"EXP.\" 100-200",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "105",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"EXP.\" 200-400",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "106",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"EXP.\" 400-UP",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "107",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"MN.\" 30-50",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "108",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"MN.\" 50-100",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "109",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"MN.\" 100-200",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "110",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"MN.\" 200-400",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "111",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"MN.\" 400-800",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "112",
+   "especie": "MERLUZA",
+   "formato": "HGT",
+   "corte": "\"EXP.\" 50-100",
+   "clasificacion": "MERLUZA HGT"
+  },
+  {
+   "codigo": "113",
+   "especie": "MERLUZA",
+   "formato": "FILETE INTERF",
+   "corte": "120-200",
+   "clasificacion": "MERLUZA FILETE INTERFOLIADO SP SE"
+  },
+  {
+   "codigo": "114",
+   "especie": "MERLUZA",
+   "formato": "HUEVERA",
+   "corte": "\"A1\"",
+   "clasificacion": "MERLUZA HUEVERA"
+  },
+  {
+   "codigo": "115",
+   "especie": "MERLUZA",
+   "formato": "HUEVERA",
+   "corte": "\"A2\"",
+   "clasificacion": "MERLUZA HUEVERA"
+  },
+  {
+   "codigo": "116",
+   "especie": "MERLUZA",
+   "formato": "HUEVERA",
+   "corte": "\"A3\"",
+   "clasificacion": "MERLUZA HUEVERA"
+  },
+  {
+   "codigo": "117",
+   "especie": "BONITO",
+   "formato": "BONITO",
+   "corte": "\" TROZO \"",
+   "clasificacion": "BONITO FILETE SP SE"
+  },
+  {
+   "codigo": "118",
+   "especie": "ATUN",
+   "formato": "ATUN \"BA\"",
+   "corte": "INTERFOLIADO",
+   "clasificacion": "ATUN FILETE INTERFOLIADO SP SE"
+  },
+  {
+   "codigo": "119",
+   "especie": "BONITO",
+   "formato": "BONITO ENTERO",
+   "corte": "1.5 KG-UP",
+   "clasificacion": "BONITO ENTERO"
+  },
+  {
+   "codigo": "120",
+   "especie": "CABALLA",
+   "formato": "CABALLA ENTERA",
+   "corte": "GRANEL > 200-400",
+   "clasificacion": "CABALLA ENTERA"
+  },
+  {
+   "codigo": "121",
+   "especie": "CABALLA",
+   "formato": "CABALLA ENTERA",
+   "corte": "GRANEL > 200-UP",
+   "clasificacion": "CABALLA ENTERA"
+  },
+  {
+   "codigo": "122",
+   "especie": "ANCHOVETA",
+   "formato": "ANCHOVETA BLANCA",
+   "corte": "GRANEL > 11.5",
+   "clasificacion": "ANCHOVETA BLANCA"
+  },
+  {
+   "codigo": "123",
+   "especie": "ANCHOVETA",
+   "formato": "ANCHOVETA BLANCA",
+   "corte": "INTERFOLEADO > 11.5",
+   "clasificacion": "ANCHOVETA BLANCA"
+  },
+  {
+   "codigo": "124",
+   "especie": "ANCHOVETA",
+   "formato": "ANCHOVETA BLANCA",
+   "corte": "ESTIBADA > 11.5",
+   "clasificacion": "ANCHOVETA BLANCA"
+  },
+  {
+   "codigo": "125",
+   "especie": "BONITO",
+   "formato": "BONITO ENTERO",
+   "corte": "\" 1 - 3 \"",
+   "clasificacion": "BONITO ENTERO"
+  },
+  {
+   "codigo": "126",
+   "especie": "BONITO",
+   "formato": "BONITO ENTERO",
+   "corte": "\" 3 - UP \"",
+   "clasificacion": "BONITO ENTERO"
+  },
+  {
+   "codigo": "127",
+   "especie": "ANCHOVETA",
+   "formato": "ANCHOVETA NEGRA",
+   "corte": "GRANEL > 11.5",
+   "clasificacion": "ANCHOVETA NEGRA"
+  },
+  {
+   "codigo": "128",
+   "especie": "ANCHOVETA",
+   "formato": "ANCHOVETA NEGRA",
+   "corte": "INTERFOLEADO > 11.5",
+   "clasificacion": "ANCHOVETA NEGRA"
+  },
+  {
+   "codigo": "129",
+   "especie": "ANCHOVETA",
+   "formato": "ANCHOVETA NEGRA",
+   "corte": "ESTIBADA > 11.5",
+   "clasificacion": "ANCHOVETA NEGRA"
+  },
+  {
+   "codigo": "130",
+   "especie": "MERLUZA",
+   "formato": "ENTERA INTERF.",
+   "corte": "\"EXP.\" 70-120",
+   "clasificacion": "MERLUZA ENTERA INTERFOLEADA"
+  },
+  {
+   "codigo": "131",
+   "especie": "MERLUZA",
+   "formato": "ENTERA INTERF.",
+   "corte": "\"EXP.\" 70-150",
+   "clasificacion": "MERLUZA ENTERA INTERFOLEADA"
+  },
+  {
+   "codigo": "132",
+   "especie": "MERLUZA",
+   "formato": "ENTERA INTERF.",
+   "corte": "\"EXP.\" 80-120",
+   "clasificacion": "MERLUZA ENTERA INTERFOLEADA"
+  },
+  {
+   "codigo": "133",
+   "especie": "MERLUZA",
+   "formato": "ENTERA INTERF.",
+   "corte": "\"EXP.\" 120-180",
+   "clasificacion": "MERLUZA ENTERA INTERFOLEADA"
+  },
+  {
+   "codigo": "134",
+   "especie": "MERLUZA",
+   "formato": "ENTERA INTERF.",
+   "corte": "\"EXP.\" 120-200",
+   "clasificacion": "MERLUZA ENTERA INTERFOLEADA"
+  },
+  {
+   "codigo": "135",
+   "especie": "BONITO",
+   "formato": "BONITO FILETE SP SE",
+   "corte": "GRANEL",
+   "clasificacion": "BONITO FILETE SP SE"
+  },
+  {
+   "codigo": "136",
+   "especie": "POTA",
+   "formato": "NUCAS",
+   "corte": "0-300",
+   "clasificacion": "NUCAS"
+  },
+  {
+   "codigo": "137",
+   "especie": "POTA",
+   "formato": "NUCAS",
+   "corte": "1000-UP",
+   "clasificacion": "NUCAS"
+  },
+  {
+   "codigo": "138",
+   "especie": "POTA",
+   "formato": "NUCAS",
+   "corte": "500-1000",
+   "clasificacion": "NUCAS"
+  },
+  {
+   "codigo": "139",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/REPRODUCTOR  0 - 100",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "140",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/UÑA C/REPRODUCTOR  100-300",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "141",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"A\" 1000-1200",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "142",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "PIGMENTADO \"1000-1500\"",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "143",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"A\" 1500-2000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "144",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "PIGMENTADO \"1000-2000\"",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "145",
+   "especie": "POTA",
+   "formato": "ALETA TUBO",
+   "corte": "\"0-1\"",
+   "clasificacion": "ALETA TUBO"
+  },
+  {
+   "codigo": "146",
+   "especie": "POTA",
+   "formato": "ALETA TUBO",
+   "corte": "\"1-2\"",
+   "clasificacion": "ALETA TUBO"
+  },
+  {
+   "codigo": "147",
+   "especie": "POTA",
+   "formato": "POTA",
+   "corte": "ENTERA SIN/CLASIFICAR",
+   "clasificacion": "POTA ENTERA"
+  },
+  {
+   "codigo": "148",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "SIN/CLASIFICAR",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "149",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/UÑA  0-100",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "150",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "100-500",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "151",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "300-500",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "152",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "PIGMENTADO \"1500-2000\"",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "153",
+   "especie": "POTA",
+   "formato": "POTA",
+   "corte": "ENTERA \"2-4\"",
+   "clasificacion": "POTILLA ENTERA"
+  },
+  {
+   "codigo": "154",
+   "especie": "POTA",
+   "formato": "ALETA TUBO",
+   "corte": "\"2-4\"",
+   "clasificacion": "ALETA TUBO"
+  },
+  {
+   "codigo": "155",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "S/UÑA 3000-UP",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "156",
+   "especie": "BONITO",
+   "formato": "BONITO ENTERO",
+   "corte": "\" 0-1 \"",
+   "clasificacion": "BONITO ENTERO"
+  },
+  {
+   "codigo": "157",
+   "especie": "BONITO",
+   "formato": "BONITO ENTERO",
+   "corte": "\" B \"",
+   "clasificacion": "BONITO ENTERO"
+  },
+  {
+   "codigo": "158",
+   "especie": "POTA",
+   "formato": "RECORTE",
+   "corte": "PUNTAS CON UÑAS",
+   "clasificacion": "RECORTES FRESCOS"
+  },
+  {
+   "codigo": "159",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "\"B\"",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "160",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "C/UÑA 1000-2000",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "161",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "SIN/CLASIFICAR",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "162",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"B\" 2000-4000 (P)",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "163",
+   "especie": "POTA",
+   "formato": "POTA",
+   "corte": "ENTERA \"1-3\"",
+   "clasificacion": "POTILLA ENTERA"
+  },
+  {
+   "codigo": "164",
+   "especie": "PERICO",
+   "formato": "FILETE",
+   "corte": "CP SE \"0-1\"",
+   "clasificacion": "PERICO FILETE CP SE"
+  },
+  {
+   "codigo": "165",
+   "especie": "PERICO",
+   "formato": "FILETE",
+   "corte": "CP SE \"1-2\"",
+   "clasificacion": "PERICO FILETE CP SE"
+  },
+  {
+   "codigo": "166",
+   "especie": "PERICO",
+   "formato": "FILETE",
+   "corte": "CP SE \"2-3\"",
+   "clasificacion": "PERICO FILETE CP SE"
+  },
+  {
+   "codigo": "167",
+   "especie": "PERICO",
+   "formato": "FILETE",
+   "corte": "SP SE \"SIN CLASIFICAR\"",
+   "clasificacion": "PERICO FILETE SP SE"
+  },
+  {
+   "codigo": "168",
+   "especie": "PERICO",
+   "formato": "VENAS",
+   "corte": "\"SIN CLASIFICAR\"",
+   "clasificacion": "PERICO VENAS"
+  },
+  {
+   "codigo": "169",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "\"P\" 1000-UP",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "170",
+   "especie": "BONITO",
+   "formato": "BONITO ENTERO",
+   "corte": "\" 3-5 \"",
+   "clasificacion": "BONITO ENTERO"
+  },
+  {
+   "codigo": "171",
+   "especie": "POTA",
+   "formato": "PRECOCIDOS",
+   "corte": "ALETA \"B\"  S/PIEL",
+   "clasificacion": "ALAS PRECOCIDAS"
+  },
+  {
+   "codigo": "172",
+   "especie": "POTA",
+   "formato": "POTA",
+   "corte": "ENTERA \"2-3\"",
+   "clasificacion": "POTILLA ENTERA"
+  },
+  {
+   "codigo": "173",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "REPRODUCTOR C/PUNTA-50UP",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "174",
+   "especie": "BONITO",
+   "formato": "BONITO LOMO",
+   "corte": "GRANEL",
+   "clasificacion": "BONITOLOMO"
+  },
+  {
+   "codigo": "175",
+   "especie": "BONITO",
+   "formato": "BONITO ENTERO",
+   "corte": "\" 1-3 B \"",
+   "clasificacion": "BONITO ENTERO"
+  },
+  {
+   "codigo": "176",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "REPRODUCTOR C/PUNTA 10-30",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "177",
+   "especie": "BONITO",
+   "formato": "BONITO ENTERO",
+   "corte": "\" 3-5 B \"",
+   "clasificacion": "BONITO ENTERO"
+  },
+  {
+   "codigo": "178",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "REPRODUCTOR C/PUNTA-30-50",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "179",
+   "especie": "JUREL",
+   "formato": "JUREL ENTERO",
+   "corte": "900-1200",
+   "clasificacion": "JUREL ENTERO"
+  },
+  {
+   "codigo": "180",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"L-P\" 0-500",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "181",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"L-P\" 500-1000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "182",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"L-P\" 1000-2000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "183",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"L-P\" 2000-4000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "184",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"L-P\" 2000-4000 (P)",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "185",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "REPRODUCTOR S/PUNTA 10-30",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "186",
+   "especie": "POTA",
+   "formato": "TENTACULO",
+   "corte": "REPRODUCTOR S/PUNTA-30-50",
+   "clasificacion": "REJOS"
+  },
+  {
+   "codigo": "187",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"L-P\" 2000-3000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "188",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"L-P\" 3000-4000",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "189",
+   "especie": "POTA",
+   "formato": "FILETE",
+   "corte": "\"L-P\" 4000-UP",
+   "clasificacion": "FILETE FRESCO CP"
+  },
+  {
+   "codigo": "190",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "\"B\" 0-1000",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "191",
+   "especie": "POTA",
+   "formato": "ALETAS",
+   "corte": "\"B\" 1000-UP P",
+   "clasificacion": "ALAS FRESCAS"
+  },
+  {
+   "codigo": "192",
+   "especie": null,
+   "formato": null,
+   "corte": null,
+   "clasificacion": null
+  },
+  {
+   "codigo": "193",
+   "especie": null,
+   "formato": null,
+   "corte": null,
+   "clasificacion": null
+  },
+  {
+   "codigo": "194",
+   "especie": null,
+   "formato": null,
+   "corte": null,
+   "clasificacion": null
+  }
+ ],
+ "presentaciones": [
+  {
+   "codigo": "PLACAS10 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 10.0,
+   "descripcion": "2 X 5 KG"
+  },
+  {
+   "codigo": "PLACAS14 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 14.0,
+   "descripcion": "2 X 7 KG"
+  },
+  {
+   "codigo": "PLACAS15 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 15.0,
+   "descripcion": "2 X 15 KG"
+  },
+  {
+   "codigo": "PLACAS16 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 16.0,
+   "descripcion": "2 X 8 KG"
+  },
+  {
+   "codigo": "PLACAS17 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 17.0,
+   "descripcion": "1 X 17 KG"
+  },
+  {
+   "codigo": "PLACAS18 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 18.0,
+   "descripcion": "3 X 6 KG"
+  },
+  {
+   "codigo": "PLACAS20 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 20.0,
+   "descripcion": "4 X 5 KG"
+  },
+  {
+   "codigo": "PLACAS20 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 20.0,
+   "descripcion": "2 X 10 KG"
+  },
+  {
+   "codigo": "PLACAS21 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 21.0,
+   "descripcion": "3 X 7 KG"
+  },
+  {
+   "codigo": "PLACAS22 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 22.0,
+   "descripcion": "4 X 5.5 KG"
+  },
+  {
+   "codigo": "PLACAS22.5 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 22.5,
+   "descripcion": "3 X 7.5 KG"
+  },
+  {
+   "codigo": "PLACAS24 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 24.0,
+   "descripcion": "4 X 6 KG"
+  },
+  {
+   "codigo": "PLACAS25 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 25.0,
+   "descripcion": "4 X 6.25 KG"
+  },
+  {
+   "codigo": "PLACAS26 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 26.0,
+   "descripcion": "4 X 6.5 KG"
+  },
+  {
+   "codigo": "PLACAS28 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 28.0,
+   "descripcion": "4 X 7 KG"
+  },
+  {
+   "codigo": "PLACAS3 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 3.0,
+   "descripcion": "1 X 3 KG"
+  },
+  {
+   "codigo": "PLACAS30 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 30.0,
+   "descripcion": "4 X 7.5 KG"
+  },
+  {
+   "codigo": "PLACAS31 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 31.0,
+   "descripcion": "1 X 31 KG"
+  },
+  {
+   "codigo": "PLACAS5 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 5.0,
+   "descripcion": "1 X 5 KG"
+  },
+  {
+   "codigo": "PLACAS5.5 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 5.5,
+   "descripcion": "1 X 5.5 KG"
+  },
+  {
+   "codigo": "PLACAS6 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 6.0,
+   "descripcion": "1 X 6 KG"
+  },
+  {
+   "codigo": "PLACAS6.5 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 6.5,
+   "descripcion": "1 X 6.5 KG"
+  },
+  {
+   "codigo": "PLACAS7 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 7.0,
+   "descripcion": "1 X 7 KG"
+  },
+  {
+   "codigo": "PLACAS7.5 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 7.5,
+   "descripcion": "1 X 7.5 KG"
+  },
+  {
+   "codigo": "PLACAS8 KG",
+   "congelamiento": "placas",
+   "peso_bulto_kg": 8.0,
+   "descripcion": "1 X 8 KG"
+  },
+  {
+   "codigo": "TUNEL10 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 10.0,
+   "descripcion": "1 X 10 KG"
+  },
+  {
+   "codigo": "TUNEL16 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 16.0,
+   "descripcion": "1 X 16 KG"
+  },
+  {
+   "codigo": "TUNEL2.5 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 2.5,
+   "descripcion": "1 X 2.5 KG"
+  },
+  {
+   "codigo": "TUNEL20 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 20.0,
+   "descripcion": "2 X 10 KG"
+  },
+  {
+   "codigo": "TUNEL20 Ks",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 20.0,
+   "descripcion": "8 X 2.5 KG"
+  },
+  {
+   "codigo": "TUNEL20.7 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 20.7,
+   "descripcion": "9 X 2.3 KG"
+  },
+  {
+   "codigo": "TUNEL21 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 21.0,
+   "descripcion": "3 X 7 KG"
+  },
+  {
+   "codigo": "TUNEL22 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 22.0,
+   "descripcion": "2 X 11 KG"
+  },
+  {
+   "codigo": "TUNEL3 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 3.0,
+   "descripcion": "1 X 3 KG"
+  },
+  {
+   "codigo": "TUNEL30 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 30.0,
+   "descripcion": "2 X 15 KG"
+  },
+  {
+   "codigo": "TUNEL15 KG",
+   "congelamiento": "tunel",
+   "peso_bulto_kg": 15.0,
+   "descripcion": "2 X 7.5 KG"
+  }
+ ],
+ "capacidad": [
+  {
+   "planta": "DEPSA",
+   "almacen": "DEPSA",
+   "camara": "DEPSA",
+   "abreviado": "DEPSA",
+   "capacidad_tm": 300.0
+  },
+  {
+   "planta": "ELAMAR",
+   "almacen": "ELAMAR",
+   "camara": "ELAMAR",
+   "abreviado": "ELAMAR",
+   "capacidad_tm": 500.0
+  },
+  {
+   "planta": "SANTA MONICA",
+   "almacen": "STM",
+   "camara": "C1",
+   "abreviado": "C1 (STM)",
+   "capacidad_tm": 150.0
+  },
+  {
+   "planta": "SANTA MONICA",
+   "almacen": "STM",
+   "camara": "C2",
+   "abreviado": "C2 (STM)",
+   "capacidad_tm": 250.0
+  },
+  {
+   "planta": "SANTA MONICA",
+   "almacen": "STM",
+   "camara": "C3",
+   "abreviado": "C3 (STM)",
+   "capacidad_tm": 796.0
+  },
+  {
+   "planta": "HAYDUK",
+   "almacen": "HAYDUK",
+   "camara": "HAYDUK",
+   "abreviado": "HAYDUK",
+   "capacidad_tm": null
+  },
+  {
+   "planta": "COINREFRI",
+   "almacen": "COINREFRI",
+   "camara": "COINREFRI",
+   "abreviado": "COINREFRI",
+   "capacidad_tm": 30.0
+  },
+  {
+   "planta": "PERUFROST",
+   "almacen": "PERUFROST",
+   "camara": "PERUFROST",
+   "abreviado": "PERUFROST",
+   "capacidad_tm": 500.0
+  },
+  {
+   "planta": "FREEKO",
+   "almacen": "FREEKO",
+   "camara": "FREEKO",
+   "abreviado": "FREEKO",
+   "capacidad_tm": 1300.0
+  }
+ ],
+ "clientes": [
+  {
+   "razon_social": "BUENO FOOD CORPORATION LIMITED",
+   "variantes": 2,
+   "movimientos": 1477
+  },
+  {
+   "razon_social": "OPTIMIZE INTEGRATION GROUP INC",
+   "variantes": 1,
+   "movimientos": 1245
+  },
+  {
+   "razon_social": "OOO MAGIC FISH",
+   "variantes": 1,
+   "movimientos": 1210
+  },
+  {
+   "razon_social": "CMCC CO. ,LIMITED.",
+   "variantes": 2,
+   "movimientos": 1144
+  },
+  {
+   "razon_social": "HongKong King Thai State Trading Limited",
+   "variantes": 2,
+   "movimientos": 976
+  },
+  {
+   "razon_social": "GIANT OCEAN FOOD (HK) COMPANY LIMITED",
+   "variantes": 1,
+   "movimientos": 919
+  },
+  {
+   "razon_social": "Qingdao Haiyujia International Trading Co.,Ltd.",
+   "variantes": 3,
+   "movimientos": 1521
+  },
+  {
+   "razon_social": "CHINA AQUATIC PRODUCTS ZHOUSHAN MARINE FISHERIES CORPORATION",
+   "variantes": 1,
+   "movimientos": 849
+  },
+  {
+   "razon_social": "ZHOUSHAN MERMAID SEAFOOD SUPPLY CHAIN MANAGEMENT CO., LTD.",
+   "variantes": 1,
+   "movimientos": 575
+  },
+  {
+   "razon_social": "Shenzhen Yueshi Supply Chain Management Co., Ltd.",
+   "variantes": 2,
+   "movimientos": 609
+  },
+  {
+   "razon_social": "BOONSIRI",
+   "variantes": 1,
+   "movimientos": 538
+  },
+  {
+   "razon_social": "BOONSIRI FROZEN PRODUCTS CO., LTD",
+   "variantes": 2,
+   "movimientos": 798
+  },
+  {
+   "razon_social": "MERMAID FOOD (HONG KONG) COMPANY LIMITED",
+   "variantes": 2,
+   "movimientos": 651
+  },
+  {
+   "razon_social": "V.PRAKAIPORN SEAFOODS TRADING CO.,LTD.",
+   "variantes": 1,
+   "movimientos": 475
+  },
+  {
+   "razon_social": "AGI TRADING DMCC",
+   "variantes": 2,
+   "movimientos": 724
+  },
+  {
+   "razon_social": "QINGDAO HAIYUJIA",
+   "variantes": 1,
+   "movimientos": 459
+  },
+  {
+   "razon_social": "SUQIAN HAIHAN IMPORT AND EXPORT CO., LTD",
+   "variantes": 2,
+   "movimientos": 841
+  },
+  {
+   "razon_social": "KULALIA",
+   "variantes": 2,
+   "movimientos": 517
+  },
+  {
+   "razon_social": "GIANT OCEAN FOOD",
+   "variantes": 1,
+   "movimientos": 339
+  },
+  {
+   "razon_social": "QINGDAO BUENO TRADE CO., LTD.",
+   "variantes": 2,
+   "movimientos": 466
+  },
+  {
+   "razon_social": "WEIHAI MUNING IMPORT & EXPORT CO., LTD.",
+   "variantes": 1,
+   "movimientos": 302
+  },
+  {
+   "razon_social": "ZHOUSHAN XINHONG AQUATIC CO.,LTD.",
+   "variantes": 1,
+   "movimientos": 243
+  },
+  {
+   "razon_social": "GLOBALPEZ",
+   "variantes": 1,
+   "movimientos": 241
+  },
+  {
+   "razon_social": "UMIOS CORPORATION",
+   "variantes": 1,
+   "movimientos": 221
+  },
+  {
+   "razon_social": "YANTAI HIZEN INTERNATIONAL TRADE CO.,LTD.",
+   "variantes": 2,
+   "movimientos": 239
+  },
+  {
+   "razon_social": "SACRAMENTO CO., LTD.",
+   "variantes": 2,
+   "movimientos": 246
+  },
+  {
+   "razon_social": "DEXIANHUI TECHNOLOGY (DALIAN) CO., LTD.",
+   "variantes": 1,
+   "movimientos": 176
+  },
+  {
+   "razon_social": "Wuhan Yangluo Port Services Co.,",
+   "variantes": 2,
+   "movimientos": 338
+  },
+  {
+   "razon_social": "DIRECT INTERNATIONAL CORP.",
+   "variantes": 2,
+   "movimientos": 251
+  },
+  {
+   "razon_social": "RICH MARINE CO., LTD.",
+   "variantes": 3,
+   "movimientos": 211
+  },
+  {
+   "razon_social": "ZHOUSHAN LEYAN TRADE CO., LTD.",
+   "variantes": 1,
+   "movimientos": 160
+  },
+  {
+   "razon_social": "PERUFROST",
+   "variantes": 1,
+   "movimientos": 158
+  },
+  {
+   "razon_social": "J. MARR (SEAFOODS) LIMITED",
+   "variantes": 1,
+   "movimientos": 150
+  },
+  {
+   "razon_social": "Shenzhen Xiecheng Fisheries Co, Ltd",
+   "variantes": 1,
+   "movimientos": 150
+  },
+  {
+   "razon_social": "FIDELIS GLOBAL CO., LTD.",
+   "variantes": 1,
+   "movimientos": 145
+  },
+  {
+   "razon_social": "GLOBAL PEZ",
+   "variantes": 1,
+   "movimientos": 119
+  },
+  {
+   "razon_social": "SHENZHEN YUESHI SUPPLY",
+   "variantes": 1,
+   "movimientos": 117
+  },
+  {
+   "razon_social": "PELAGICS INTERNATIONAL CORPO SA",
+   "variantes": 1,
+   "movimientos": 113
+  },
+  {
+   "razon_social": "OPTIMIZE INTEGRATION GROUP INC (MARK)",
+   "variantes": 1,
+   "movimientos": 113
+  },
+  {
+   "razon_social": "LIDERFIL",
+   "variantes": 1,
+   "movimientos": 112
+  },
+  {
+   "razon_social": "DALIAN BRIGHT ASIA SUPPLY CHAIN",
+   "variantes": 1,
+   "movimientos": 109
+  },
+  {
+   "razon_social": "DALIAN BRIGHT ASIA SUPPLY CHAIN MANAGEMENT CO., LTD",
+   "variantes": 1,
+   "movimientos": 103
+  },
+  {
+   "razon_social": "FROXA, S.A.",
+   "variantes": 2,
+   "movimientos": 149
+  },
+  {
+   "razon_social": "RICHE MARINE",
+   "variantes": 1,
+   "movimientos": 98
+  },
+  {
+   "razon_social": "PELAGICS INTERNATIONAL CORP SA",
+   "variantes": 1,
+   "movimientos": 96
+  },
+  {
+   "razon_social": "QINGDAO HAIYUJIA INTERNATIONAL TRADING CO., LTD. (VICTORIA)",
+   "variantes": 1,
+   "movimientos": 93
+  },
+  {
+   "razon_social": "DAIRECK",
+   "variantes": 1,
+   "movimientos": 89
+  },
+  {
+   "razon_social": "OPTIMIZE INTEGRATION",
+   "variantes": 1,
+   "movimientos": 86
+  },
+  {
+   "razon_social": "PESCIRO, S.L.",
+   "variantes": 1,
+   "movimientos": 80
+  },
+  {
+   "razon_social": "ZHOUSHAN LEYAN",
+   "variantes": 1,
+   "movimientos": 74
+  },
+  {
+   "razon_social": "AS PALJASSAARE KALATOOSTUS",
+   "variantes": 1,
+   "movimientos": 73
+  },
+  {
+   "razon_social": "SERVICIOS ADUANALES JRLC SA DE CV",
+   "variantes": 1,
+   "movimientos": 70
+  },
+  {
+   "razon_social": "LONGKOU JIABAO AQUATIC FOODSTUFFS Co., LETD",
+   "variantes": 1,
+   "movimientos": 68
+  },
+  {
+   "razon_social": "LIDERFIL S.A.",
+   "variantes": 1,
+   "movimientos": 67
+  },
+  {
+   "razon_social": "HONG KONG THAI STATE TRADING LIMITED",
+   "variantes": 1,
+   "movimientos": 65
+  },
+  {
+   "razon_social": "FUJIAN XIONGYI",
+   "variantes": 1,
+   "movimientos": 61
+  },
+  {
+   "razon_social": "CHINA AQUATIC PRODUCTS",
+   "variantes": 1,
+   "movimientos": 61
+  },
+  {
+   "razon_social": "Shenzhen Yueshi Supply Chain Management Co., Ltd. (SUSAN)",
+   "variantes": 1,
+   "movimientos": 59
+  },
+  {
+   "razon_social": "OPTIMIZE INTEGRATION GROUP INC (ALICE)",
+   "variantes": 1,
+   "movimientos": 56
+  },
+  {
+   "razon_social": "WEIHAI KAIYUAN AQUATIC PRODUCTS CO., LTD",
+   "variantes": 1,
+   "movimientos": 52
+  },
+  {
+   "razon_social": "PESCIRO",
+   "variantes": 1,
+   "movimientos": 50
+  },
+  {
+   "razon_social": "SERVICIOS ADUANALES JRLC",
+   "variantes": 1,
+   "movimientos": 50
+  },
+  {
+   "razon_social": "SACRAMENTO CO., LIMITED (SMARTSEA)",
+   "variantes": 1,
+   "movimientos": 49
+  },
+  {
+   "razon_social": "GLOBALPEZ (REEMPAQUE EN CAJAS)",
+   "variantes": 1,
+   "movimientos": 45
+  },
+  {
+   "razon_social": "CTLE SEAFOOD, INC",
+   "variantes": 1,
+   "movimientos": 44
+  },
+  {
+   "razon_social": "SHANDONG CHENSEN SUPPLY CHAIN MANAGEMENT CO.,LTD",
+   "variantes": 1,
+   "movimientos": 44
+  },
+  {
+   "razon_social": "WEIHAI KAIYUAN",
+   "variantes": 1,
+   "movimientos": 40
+  },
+  {
+   "razon_social": "SHANDONG GUOYUAN AQUATIC PRODUCTS CO., LTD.",
+   "variantes": 1,
+   "movimientos": 37
+  },
+  {
+   "razon_social": "DAIRECK S.A.",
+   "variantes": 1,
+   "movimientos": 37
+  },
+  {
+   "razon_social": "SERENE OCEAN TRADING LIMITED",
+   "variantes": 1,
+   "movimientos": 36
+  },
+  {
+   "razon_social": "FELMO SRLTDA",
+   "variantes": 1,
+   "movimientos": 36
+  },
+  {
+   "razon_social": "FROZEN FISH & FRIENDS S.L.",
+   "variantes": 1,
+   "movimientos": 29
+  },
+  {
+   "razon_social": "DALIAN OUZHONG INTERNATIONAL TRADE CO., LTD",
+   "variantes": 2,
+   "movimientos": 53
+  },
+  {
+   "razon_social": "SHANDONG CHENSEN",
+   "variantes": 1,
+   "movimientos": 25
+  },
+  {
+   "razon_social": "MARFISH ASIA S.L (VICTORIA)",
+   "variantes": 1,
+   "movimientos": 21
+  },
+  {
+   "razon_social": "SHIDAO",
+   "variantes": 1,
+   "movimientos": 20
+  },
+  {
+   "razon_social": "MARFISH ASIA S.L.",
+   "variantes": 1,
+   "movimientos": 20
+  },
+  {
+   "razon_social": "QINGDAO MEIMEI FOOD CO., LTD",
+   "variantes": 1,
+   "movimientos": 19
+  },
+  {
+   "razon_social": "EMP DE COMERC MAYOR DE PRODUC HIDROB SA",
+   "variantes": 2,
+   "movimientos": 19
+  },
+  {
+   "razon_social": "QINGDAO BUENO",
+   "variantes": 1,
+   "movimientos": 17
+  },
+  {
+   "razon_social": "SANTA MONICA",
+   "variantes": 1,
+   "movimientos": 16
+  },
+  {
+   "razon_social": "FROZEN FISH AND FRIENDS",
+   "variantes": 1,
+   "movimientos": 15
+  },
+  {
+   "razon_social": "TEMINAL PESQUERO JOSE OLAYA",
+   "variantes": 1,
+   "movimientos": 13
+  },
+  {
+   "razon_social": "QINGDAO MEI MEI",
+   "variantes": 1,
+   "movimientos": 11
+  },
+  {
+   "razon_social": "OPTIMIZE INTEGRATION GROUP INC (SONIA)",
+   "variantes": 1,
+   "movimientos": 11
+  },
+  {
+   "razon_social": "NINGBO BAIYI SUPPLY CHAIN CO.,LTD",
+   "variantes": 1,
+   "movimientos": 9
+  },
+  {
+   "razon_social": "SHANDONG KINGSUN FOODS CO., LTD.",
+   "variantes": 1,
+   "movimientos": 7
+  },
+  {
+   "razon_social": "ZHOUSHAN MERMAID",
+   "variantes": 1,
+   "movimientos": 5
+  },
+  {
+   "razon_social": "FUZHOU HONGYANG INTERNATIONAL TRADE CO.,LTD",
+   "variantes": 1,
+   "movimientos": 2
+  }
+ ],
+ "destinos": [
+  {
+   "puerto": "Qingdao",
+   "pais": "China",
+   "movimientos": 2483
+  },
+  {
+   "puerto": "Shidao",
+   "pais": "China",
+   "movimientos": 2269
+  },
+  {
+   "puerto": "Ningbo",
+   "pais": "China",
+   "movimientos": 1815
+  },
+  {
+   "puerto": "Lat Krabang",
+   "pais": "Tailandia",
+   "movimientos": 1140
+  },
+  {
+   "puerto": "Yantai",
+   "pais": "China",
+   "movimientos": 720
+  },
+  {
+   "puerto": "St. Petersburg",
+   "pais": "Rusia",
+   "movimientos": 587
+  },
+  {
+   "puerto": "Mawei",
+   "pais": "China",
+   "movimientos": 546
+  },
+  {
+   "puerto": "Vigo",
+   "pais": "España",
+   "movimientos": 465
+  },
+  {
+   "puerto": "Novorossiysk",
+   "pais": "Rusia",
+   "movimientos": 347
+  },
+  {
+   "puerto": "Zhanjiang",
+   "pais": "China",
+   "movimientos": 300
+  },
+  {
+   "puerto": "Dalian",
+   "pais": "China",
+   "movimientos": 124
+  },
+  {
+   "puerto": "Tokyo",
+   "pais": "Japón",
+   "movimientos": 113
+  },
+  {
+   "puerto": "Busan",
+   "pais": "Corea del Sur",
+   "movimientos": 101
+  },
+  {
+   "puerto": "Manzanillo",
+   "pais": "México",
+   "movimientos": 93
+  },
+  {
+   "puerto": "Osaka",
+   "pais": "Japón",
+   "movimientos": 86
+  },
+  {
+   "puerto": "Beihai",
+   "pais": "China",
+   "movimientos": 73
+  },
+  {
+   "puerto": "Marin",
+   "pais": "España",
+   "movimientos": 60
+  },
+  {
+   "puerto": "Paita",
+   "pais": "Perú",
+   "movimientos": 45
+  },
+  {
+   "puerto": "Monrovia",
+   "pais": "Liberia",
+   "movimientos": 41
+  },
+  {
+   "puerto": "Abidjan",
+   "pais": "Costa de Marfil",
+   "movimientos": 40
+  },
+  {
+   "puerto": "Lima",
+   "pais": "Perú",
+   "movimientos": 36
+  },
+  {
+   "puerto": "Laem Chabang",
+   "pais": "Tailandia",
+   "movimientos": 34
+  },
+  {
+   "puerto": "Tallinn",
+   "pais": "Estonia",
+   "movimientos": 31
+  },
+  {
+   "puerto": "Piura",
+   "pais": "Perú",
+   "movimientos": 29
+  },
+  {
+   "puerto": "Leixoes",
+   "pais": "Portugal",
+   "movimientos": 28
+  },
+  {
+   "puerto": "Cat Lai",
+   "pais": "Vietnam",
+   "movimientos": 26
+  }
+ ],
+ "lineas_procesadoras": [
+  "SANTA MONICA",
+  "SERVIS CHIROQUE",
+  "SERVIS CELTA",
+  "HAYDUK",
+  "OCEANO",
+  "OCEAN MAR",
+  "FREEKO",
+  "STM 1",
+  "STM 2",
+  "CHIROQUE",
+  "SANTA MONICA 2",
+  "CELTA"
+ ],
+ "encargados": [
+  "PALACIOS",
+  "SULLON",
+  "MIGUEL",
+  "JEAN",
+  "ESTEFANI",
+  "JESUS",
+  "EDUARDO",
+  "ANGHELO",
+  "HENRRY",
+  "JHONATAN",
+  "ESTEFANY",
+  "JONATAN",
+  "SULON"
+ ]
+}
