@@ -7,16 +7,18 @@
  *  En escritorio es una columna fija que se puede colapsar a solo iconos.
  *  En móvil se convierte en un panel deslizante que se abre desde la cabecera.
  *
- *  Decisiones de diseño:
- *   · Cada entrada tiene SU icono, no uno por grupo. Un icono repetido seis
- *     veces no informa: el usuario debe reconocer la pantalla por su forma.
- *   · Los iconos van atenuados y solo toman color al pasar el cursor o cuando
- *     la entrada está activa. Así el ojo va primero al texto, que es lo que se
- *     lee, y el icono ayuda sin competir.
- *   · Los grupos se separan con una línea sutil, no con espacio en blanco: en
- *     un menú de 27 entradas el espacio se agota rápido.
+ *  NOTA SOBRE LOS ESTILOS
+ *  Están en src/app/estructura.css y NO aquí como styled-jsx. La razón: los
+ *  enlaces usan <Link>, que es un componente de React, y styled-jsx solo
+ *  inyecta su clase de ámbito en elementos DOM. Las reglas nunca llegaban a
+ *  aplicarse sobre el <a> y el icono terminaba encima del texto.
  *
- *  El menú que recibe ya viene filtrado por rol desde el servidor.
+ *  Decisiones de diseño:
+ *   · Cada entrada tiene SU icono. Uno repetido seis veces no informa nada.
+ *   · El icono vive dentro de una pastilla; suelto sobre el fondo se ve
+ *     endeble, dentro de un contenedor con color pesa lo mismo que el texto.
+ *   · Los grupos se separan con una línea, no con espacio: en un menú de 27
+ *     entradas el espacio en blanco se agota enseguida.
  * ============================================================================
  */
 import { useState, useEffect } from 'react';
@@ -65,7 +67,7 @@ export function BarraLateral({
   return (
     <>
       {/* Velo oscuro en móvil, para cerrar tocando fuera */}
-      {abierta && <div className="velo no-imprimir" onClick={onCerrar} aria-hidden />}
+      {abierta && <div className="barra-velo no-imprimir" onClick={onCerrar} aria-hidden />}
 
       <nav
         className="barra no-imprimir"
@@ -92,7 +94,7 @@ export function BarraLateral({
           {grupos.map((g) => (
             <div key={g.grupo} className="barra-grupo">
               <span className="barra-grupo-titulo" aria-hidden>{g.grupo}</span>
-              <ul>
+              <ul className="barra-lista">
                 {g.entradas.map((e) => (
                   <li key={e.ruta}>
                     <Link
@@ -103,7 +105,7 @@ export function BarraLateral({
                       title={colapsada ? e.titulo : e.ayuda}
                     >
                       <span className="barra-icono">
-                        <Icono nombre={e.icono} tamano={16} />
+                        <Icono nombre={e.icono} tamano={15} />
                       </span>
                       <span className="barra-texto">{e.titulo}</span>
                     </Link>
@@ -119,191 +121,6 @@ export function BarraLateral({
           <span className="barra-pie-version">v1.0</span>
         </footer>
       </nav>
-
-      <style jsx>{`
-        .velo {
-          position: fixed;
-          inset: 0;
-          background: rgba(10, 17, 32, 0.55);
-          z-index: 40;
-          backdrop-filter: blur(2px);
-        }
-        @media (min-width: 1024px) { .velo { display: none; } }
-
-        .barra {
-          position: fixed;
-          inset-block: 0;
-          inset-inline-start: 0;
-          z-index: 50;
-          width: 15rem;
-          display: flex;
-          flex-direction: column;
-          background: var(--superficie);
-          border-inline-end: 1px solid var(--linea);
-          transform: translateX(-100%);
-          transition: transform 0.22s ease, width 0.18s ease;
-        }
-        .barra[data-abierta='si'] { transform: none; }
-        @media (min-width: 1024px) {
-          .barra { position: sticky; transform: none; height: 100dvh; }
-          .barra[data-colapsada='si'] { width: 3.6rem; }
-        }
-
-        /* ---------- Cabecera con el logotipo ---------- */
-        .barra-cabecera {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 0.5rem;
-          padding: 0.9rem 0.85rem;
-          border-bottom: 1px solid var(--linea);
-          min-height: 3.6rem;
-        }
-        .barra-logo {
-          display: flex;
-          align-items: center;
-          overflow: hidden;
-          min-width: 0;
-          border-radius: 3px;
-        }
-        .barra-plegar {
-          display: none;
-          padding: 0.28rem;
-          background: transparent;
-          border: 1px solid transparent;
-          border-radius: 3px;
-          color: var(--tinta-3);
-          cursor: pointer;
-          transition: background 0.12s ease, color 0.12s ease;
-        }
-        .barra-plegar:hover { background: var(--superficie-2); color: var(--tinta); }
-        @media (min-width: 1024px) { .barra-plegar { display: inline-flex; } }
-        .barra[data-colapsada='si'] .barra-cabecera {
-          flex-direction: column;
-          gap: 0.55rem;
-          padding-inline: 0.4rem;
-        }
-
-        /* ---------- Menú ---------- */
-        .barra-menu {
-          flex: 1;
-          overflow-y: auto;
-          overflow-x: hidden;
-          padding: 0.35rem 0.45rem 1rem;
-        }
-        .barra-grupo + .barra-grupo {
-          margin-top: 0.5rem;
-          padding-top: 0.5rem;
-          border-top: 1px solid var(--linea);
-        }
-        .barra-grupo-titulo {
-          display: block;
-          font-family: var(--font-mono);
-          font-size: 0.55rem;
-          font-weight: 600;
-          letter-spacing: 0.16em;
-          text-transform: uppercase;
-          color: var(--tinta-3);
-          padding: 0.4rem 0.55rem 0.3rem;
-          opacity: 0.85;
-        }
-        .barra[data-colapsada='si'] .barra-grupo-titulo {
-          height: 0.4rem;
-          padding: 0;
-          margin-bottom: 0.3rem;
-          overflow: hidden;
-          text-indent: -999px;
-        }
-        .barra-grupo ul { list-style: none; margin: 0; padding: 0; }
-
-        .barra-enlace {
-          display: flex;
-          align-items: center;
-          gap: 0.6rem;
-          padding: 0.4rem 0.55rem;
-          border-radius: 4px;
-          color: var(--tinta-2);
-          text-decoration: none;
-          font-size: 0.84rem;
-          line-height: 1.35;
-          transition: background 0.12s ease, color 0.12s ease;
-          position: relative;
-        }
-        .barra-icono {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--tinta-3);
-          transition: color 0.12s ease;
-          flex: none;
-        }
-        .barra-enlace:hover {
-          background: var(--superficie-2);
-          color: var(--tinta);
-        }
-        .barra-enlace:hover .barra-icono { color: var(--acento-2); }
-
-        .barra-enlace[data-activa='si'] {
-          background: var(--acento-suave);
-          color: var(--acento);
-          font-weight: 600;
-        }
-        .barra-enlace[data-activa='si'] .barra-icono { color: var(--acento); }
-        .barra-enlace[data-activa='si']::before {
-          content: '';
-          position: absolute;
-          inset-inline-start: -0.45rem;
-          inset-block: 0.32rem;
-          width: 2.5px;
-          border-radius: 0 2px 2px 0;
-          background: var(--acento);
-        }
-
-        .barra-texto {
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .barra[data-colapsada='si'] .barra-texto { display: none; }
-        .barra[data-colapsada='si'] .barra-enlace {
-          justify-content: center;
-          padding-inline: 0;
-        }
-        .barra[data-colapsada='si'] .barra-enlace[data-activa='si']::before {
-          inset-inline-start: -0.45rem;
-        }
-
-        /* ---------- Pie ---------- */
-        .barra-pie {
-          display: flex;
-          align-items: baseline;
-          justify-content: space-between;
-          gap: 0.4rem;
-          padding: 0.6rem 0.85rem;
-          border-top: 1px solid var(--linea);
-          font-family: var(--font-mono);
-          font-size: 0.58rem;
-          letter-spacing: 0.08em;
-          color: var(--tinta-3);
-          white-space: nowrap;
-          overflow: hidden;
-        }
-        .barra[data-colapsada='si'] .barra-pie-marca { display: none; }
-        .barra[data-colapsada='si'] .barra-pie { justify-content: center; }
-      `}</style>
-
-      <style jsx global>{`
-        /*
-          El logotipo es azul oscuro sobre fondo blanco. En tema oscuro hay que
-          invertirlo para que se lea; en tema claro se deja tal cual.
-        */
-        .logo-barra { max-width: 100%; height: auto; }
-        @media (prefers-color-scheme: dark) {
-          :root:not([data-tema='claro']) .logo-barra { filter: brightness(0) invert(1); }
-        }
-        :root[data-tema='oscuro'] .logo-barra { filter: brightness(0) invert(1); }
-        :root[data-tema='claro'] .logo-barra { filter: none; }
-      `}</style>
     </>
   );
 }

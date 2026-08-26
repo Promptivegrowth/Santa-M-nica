@@ -1,0 +1,430 @@
+/* ============================================================================
+   ESTRUCTURA · BARRA LATERAL Y CABECERA
+   ============================================================================
+   Estos estilos van en un archivo CSS normal y no en styled-jsx por una razón
+   concreta que costó un rato encontrar:
+
+   styled-jsx inyecta su clase de ámbito únicamente en elementos DOM, NO en
+   componentes de React. Como la navegación usa <Link> —que es un componente—
+   la regla ".barra-enlace { display: flex }" se compilaba a
+   ".barra-enlace.jsx-a1b2c3" y nunca llegaba a coincidir con el <a> que Link
+   renderiza. Resultado: el enlace se quedaba sin flex y el icono caía encima
+   del texto en lugar de ponerse a su izquierda.
+
+   Lo mismo ocurría con el contador de alertas de la cabecera, que también
+   cuelga de un <Link>. Un solo origen para los dos síntomas.
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   1. BARRA LATERAL
+   --------------------------------------------------------------------------- */
+.barra {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 50;
+  width: 15.25rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--superficie);
+  border-inline-end: 1px solid var(--linea);
+  transform: translateX(-100%);
+  transition: transform 0.22s ease, width 0.18s ease;
+}
+.barra[data-abierta="si"] { transform: none; }
+
+@media (min-width: 1024px) {
+  .barra { position: sticky; transform: none; height: 100dvh; }
+  .barra[data-colapsada="si"] { width: 4.1rem; }
+}
+
+.barra-velo {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(10, 17, 32, 0.55);
+  backdrop-filter: blur(2px);
+}
+@media (min-width: 1024px) { .barra-velo { display: none; } }
+
+/* --- Cabecera con el logotipo --- */
+.barra-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.95rem 0.9rem;
+  min-height: 3.6rem;
+  border-bottom: 1px solid var(--linea);
+}
+.barra-logo { display: flex; align-items: center; min-width: 0; border-radius: 3px; }
+.barra-plegar {
+  display: none;
+  padding: 0.3rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--tinta-3);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.barra-plegar:hover { background: var(--superficie-2); color: var(--tinta); }
+@media (min-width: 1024px) { .barra-plegar { display: inline-flex; } }
+.barra[data-colapsada="si"] .barra-cabecera {
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-inline: 0.4rem;
+}
+
+/* --- Menú --- */
+.barra-menu {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.5rem 0.5rem 1.2rem;
+}
+.barra-grupo + .barra-grupo {
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--linea);
+}
+.barra-grupo-titulo {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+  padding: 0.45rem 0.5rem 0.35rem;
+}
+.barra[data-colapsada="si"] .barra-grupo-titulo {
+  height: 0;
+  padding: 0;
+  margin-bottom: 0.35rem;
+  overflow: hidden;
+}
+.barra-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+
+/* --- Cada enlace --- */
+.barra-enlace {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.38rem 0.5rem;
+  border-radius: 6px;
+  color: var(--tinta-2);
+  text-decoration: none;
+  font-size: 0.845rem;
+  font-weight: 500;
+  line-height: 1.3;
+  position: relative;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+
+/*
+  El icono vive dentro de su propia pastilla. Eso es lo que le da presencia:
+  suelto sobre el fondo se ve endeble, dentro de un contenedor con color pesa
+  lo mismo que el texto y el menú se lee como una jerarquía y no como una lista.
+*/
+.barra-icono {
+  display: grid;
+  place-items: center;
+  width: 1.68rem;
+  height: 1.68rem;
+  flex: none;
+  border-radius: 5px;
+  color: var(--tinta-3);
+  background: transparent;
+  transition: background 0.13s ease, color 0.13s ease, box-shadow 0.13s ease;
+}
+
+.barra-enlace:hover { background: var(--superficie-2); color: var(--tinta); }
+.barra-enlace:hover .barra-icono { background: var(--acento-suave); color: var(--acento); }
+
+/* Activo: pastilla llena, texto en acento y una barra fina al costado */
+.barra-enlace[data-activa="si"] {
+  background: var(--acento-suave);
+  color: var(--acento);
+  font-weight: 600;
+}
+.barra-enlace[data-activa="si"] .barra-icono {
+  background: var(--color-marca-700);
+  color: #ffffff;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-marca-700) 38%, transparent);
+}
+
+/* En tema oscuro el azul profundo no contrasta: se usa el acento claro */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) .barra-enlace[data-activa="si"] .barra-icono {
+    background: var(--acento);
+    color: #0b1120;
+  }
+}
+:root[data-tema="oscuro"] .barra-enlace[data-activa="si"] .barra-icono {
+  background: var(--acento);
+  color: #0b1120;
+}
+:root[data-tema="claro"] .barra-enlace[data-activa="si"] .barra-icono {
+  background: var(--color-marca-700);
+  color: #ffffff;
+}
+
+.barra-texto {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.barra[data-colapsada="si"] .barra-texto { display: none; }
+.barra[data-colapsada="si"] .barra-enlace { justify-content: center; padding-inline: 0.25rem; }
+
+/* --- Pie --- */
+.barra-pie {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.65rem 0.9rem;
+  border-top: 1px solid var(--linea);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  color: var(--tinta-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.barra[data-colapsada="si"] .barra-pie-marca { display: none; }
+.barra[data-colapsada="si"] .barra-pie { justify-content: center; }
+
+/* El logotipo es azul oscuro: en tema oscuro se invierte para que se lea */
+.logo-barra { max-width: 100%; height: auto; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) .logo-barra { filter: brightness(0) invert(1); }
+}
+:root[data-tema="oscuro"] .logo-barra { filter: brightness(0) invert(1); }
+:root[data-tema="claro"] .logo-barra { filter: none; }
+
+
+/* ---------------------------------------------------------------------------
+   2. CABECERA SUPERIOR
+   --------------------------------------------------------------------------- */
+.cabecera {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  min-height: 3.6rem;
+  background: color-mix(in srgb, var(--superficie) 90%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--linea);
+}
+
+.cabecera-menu {
+  display: inline-flex;
+  padding: 0.4rem;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--tinta-2);
+  cursor: pointer;
+}
+.cabecera-menu:hover { background: var(--superficie-2); }
+@media (min-width: 1024px) { .cabecera-menu { display: none; } }
+
+/* --- Buscador --- */
+.cabecera-buscador {
+  position: relative;
+  flex: 1;
+  max-width: 32rem;
+  display: flex;
+  align-items: center;
+}
+.cabecera-lupa {
+  position: absolute;
+  inset-inline-start: 0.65rem;
+  color: var(--tinta-3);
+  pointer-events: none;
+}
+.cabecera-input {
+  width: 100%;
+  background: var(--superficie-2);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0.45rem 0.7rem 0.45rem 2.1rem;
+  font-size: 0.82rem;
+  color: var(--tinta);
+  font-family: var(--font-sans);
+}
+.cabecera-input::placeholder { color: var(--tinta-3); }
+.cabecera-input:focus {
+  outline: none;
+  background: var(--superficie);
+  border-color: var(--acento-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento-2) 16%, transparent);
+}
+
+/* --- Acciones de la derecha --- */
+.cabecera-acciones {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+  /* El contador de alertas sobresale del botón: sin esto queda recortado */
+  overflow: visible;
+}
+
+.cabecera-boton {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--tinta-2);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease;
+  overflow: visible;
+}
+.cabecera-boton:hover { background: var(--superficie-2); color: var(--tinta); }
+
+/*
+  El contador va pegado al icono pero con un borde del color del fondo, para
+  que se recorte limpio contra él. Antes salía cortado por el borde del
+  contenedor y parecía roto.
+*/
+.cabecera-contador {
+  position: absolute;
+  top: -0.2rem;
+  inset-inline-end: -0.2rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.22rem;
+  border-radius: 999px;
+  background: var(--critico);
+  color: #ffffff;
+  border: 2px solid var(--superficie);
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* --- Menú de usuario --- */
+.cabecera-usuario { position: relative; }
+.cabecera-avatar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0.25rem 0.4rem 0.25rem 0.25rem;
+  cursor: pointer;
+  color: var(--tinta);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.cabecera-avatar:hover,
+.cabecera-avatar[aria-expanded="true"] {
+  background: var(--superficie-2);
+  border-color: var(--linea);
+}
+.cabecera-iniciales {
+  width: 1.95rem;
+  height: 1.95rem;
+  border-radius: 6px;
+  background: linear-gradient(150deg, var(--color-marca-700), var(--color-marca-500));
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  flex: none;
+}
+.cabecera-datos { display: none; flex-direction: column; text-align: left; line-height: 1.25; }
+@media (min-width: 640px) { .cabecera-datos { display: flex; } }
+.cabecera-datos strong { font-size: 0.79rem; font-weight: 600; }
+.cabecera-datos small { font-size: 0.67rem; color: var(--tinta-3); }
+.cabecera-chevron { color: var(--tinta-3); display: none; }
+@media (min-width: 640px) { .cabecera-chevron { display: block; } }
+
+/* --- Desplegable del usuario --- */
+.cabecera-desplegable {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + 0.45rem);
+  min-width: 17rem;
+  background: var(--superficie);
+  border: 1px solid var(--linea-2);
+  border-radius: 8px;
+  box-shadow: var(--sombra);
+  overflow: hidden;
+  z-index: 40;
+}
+.cabecera-desplegable-info {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.8rem 0.9rem;
+  border-bottom: 1px solid var(--linea);
+  background: var(--superficie-2);
+}
+.cabecera-desplegable-datos { display: flex; flex-direction: column; min-width: 0; }
+.cabecera-desplegable-datos strong { font-size: 0.86rem; }
+.cabecera-desplegable-datos span {
+  font-size: 0.72rem;
+  color: var(--tinta-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cabecera-seccion { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--linea); }
+.cabecera-seccion:last-of-type { border-bottom: none; }
+.cabecera-seccion-titulo {
+  display: block;
+  padding: 0.25rem 0.4rem 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+.cabecera-opcion {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.46rem 0.5rem;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--tinta-2);
+  font-family: var(--font-sans);
+  text-align: left;
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.cabecera-opcion:hover { background: var(--superficie-2); color: var(--tinta); }
+.cabecera-opcion-peligro:hover { background: var(--critico-suave); color: var(--critico); }
+.cabecera-opcion-valor {
+  margin-inline-start: auto;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--tinta-3);
+}
+.cabecera-opcion[aria-pressed="true"] .cabecera-opcion-valor {
+  color: var(--acento);
+  font-weight: 600;
+}
