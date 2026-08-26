@@ -23,6 +23,7 @@
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { GraficoComposicion } from '@/components/graficos/Graficos';
 import { tm, num } from '@/lib/formato';
@@ -128,6 +129,7 @@ export default async function PaginaDisponibilidad(props: PageProps<'/ventas/dis
                     <th className="num">Preparación</th>
                     <th className="num">Disponible</th>
                     <th className="num">Lotes</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -161,7 +163,26 @@ export default async function PaginaDisponibilidad(props: PageProps<'/ventas/dis
                             </>
                           )}
                         </td>
-                        <td className="num">{f.lotes}</td>
+                        <td className="num">{f.lotes as number}</td>
+                        <td>
+                          {/* Aquí no hay una fila «abrible»: cada línea resume
+                              varios lotes. Los enlaces llevan a las dos preguntas
+                              que se hacen desde esta pantalla: ¿qué lotes son? y
+                              ¿quién tiene apartado lo que falta? */}
+                          <AccionesLista
+                            ver={`/almacenes/existencias?buscar=${encodeURIComponent(String(f.sku_codigo))}`}
+                            verTitulo="Ver los lotes de este producto"
+                            extras={
+                              Number(f.reservado_kg) > 0
+                                ? [{
+                                    href: '/almacenes/reservas',
+                                    icono: 'reservas',
+                                    titulo: 'Ver quién tiene apartado este stock',
+                                  }]
+                                : []
+                            }
+                          />
+                        </td>
                       </tr>
                     );
                   })}

@@ -31,7 +31,11 @@
 import { useState, useTransition, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { crearCotizacion, consultarPrecio } from '@/app/(erp)/ventas/cotizaciones/acciones';
+import {
+  crearCotizacion,
+  actualizarCotizacion,
+  consultarPrecio,
+} from '@/app/(erp)/ventas/cotizaciones/acciones';
 import { crearPedidoDirecto } from '@/app/(erp)/ventas/pedidos/acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, tm } from '@/lib/formato';
@@ -62,6 +66,34 @@ type LineaUI = {
   consultando: boolean;
 };
 
+/**
+ * Datos de una cotización que ya existe, para volver a abrirla y corregirla.
+ * Cuando llegan, el formulario deja de «crear» y pasa a «actualizar»: mismos
+ * campos, mismas validaciones, distinto destino al guardar. Se reutiliza el
+ * componente en lugar de escribir un segundo formulario casi idéntico, porque
+ * dos formularios se desincronizan a la primera regla nueva.
+ */
+export type DatosEdicion = {
+  id: number;
+  numero: string;
+  cliente_id: number;
+  vendedor_id: number | null;
+  destino_id: number | null;
+  lista_id: number | null;
+  moneda: 'USD' | 'PEN';
+  tipo_cambio: number;
+  incoterm: 'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP';
+  validez_dias: number;
+  observaciones: string | null;
+  lineas: {
+    sku_presentacion_id: number;
+    cantidad_tm: number;
+    precio_lista_tm: number;
+    precio_tm: number;
+    descuento_pct: number;
+  }[];
+};
+
 const nuevaClave = () => Math.random().toString(36).slice(2, 9);
 const hoyISO = () => new Date().toISOString().slice(0, 10);
 const enDiasISO = (dias: number) =>
@@ -79,6 +111,7 @@ export function FormularioVenta({
   tipoCambioDefecto,
   topeDescuento,
   puedeAutorizarDescuento,
+  edicion,
 }: {
   modo: Modo;
   clientes: (Opcion & { pais: string; moneda: string; bloqueado: boolean })[];
@@ -91,23 +124,33 @@ export function FormularioVenta({
   tipoCambioDefecto: number;
   topeDescuento: number;
   puedeAutorizarDescuento: boolean;
+  /** Presente solo cuando se está corrigiendo una cotización existente. */
+  edicion?: DatosEdicion;
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
   const esPedido = modo === 'pedido';
+  const esEdicion = !!edicion;
 
-  /* ---- Cabecera común ---- */
-  const [clienteId, setClienteId] = useState<number | ''>('');
-  const [vendedorId, setVendedorId] = useState<number | ''>('');
-  const [destinoId, setDestinoId] = useState<number | ''>('');
-  const [listaId, setListaId] = useState<number | ''>(listas[0]?.id ?? '');
-  const [moneda, setMoneda] = useState<'USD' | 'PEN'>('USD');
-  const [tipoCambio, setTipoCambio] = useState(tipoCambioDefecto);
-  const [incoterm, setIncoterm] = useState<'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP'>('FOB');
-  const [observaciones, setObservaciones] = useState('');
+  /* ----------------------------------------------------------------------
+     Cabecera común.
+     Cada campo arranca con el valor guardado si estamos editando, y con el
+     valor por defecto si estamos creando. Es el único sitio donde el modo
+     edición cambia algo: de ahí en adelante el formulario se comporta igual.
+     ---------------------------------------------------------------------- */
+  const [clienteId, setClienteId] = useState<number | ''>(edicion?.cliente_id ?? '');
+  const [vendedorId, setVendedorId] = useState<number | ''>(edicion?.vendedor_id ?? '');
+  const [destinoId, setDestinoId] = useState<number | ''>(edicion?.destino_id ?? '');
+  const [listaId, setListaId] = useState<number | ''>(edicion?.lista_id ?? listas[0]?.id ?? '');
+  const [moneda, setMoneda] = useState<'USD' | 'PEN'>(edicion?.moneda ?? 'USD');
+  const [tipoCambio, setTipoCambio] = useState(edicion?.tipo_cambio ?? tipoCambioDefecto);
+  const [incoterm, setIncoterm] = useState<'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP'>(
+    edicion?.incoterm ?? 'FOB'
+  );
+  const [observaciones, setObservaciones] = useState(edicion?.observaciones ?? '');
 
   /* ---- Solo cotización ---- */
-  const [validez, setValidez] = useState(validezDefecto);
+  const [validez, setValidez] = useState(edicion?.validez_dias ?? validezDefecto);
 
   /* ---- Solo pedido ---- */
   const [ocCliente, setOcCliente] = useState('');
@@ -116,7 +159,16 @@ export function FormularioVenta({
   const [fechaComprometida, setFechaComprometida] = useState(enDiasISO(21));
 
   /* ---- Líneas ---- */
-  const [lineas, setLineas] = useState<LineaUI[]>([]);
+  const [lineas, setLineas] = useState<LineaUI[]>(() =>
+    (edicion?.lineas ?? []).map((l) => ({
+      ...l,
+      clave: nuevaClave(),
+      // El disponible se recalcula al tocar la línea; al abrir se muestra el
+      // del catálogo, que ya viene cargado en `unidades`.
+      disponible_kg: unidades.find((u) => u.id === l.sku_presentacion_id)?.disponible_kg ?? 0,
+      consultando: false,
+    }))
+  );
   const [busqueda, setBusqueda] = useState('');
   const [mensaje, setMensaje] = useState<{ ok: boolean; texto: string } | null>(null);
 
@@ -238,7 +290,20 @@ export function FormularioVenta({
     const lineasLimpias = lineas.map(({ clave, disponible_kg, consultando, ...l }) => l);
 
     iniciar(async () => {
-      const r = esPedido
+      const r = esEdicion
+        ? await actualizarCotizacion(edicion.id, {
+            cliente_id: Number(clienteId),
+            vendedor_id: vendedorId ? Number(vendedorId) : null,
+            destino_id: destinoId ? Number(destinoId) : null,
+            lista_id: listaId ? Number(listaId) : null,
+            moneda,
+            tipo_cambio: tipoCambio,
+            incoterm,
+            validez_dias: validez,
+            observaciones: observaciones.trim() || null,
+            lineas: lineasLimpias,
+          })
+        : esPedido
         ? await crearPedidoDirecto({
             cliente_id: Number(clienteId),
             vendedor_id: vendedorId ? Number(vendedorId) : null,
@@ -268,18 +333,29 @@ export function FormularioVenta({
 
       if (r.ok) {
         setMensaje({ ok: true, texto: r.mensaje });
-        setTimeout(
-          () => router.push(esPedido ? `/ventas/pedidos/${r.id}` : '/ventas/cotizaciones'),
-          900
-        );
+        // Se deja casi un segundo para que el usuario lea la confirmación
+        // antes de que la pantalla cambie debajo de sus manos.
+        setTimeout(() => {
+          if (esEdicion) router.push(`/ventas/cotizaciones/${edicion.id}`);
+          else if (esPedido) router.push(`/ventas/pedidos/${r.id}`);
+          else router.push(`/ventas/cotizaciones/${r.id}`);
+        }, 900);
       } else {
         setMensaje({ ok: false, texto: r.mensaje });
       }
     });
   }
 
-  const rutaVolver = esPedido ? '/ventas/pedidos' : '/ventas/cotizaciones';
-  const textoGuardar = esPedido ? 'Registrar pedido' : 'Guardar cotización';
+  const rutaVolver = esEdicion
+    ? `/ventas/cotizaciones/${edicion.id}`
+    : esPedido
+    ? '/ventas/pedidos'
+    : '/ventas/cotizaciones';
+  const textoGuardar = esEdicion
+    ? 'Guardar cambios'
+    : esPedido
+    ? 'Registrar pedido'
+    : 'Guardar cotización';
 
   return (
     <div className="form-venta">

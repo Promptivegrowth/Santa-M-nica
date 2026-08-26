@@ -15,7 +15,8 @@ import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
-import { tm, num, fecha } from '@/lib/formato';
+import { AccionesLista } from '@/components/ui/Acciones';
+import { num, fecha, tm } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 
 export const metadata: Metadata = { title: 'Existencias' };
@@ -96,17 +97,15 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
                     <th className="num">Meses</th>
                     {puedeVerCostos && <th className="num">Valor</th>}
                     <th>Estado</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(filas ?? []).map((f) => (
                     <tr key={`${f.lote_id}-${f.almacen_id}`}>
                       <td>
-                        <Link
-                          href={`/trazabilidad?q=${encodeURIComponent(f.codigo_pallet as string)}`}
-                          className="enlace-dato"
-                        >
-                          {f.codigo_pallet}
+                        <Link href={`/almacenes/lotes/${f.lote_id}`} className="enlace-ficha">
+                          {f.codigo_pallet as string}
                         </Link>
                       </td>
                       <td>
@@ -133,6 +132,19 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
                         ) : (
                           <Etiqueta texto="Normal" tono="ok" />
                         )}
+                      </td>
+                      <td>
+                        <AccionesLista
+                          ver={`/almacenes/lotes/${f.lote_id}`}
+                          verTitulo={`Ver el lote ${f.codigo_pallet}`}
+                          extras={[
+                            {
+                              href: `/trazabilidad?q=${encodeURIComponent(String(f.codigo_pallet))}`,
+                              icono: 'trazabilidad',
+                              titulo: 'Buscarlo en trazabilidad',
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))}

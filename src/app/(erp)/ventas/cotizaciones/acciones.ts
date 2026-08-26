@@ -348,3 +348,135 @@ export async function consultarPrecio(
   const disponible = (disp ?? []).reduce((s, d) => s + Number(d.disponible_kg ?? 0), 0);
   return { precio: Number(precio ?? 0), disponible_kg: disponible };
 }
+
+/* ==========================================================================
+   ELIMINAR COTIZACIÓN
+   --------------------------------------------------------------------------
+   Solo se puede borrar lo que todavía no comprometió nada. Una cotización que
+   ya se convirtió en pedido NO se borra: hacerlo dejaría el pedido huérfano y
+   rompería la trazabilidad de por qué se vendió a ese precio.
+   ========================================================================== */
+export async function eliminarCotizacion(id: number): Promise<Resultado> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
+
+  if (!puedeVender(usuario.rol as Rol)) {
+    return { ok: false, mensaje: 'Su rol no puede eliminar cotizaciones.' };
+  }
+
+  const supabase = await crearClienteServidor();
+
+  const { data: cot } = await supabase
+    .from('cotizaciones').select('numero, estado, creado_por').eq('id', id).single();
+  if (!cot) return { ok: false, mensaje: 'La cotización no existe o ya fue eliminada.' };
+
+  // ¿Generó un pedido? Entonces es historia y no se toca.
+  const { data: pedido } = await supabase
+    .from('pedidos').select('numero_proforma').eq('cotizacion_id', id).maybeSingle();
+  if (pedido) {
+    return {
+      ok: false,
+      mensaje: `No se puede eliminar: esta cotización generó el pedido ${pedido.numero_proforma}. Si quiere anularla, cambie su estado a rechazada.`,
+    };
+  }
+
+  // Una cotización ya enviada al cliente es un documento con historia:
+  // solo gerencia u operaciones pueden borrarla.
+  if (cot.estado !== 'borrador' && !['gerencia', 'operaciones'].includes(usuario.rol)) {
+    return {
+      ok: false,
+      mensaje: `La cotización ${cot.numero} ya fue enviada al cliente. Solo Gerencia u Operaciones pueden eliminarla; usted puede marcarla como rechazada.`,
+    };
+  }
+
+  // Las líneas se van solas por la cascada definida en la base de datos
+  const { error } = await supabase.from('cotizaciones').delete().eq('id', id);
+  if (error) {
+    return {
+      ok: false,
+      mensaje: /policy/i.test(error.message)
+        ? 'Su rol no tiene permiso para eliminar esta cotización.'
+        : `No se pudo eliminar: ${error.message}`,
+    };
+  }
+
+  revalidatePath('/ventas/cotizaciones');
+  return { ok: true, id, numero: cot.numero as string, mensaje: `Cotización ${cot.numero} eliminada.` };
+}
+
+/* ==========================================================================
+   ACTUALIZAR UNA COTIZACIÓN EXISTENTE
+   --------------------------------------------------------------------------
+   Solo mientras sea borrador o esté enviada y aún no convertida. Se reemplazan
+   todas las líneas: es más simple y más seguro que intentar casar cuáles
+   cambiaron, y el registro de auditoría queda igualmente completo.
+   ========================================================================== */
+export async function actualizarCotizacion(
+  id: number,
+  datos: DatosCotizacion
+): Promise<Resultado> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
+  if (!puedeVender(usuario.rol as Rol)) {
+    return { ok: false, mensaje: 'Su rol no puede modificar cotizaciones.' };
+  }
+
+  const supabase = await crearClienteServidor();
+
+  const { data: cot } = await supabase
+    .from('cotizaciones').select('numero, estado').eq('id', id).single();
+  if (!cot) return { ok: false, mensaje: 'La cotización no existe.' };
+
+  const { data: pedido } = await supabase
+    .from('pedidos').select('numero_proforma').eq('cotizacion_id', id).maybeSingle();
+  if (pedido) {
+    return {
+      ok: false,
+      mensaje: `No se puede modificar: ya generó el pedido ${pedido.numero_proforma}. Los precios de una venta cerrada no se cambian.`,
+    };
+  }
+  if (!['borrador', 'enviada'].includes(cot.estado as string)) {
+    return {
+      ok: false,
+      mensaje: `Una cotización ${cot.estado} no se puede modificar. Cree una nueva si necesita otra oferta.`,
+    };
+  }
+  if (!datos.lineas.length) {
+    return { ok: false, mensaje: 'La cotización debe tener al menos un producto.', campo: 'lineas' };
+  }
+
+  const { error: errCab } = await supabase
+    .from('cotizaciones')
+    .update({
+      cliente_id: datos.cliente_id,
+      vendedor_id: datos.vendedor_id,
+      destino_id: datos.destino_id,
+      lista_id: datos.lista_id,
+      moneda: datos.moneda,
+      tipo_cambio: datos.tipo_cambio,
+      incoterm: datos.incoterm,
+      validez_dias: datos.validez_dias,
+      observaciones: datos.observaciones,
+    })
+    .eq('id', id);
+
+  if (errCab) return { ok: false, mensaje: `No se pudo guardar: ${errCab.message}` };
+
+  await supabase.from('cotizacion_lineas').delete().eq('cotizacion_id', id);
+  const { error: errLin } = await supabase.from('cotizacion_lineas').insert(
+    datos.lineas.map((l, i) => ({
+      cotizacion_id: id,
+      sku_presentacion_id: l.sku_presentacion_id,
+      cantidad_tm: l.cantidad_tm,
+      precio_lista_tm: l.precio_lista_tm,
+      precio_tm: l.precio_tm,
+      descuento_pct: l.descuento_pct,
+      orden: i + 1,
+    }))
+  );
+  if (errLin) return { ok: false, mensaje: `No se pudieron guardar las líneas: ${errLin.message}` };
+
+  revalidatePath('/ventas/cotizaciones');
+  revalidatePath(`/ventas/cotizaciones/${id}`);
+  return { ok: true, id, numero: cot.numero as string, mensaje: `Cotización ${cot.numero} actualizada.` };
+}

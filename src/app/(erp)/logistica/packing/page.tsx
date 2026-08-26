@@ -12,6 +12,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { num, fecha, etiquetaEstado } from '@/lib/formato';
 
 export const metadata: Metadata = { title: 'Packing y estiba' };
@@ -24,7 +25,7 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
 
   let consulta = supabase
     .from('packing_lists')
-    .select('id, codigo, contenedor, guia_remision, dam, fecha_carga, hora_inicio, hora_fin, turno, estado, filas_contenedor, sacos_por_fila, embarques(numero, almacenes(nombre), destinos(puerto))')
+    .select('id, codigo, contenedor, guia_remision, dam, fecha_carga, hora_inicio, hora_fin, turno, estado, filas_contenedor, sacos_por_fila, embarques(id, numero, almacenes(nombre), destinos(puerto))')
     .order('fecha_carga', { ascending: false })
     .limit(120);
   if (estado) consulta = consulta.eq('estado', estado);
@@ -73,6 +74,7 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
                 <tr>
                   <th>Packing</th><th>Contenedor</th><th>Embarque</th><th>Almacén</th><th>Destino</th>
                   <th className="num">Carga</th><th>Turno</th><th className="num">Horas</th><th>Estado</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -105,6 +107,21 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
                         <Etiqueta
                           texto={etiquetaEstado(String(p.estado))}
                           tono={p.estado === 'cerrado' ? 'ok' : p.estado === 'en_carga' ? 'atencion' : 'neutro'}
+                        />
+                      </td>
+                      <td>
+                        <AccionesLista
+                          ver={`/logistica/packing/${p.id}`}
+                          verTitulo={`Ver el packing ${p.codigo}`}
+                          extras={
+                            emb
+                              ? [{
+                                  href: `/logistica/embarques/${emb.id}`,
+                                  icono: 'embarques',
+                                  titulo: 'Ver el embarque',
+                                }]
+                              : []
+                          }
                         />
                       </td>
                     </tr>

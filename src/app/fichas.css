@@ -1,0 +1,404 @@
+/* ============================================================================
+   FICHAS DE DETALLE, ALERTAS NAVEGABLES Y ACCIONES DE FILA
+   ============================================================================
+   Un ERP se usa navegando: se ve una alerta y se quiere ir al lote; se ve un
+   pedido y se quiere abrir el cliente. Estos estilos sostienen esa navegación.
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   ALERTAS NAVEGABLES
+   --------------------------------------------------------------------------- */
+.lista-alertas-nav { list-style: none; margin: 0; padding: 0; }
+.lista-alertas-nav li { border-bottom: 1px solid var(--linea); }
+.lista-alertas-nav li:last-child { border-bottom: none; }
+
+.alerta-fila {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 1rem;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.12s ease;
+}
+.alerta-fila:hover { background: var(--superficie-2); }
+.alerta-fila[data-sinenlace="si"] { cursor: default; }
+.alerta-fila[data-sinenlace="si"]:hover { background: transparent; }
+
+/* Franja de color a la izquierda: la severidad se lee antes que el texto */
+.alerta-marca {
+  width: 3px;
+  align-self: stretch;
+  min-height: 2.2rem;
+  border-radius: 2px;
+  background: var(--tinta-3);
+}
+.alerta-marca[data-sev="critica"] { background: var(--critico); }
+.alerta-marca[data-sev="advertencia"] { background: var(--atencion); }
+.alerta-marca[data-sev="info"] { background: var(--acento-2); }
+
+.alerta-cuerpo { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
+.alerta-titulo-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+.alerta-titulo-fila strong { font-size: 0.86rem; font-weight: 600; }
+.alerta-mensaje {
+  font-size: 0.79rem;
+  color: var(--tinta-2);
+  line-height: 1.45;
+}
+.alerta-tiempo {
+  font-family: var(--font-mono);
+  font-size: 0.63rem;
+  color: var(--tinta-3);
+  margin-top: 0.1rem;
+}
+
+.alerta-ir {
+  display: none;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--acento);
+  white-space: nowrap;
+}
+@media (min-width: 640px) { .alerta-ir { display: inline-flex; } }
+.alerta-fila:hover .alerta-ir { text-decoration: underline; }
+
+/* ---------------------------------------------------------------------------
+   ACCIONES DE FILA (ver · editar · eliminar)
+   --------------------------------------------------------------------------- */
+.acciones-fila {
+  display: inline-flex;
+  gap: 0.2rem;
+  align-items: center;
+  white-space: nowrap;
+}
+.accion-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--tinta-3);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.accion-btn:hover {
+  background: var(--superficie-2);
+  border-color: var(--linea);
+  color: var(--acento);
+}
+.accion-btn-peligro:hover { color: var(--critico); border-color: color-mix(in srgb, var(--critico) 35%, transparent); }
+.accion-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.accion-btn:disabled:hover { background: transparent; border-color: transparent; color: var(--tinta-3); }
+
+.accion-confirmar {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  background: var(--critico-suave);
+  border: 1px solid color-mix(in srgb, var(--critico) 30%, transparent);
+  border-radius: 5px;
+  padding: 0.1rem 0.25rem;
+}
+.accion-confirmar span {
+  font-size: 0.68rem;
+  color: var(--critico);
+  font-weight: 600;
+  padding-inline: 0.15rem;
+}
+.accion-error {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--critico);
+  max-width: 18rem;
+  line-height: 1.35;
+  margin-top: 0.2rem;
+}
+
+/* ---------------------------------------------------------------------------
+   FICHA DE DETALLE
+   --------------------------------------------------------------------------- */
+/* Barra de datos clave bajo el título */
+.ficha-resumen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.6rem;
+  padding: 0.75rem 1rem;
+  background: var(--superficie-2);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  margin-bottom: 0.85rem;
+}
+.ficha-resumen > div { display: flex; flex-direction: column; }
+.ficha-resumen dt,
+.ficha-resumen .rot {
+  font-family: var(--font-mono);
+  font-size: 0.57rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+.ficha-resumen dd,
+.ficha-resumen .val {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+/* Enlaces a entidades relacionadas dentro de una ficha */
+.ficha-enlaces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.85rem 1rem;
+}
+.ficha-enlace {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--linea);
+  border-radius: 6px;
+  background: var(--superficie);
+  text-decoration: none;
+  color: var(--tinta-2);
+  font-size: 0.82rem;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.ficha-enlace:hover {
+  border-color: var(--acento-2);
+  background: var(--acento-suave);
+  color: var(--acento);
+}
+.ficha-enlace strong { font-weight: 600; }
+.ficha-enlace small {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--tinta-3);
+}
+
+/* Aviso de estado sobre una ficha (por ejemplo, cotización ya convertida) */
+.ficha-aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem 0.95rem;
+  margin-bottom: 0.85rem;
+  border-radius: var(--radio);
+  font-size: 0.83rem;
+  line-height: 1.5;
+}
+.ficha-aviso-info { background: var(--acento-suave); border: 1px solid color-mix(in srgb, var(--acento) 22%, transparent); color: var(--tinta-2); }
+.ficha-aviso-ok { background: var(--ok-suave); border: 1px solid color-mix(in srgb, var(--ok) 25%, transparent); color: var(--tinta-2); }
+.ficha-aviso-atencion { background: var(--atencion-suave); border: 1px solid color-mix(in srgb, var(--atencion) 25%, transparent); color: var(--tinta-2); }
+.ficha-aviso-critico { background: var(--critico-suave); border: 1px solid color-mix(in srgb, var(--critico) 25%, transparent); color: var(--tinta-2); }
+.ficha-aviso strong { color: var(--tinta); }
+.ficha-aviso a { font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+   BOTONERA DE UNA FICHA
+   ---------------------------------------------------------------------------
+   Vive dentro de la cabecera de página. En móvil los botones se envuelven en
+   varias líneas en lugar de desbordarse: en un almacén se consulta el ERP
+   desde el teléfono tanto como desde el escritorio.
+   --------------------------------------------------------------------------- */
+.ficha-botonera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.ficha-botonera .accion-error { flex-basis: 100%; max-width: none; }
+
+/* Botón destructivo discreto: solo se «enciende» en rojo al pasar por encima,
+   para que Eliminar no compita visualmente con la acción principal. */
+.btn-peligro-borde {
+  background: transparent;
+  border: 1px solid var(--linea);
+  color: var(--tinta-2);
+}
+.btn-peligro-borde:hover:not(:disabled) {
+  background: var(--critico-suave);
+  border-color: color-mix(in srgb, var(--critico) 40%, transparent);
+  color: var(--critico);
+}
+
+/* ---------------------------------------------------------------------------
+   ENLACE DENTRO DE UNA TABLA
+   ---------------------------------------------------------------------------
+   El número de documento de cada fila es su enlace natural. Se deja sin
+   subrayado en reposo para que la tabla no parezca un campo de minas azul, y
+   se subraya al pasar por encima para que quede claro que se puede pulsar.
+   --------------------------------------------------------------------------- */
+.enlace-ficha {
+  color: var(--acento);
+  text-decoration: none;
+  font-weight: 600;
+}
+.enlace-ficha:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------------------
+   CADENA DE CUSTODIA DE UN TRASLADO
+   ---------------------------------------------------------------------------
+   Cuatro pasos en fila. Los cumplidos se pintan con el color de marca; los
+   pendientes quedan en gris, para que de un vistazo se vea dónde se detuvo.
+   En pantallas estrechas la fila se vuelve columna.
+   --------------------------------------------------------------------------- */
+.pasos-traslado {
+  list-style: none;
+  margin: 0;
+  padding: 0.9rem 1rem;
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 760px) {
+  .pasos-traslado { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.paso-traslado {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--linea);
+  border-radius: 6px;
+  background: var(--superficie);
+}
+.paso-traslado[data-hecho="si"] {
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+  background: var(--ok-suave);
+}
+.paso-marca {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--superficie-2);
+  color: var(--tinta-3);
+  flex-shrink: 0;
+}
+.paso-traslado[data-hecho="si"] .paso-marca { background: var(--ok); color: #fff; }
+.paso-cuerpo { display: flex; flex-direction: column; min-width: 0; }
+.paso-cuerpo strong { font-size: 0.82rem; font-weight: 600; }
+.paso-cuerpo small {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--tinta-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------------------
+   LIBERAR UNA RESERVA
+   ---------------------------------------------------------------------------
+   El formulario se abre dentro de la propia celda. Se le da un ancho mínimo
+   para que el textarea sea usable sin desmontar la tabla.
+   --------------------------------------------------------------------------- */
+.liberar-caja {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 17rem;
+  max-width: 22rem;
+  padding: 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--atencion) 35%, transparent);
+  background: var(--atencion-suave);
+  border-radius: 6px;
+}
+.liberar-titulo { margin: 0; font-size: 0.78rem; color: var(--tinta-2); }
+.liberar-sugerencias { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.liberar-sugerencia {
+  cursor: pointer;
+  border: 1px solid var(--linea);
+  font-size: 0.66rem;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.liberar-sugerencia:hover { border-color: var(--acento); color: var(--acento); }
+.liberar-botones { display: flex; gap: 0.35rem; }
+.liberar-nota { margin: 0; font-size: 0.68rem; color: var(--tinta-3); line-height: 1.35; }
+
+.aviso-ok {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--ok);
+  line-height: 1.35;
+  margin-top: 0.2rem;
+}
+
+/* ---------------------------------------------------------------------------
+   PANTALLAS DE ESTADO (no encontrado · error)
+   ---------------------------------------------------------------------------
+   Ocupan el alto disponible y centran el mensaje. Se mantienen dentro del
+   marco del ERP —con su barra lateral— para que el usuario nunca sienta que
+   se cayó de la aplicación.
+   --------------------------------------------------------------------------- */
+.pagina-estado {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.7rem;
+  min-height: 55vh;
+  padding: 2rem 1rem;
+  max-width: 34rem;
+  margin-inline: auto;
+}
+.pagina-estado-icono {
+  display: inline-grid;
+  place-items: center;
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 50%;
+  background: var(--acento-suave);
+  color: var(--acento);
+}
+.pagina-estado-icono[data-tono="critico"] {
+  background: var(--critico-suave);
+  color: var(--critico);
+}
+.pagina-estado h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.pagina-estado p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--tinta-2);
+  line-height: 1.6;
+}
+.pagina-estado-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+.pagina-estado-pie {
+  margin-top: 0.6rem;
+  font-size: 0.78rem !important;
+  color: var(--tinta-3) !important;
+  border-top: 1px solid var(--linea);
+  padding-top: 0.7rem;
+}
+.pagina-estado-pie code {
+  background: var(--superficie-2);
+  border: 1px solid var(--linea);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.74rem;
+}

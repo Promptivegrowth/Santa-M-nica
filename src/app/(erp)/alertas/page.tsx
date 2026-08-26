@@ -5,12 +5,9 @@
  *  Estas alertas NO están escritas en el código: las genera el motor de reglas
  *  a partir de condiciones que el propio cliente define desde Configuración.
  *
- *  Ejemplos de las que vienen activas de fábrica:
- *   · Lote con más de 12 meses en cámara (el umbral es configurable).
- *   · Reserva vencida que sigue bloqueando stock.
- *   · Traslado que salió y nadie confirmó en destino.
- *   · Factura vencida.
- *   · SOAT de un vehículo por caducar.
+ *  Cada alerta es NAVEGABLE: lleva al registro que la provocó. De nada sirve
+ *  saber que «el lote SM 26 02 0001 lleva 19 meses en cámara» si después hay
+ *  que buscarlo a mano en otra pantalla.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -18,6 +15,8 @@ import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
+import { Icono } from '@/components/estructura/Icono';
+import { enlaceEntidad, nombreEntidad } from '@/lib/enlaces';
 import { num, fechaHora, haceTiempo } from '@/lib/formato';
 
 export const metadata: Metadata = { title: 'Alertas' };
@@ -37,9 +36,10 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
   if (entidad) consulta = consulta.eq('entidad', entidad);
 
   const [{ data: filas, count }, { data: todas }] = await Promise.all([
-    consulta.order('severidad', { ascending: false })
-            .order('generada_en', { ascending: false })
-            .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
+    consulta
+      .order('severidad', { ascending: false })
+      .order('generada_en', { ascending: false })
+      .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
     supabase.from('alertas').select('severidad, entidad').eq('atendida', false),
   ]);
 
@@ -51,28 +51,47 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
     <>
       <CabeceraPagina
         titulo="Alertas"
-        descripcion="Situaciones que el sistema detectó por sí solo. Cada una nace de una regla configurable, no de código fijo."
+        descripcion="Situaciones que el sistema detectó por sí solo. Haga clic en cualquiera para ir directamente al registro que la provocó."
       >
-        <Link href="/configuracion?t=reglas" className="btn btn-secundario">Configurar reglas</Link>
+        <Link href="/configuracion?t=reglas" className="btn btn-secundario">
+          <Icono nombre="configuracion" tamano={15} />
+          Configurar reglas
+        </Link>
       </CabeceraPagina>
 
       <RejillaKpi>
         <Kpi etiqueta="Total pendientes" valor={num((todas ?? []).length)} />
-        <Kpi etiqueta="Críticas" valor={num(criticas)} tono={criticas > 0 ? 'critico' : 'ok'} nota="Requieren acción hoy" />
-        <Kpi etiqueta="Advertencias" valor={num(avisos)} tono={avisos > 0 ? 'atencion' : 'ok'} nota="Conviene revisarlas" />
+        <Kpi
+          etiqueta="Críticas"
+          valor={num(criticas)}
+          tono={criticas > 0 ? 'critico' : 'ok'}
+          nota="Requieren acción hoy"
+          href="/alertas?severidad=critica"
+        />
+        <Kpi
+          etiqueta="Advertencias"
+          valor={num(avisos)}
+          tono={avisos > 0 ? 'atencion' : 'ok'}
+          nota="Conviene revisarlas"
+          href="/alertas?severidad=advertencia"
+        />
       </RejillaKpi>
 
       <Panel titulo={`${num(count ?? 0)} alertas sin atender`}>
         <Filtros
           campos={[
-            { tipo: 'select', clave: 'severidad', etiqueta: 'Severidad',
+            {
+              tipo: 'select', clave: 'severidad', etiqueta: 'Severidad',
               opciones: [
                 { valor: 'critica', texto: 'Crítica' },
                 { valor: 'advertencia', texto: 'Advertencia' },
                 { valor: 'info', texto: 'Informativa' },
-              ] },
-            { tipo: 'select', clave: 'entidad', etiqueta: 'Sobre qué',
-              opciones: entidades.map((e) => ({ valor: e, texto: e })) },
+              ],
+            },
+            {
+              tipo: 'select', clave: 'entidad', etiqueta: 'Sobre qué',
+              opciones: entidades.map((e) => ({ valor: e, texto: nombreEntidad(e) })),
+            },
           ]}
         />
 
@@ -80,33 +99,64 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
           <Vacio titulo="Todo en orden" mensaje="No hay alertas pendientes con estos filtros." />
         ) : (
           <>
-            <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-              <table className="datos">
-                <thead>
-                  <tr><th>Severidad</th><th>Situación</th><th>Detalle</th><th>Sobre</th><th className="num">Detectada</th></tr>
-                </thead>
-                <tbody>
-                  {(filas ?? []).map((a) => (
-                    <tr key={a.id as number}>
-                      <td>
+            {/*
+              Se usa una lista de tarjetas y no una tabla: cada alerta es una
+              unidad de acción completa —qué pasa, dónde y a dónde ir— y en una
+              tabla el enlace quedaría perdido en una celda del extremo.
+            */}
+            <ul className="lista-alertas-nav">
+              {(filas ?? []).map((a) => {
+                const destino = enlaceEntidad(a.entidad as string, a.entidad_id as number);
+                const contenido = (
+                  <>
+                    <span className="alerta-marca" data-sev={a.severidad as string} aria-hidden />
+                    <span className="alerta-cuerpo">
+                      <span className="alerta-titulo-fila">
+                        <strong>{a.titulo as string}</strong>
                         <Etiqueta
-                          texto={a.severidad === 'critica' ? 'Crítica' : a.severidad === 'advertencia' ? 'Atención' : 'Info'}
-                          tono={a.severidad === 'critica' ? 'critico' : a.severidad === 'advertencia' ? 'atencion' : 'info'}
+                          texto={nombreEntidad(a.entidad as string)}
+                          tono="neutro"
                         />
-                      </td>
-                      <td><strong style={{ fontWeight: 600 }}>{a.titulo as string}</strong></td>
-                      <td style={{ fontSize: '.8rem', color: 'var(--tinta-2)', maxWidth: '38rem' }}>{a.mensaje as string}</td>
-                      <td style={{ fontSize: '.76rem', color: 'var(--tinta-3)' }}>{a.entidad as string}</td>
-                      <td className="num" title={fechaHora(a.generada_en as string)}>{haceTiempo(a.generada_en as string)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </span>
+                      <span className="alerta-mensaje">{a.mensaje as string}</span>
+                      <time
+                        className="alerta-tiempo"
+                        dateTime={String(a.generada_en)}
+                        title={fechaHora(a.generada_en as string)}
+                      >
+                        {haceTiempo(a.generada_en as string)}
+                      </time>
+                    </span>
+                    {destino && (
+                      <span className="alerta-ir">
+                        Ver detalle
+                        <Icono nombre="expandir" tamano={14} />
+                      </span>
+                    )}
+                  </>
+                );
+
+                return (
+                  <li key={a.id as number}>
+                    {destino ? (
+                      <Link href={destino} className="alerta-fila">{contenido}</Link>
+                    ) : (
+                      <div className="alerta-fila" data-sinenlace="si">{contenido}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
             <Paginacion pagina={pagina} porPagina={POR_PAGINA} total={count ?? 0} />
           </>
         )}
       </Panel>
+
+      <p className="pie-explicativo">
+        Cada alerta nace de una regla configurable. Si alguna resulta ruidosa o falta otra, se
+        activa, desactiva o ajusta desde{' '}
+        <Link href="/configuracion?t=reglas">Configuración → Motor de reglas</Link>, sin tocar código.
+      </p>
     </>
   );
 }

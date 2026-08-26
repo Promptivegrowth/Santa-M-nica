@@ -27,6 +27,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { num, fecha, fechaHora, tm } from '@/lib/formato';
 
 export const metadata: Metadata = { title: 'Traslados' };
@@ -103,6 +104,7 @@ export default async function PaginaTraslados(props: PageProps<'/almacenes/trasl
                 <tr>
                   <th>Traslado</th><th>Recorrido</th><th>Guía</th><th>Estado</th>
                   <th>Autorizado</th><th>Despachado</th><th>Aceptado</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -112,7 +114,11 @@ export default async function PaginaTraslados(props: PageProps<'/almacenes/trasl
                   const dst = Array.isArray(t.destino) ? t.destino[0] : t.destino;
                   return (
                     <tr key={t.id as number}>
-                      <td className="mono">{t.numero as string}</td>
+                      <td className="mono">
+                        <Link href={`/almacenes/traslados/${t.id}`} className="enlace-ficha">
+                          {t.numero as string}
+                        </Link>
+                      </td>
                       <td style={{ fontSize: '.8rem' }}>
                         {org?.nombre ?? '—'} <span style={{ color: 'var(--tinta-3)' }}>→</span> {dst?.nombre ?? '—'}
                       </td>
@@ -129,6 +135,12 @@ export default async function PaginaTraslados(props: PageProps<'/almacenes/trasl
                       <td className="mono" style={{ fontSize: '.72rem' }}>{t.autorizado_en ? fechaHora(t.autorizado_en as string) : '—'}</td>
                       <td className="mono" style={{ fontSize: '.72rem' }}>{t.despachado_en ? fechaHora(t.despachado_en as string) : '—'}</td>
                       <td className="mono" style={{ fontSize: '.72rem' }}>{t.aceptado_en ? fechaHora(t.aceptado_en as string) : '—'}</td>
+                      <td>
+                        <AccionesLista
+                          ver={`/almacenes/traslados/${t.id}`}
+                          verTitulo={`Ver el traslado ${t.numero}`}
+                        />
+                      </td>
                     </tr>
                   );
                 })}

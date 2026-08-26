@@ -18,6 +18,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { GraficoBarras } from '@/components/graficos/Graficos';
 import { tm, num, fecha, dinero } from '@/lib/formato';
@@ -144,17 +145,15 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
                     <th className="num">Disponible</th>
                     {puedeVerCostos && <th className="num">Valor</th>}
                     <th>Situación</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(filas ?? []).map((f) => (
                     <tr key={`${f.lote_id}-${f.almacen_id}`}>
                       <td>
-                        <Link
-                          href={`/trazabilidad?q=${encodeURIComponent(f.codigo_pallet as string)}`}
-                          className="enlace-dato"
-                        >
-                          {f.codigo_pallet}
+                        <Link href={`/almacenes/lotes/${f.lote_id}`} className="enlace-ficha">
+                          {f.codigo_pallet as string}
                         </Link>
                       </td>
                       <td>
@@ -177,6 +176,12 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
                         ) : (
                           <Etiqueta texto="Normal" tono="ok" />
                         )}
+                      </td>
+                      <td>
+                        <AccionesLista
+                          ver={`/almacenes/lotes/${f.lote_id}`}
+                          verTitulo={`Ver el lote ${f.codigo_pallet}`}
+                        />
                       </td>
                     </tr>
                   ))}

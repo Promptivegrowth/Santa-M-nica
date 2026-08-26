@@ -8,9 +8,11 @@
  *  Por eso el eje principal de esta pantalla es la ANTIGÜEDAD del saldo.
  * ============================================================================
  */
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { GraficoBarras } from '@/components/graficos/Graficos';
 import { num, fecha, dinero } from '@/lib/formato';
 
@@ -74,6 +76,7 @@ export default async function PaginaCobrar() {
                   <th className="num">Vencimiento</th><th className="num">Días</th>
                   <th className="num">Total</th><th className="num">Cobrado</th><th className="num">Saldo</th>
                   <th>Antigüedad</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -81,7 +84,11 @@ export default async function PaginaCobrar() {
                   const dias = Number(f.dias_vencida ?? 0);
                   return (
                     <tr key={f.id as number}>
-                      <td className="mono">{f.numero as string}</td>
+                      <td className="mono">
+                        <Link href={`/finanzas/facturas/${f.id}`} className="enlace-ficha">
+                          {f.numero as string}
+                        </Link>
+                      </td>
                       <td title={f.cliente as string}>
                         {String(f.cliente).length > 28 ? String(f.cliente).slice(0, 27) + '…' : String(f.cliente)}
                       </td>
@@ -100,6 +107,21 @@ export default async function PaginaCobrar() {
                             f.tramo_antiguedad === 'Vigente' ? 'ok'
                             : f.tramo_antiguedad === 'Más de 90 días' ? 'critico'
                             : 'atencion'
+                          }
+                        />
+                      </td>
+                      <td>
+                        <AccionesLista
+                          ver={`/finanzas/facturas/${f.id}`}
+                          verTitulo={`Ver la factura ${f.numero}`}
+                          extras={
+                            f.cliente_id
+                              ? [{
+                                  href: `/ventas/clientes/${f.cliente_id}`,
+                                  icono: 'clientes',
+                                  titulo: 'Ver la ficha del cliente',
+                                }]
+                              : []
                           }
                         />
                       </td>

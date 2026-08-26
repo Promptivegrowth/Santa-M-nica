@@ -13,9 +13,11 @@
  *  disparador que rechaza cualquier intento de UPDATE o DELETE.
  * ============================================================================
  */
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { tm, num, fechaHora, etiquetaEstado } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
@@ -109,6 +111,7 @@ export default async function PaginaKardex(props: PageProps<'/almacenes/kardex'>
                     {puedeVerCostos && <th className="num">Valor</th>}
                     <th>Documento</th>
                     <th>Registró</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -121,7 +124,11 @@ export default async function PaginaKardex(props: PageProps<'/almacenes/kardex'>
                       <tr key={f.id as number}>
                         <td className="mono" style={{ whiteSpace: 'nowrap' }}>{fechaHora(f.fecha as string)}</td>
                         <td><Etiqueta texto={t.texto} tono={t.tono} /></td>
-                        <td className="mono">{f.codigo_pallet}</td>
+                        <td className="mono">
+                          <Link href={`/almacenes/lotes/${f.lote_id}`} className="enlace-ficha">
+                            {f.codigo_pallet as string}
+                          </Link>
+                        </td>
                         <td>
                           <span className="mono" style={{ color: 'var(--tinta-3)' }}>{f.sku_codigo}</span>{' '}
                           {f.formato} · {f.corte}
@@ -137,6 +144,14 @@ export default async function PaginaKardex(props: PageProps<'/almacenes/kardex'>
                         <td className="mono">{(f.documento_ref as string) ?? '—'}</td>
                         <td style={{ fontSize: '.76rem', color: 'var(--tinta-3)' }}>
                           {(f.usuario as string) ?? '—'}
+                        </td>
+                        <td>
+                          {/* Un movimiento del Kardex no se abre ni se edita:
+                              es inmutable. Lo que se consulta es el lote. */}
+                          <AccionesLista
+                            ver={`/almacenes/lotes/${f.lote_id}`}
+                            verTitulo={`Ver el lote ${f.codigo_pallet}`}
+                          />
                         </td>
                       </tr>
                     );

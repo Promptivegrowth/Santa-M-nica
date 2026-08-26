@@ -13,6 +13,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio } from '@/components/ui/Pagina';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { num, fechaHora } from '@/lib/formato';
 
 export const metadata: Metadata = { title: 'Despachos' };
@@ -40,7 +41,7 @@ export default async function PaginaDespachos() {
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
             <table className="datos">
               <thead>
-                <tr><th>Despacho</th><th>Packing</th><th>Contenedor</th><th>Guía</th><th>Almacén</th><th>Encargado</th><th className="num">Salida</th></tr>
+                <tr><th>Despacho</th><th>Packing</th><th>Contenedor</th><th>Guía</th><th>Almacén</th><th>Encargado</th><th className="num">Salida</th><th>Acciones</th></tr>
               </thead>
               <tbody>
                 {(filas ?? []).map((d) => {
@@ -52,7 +53,7 @@ export default async function PaginaDespachos() {
                       <td className="mono">{d.numero as string}</td>
                       <td>
                         {pk ? (
-                          <Link href={`/logistica/packing/${pk.id}`} className="enlace-dato">{pk.codigo as string}</Link>
+                          <Link href={`/logistica/packing/${pk.id}`} className="enlace-ficha">{pk.codigo as string}</Link>
                         ) : '—'}
                       </td>
                       <td className="mono">{pk?.contenedor ?? '—'}</td>
@@ -60,6 +61,14 @@ export default async function PaginaDespachos() {
                       <td>{alm?.nombre ?? '—'}</td>
                       <td style={{ fontSize: '.78rem', color: 'var(--tinta-3)' }}>{usr?.nombre ?? '—'}</td>
                       <td className="num">{fechaHora(d.fecha_salida as string)}</td>
+                      <td>
+                        {/* El despacho se documenta en su packing list: ahí está
+                            el contenedor, el plano de estiba y los lotes. */}
+                        <AccionesLista
+                          ver={pk ? `/logistica/packing/${pk.id}` : null}
+                          verTitulo="Ver el packing list del despacho"
+                        />
+                      </td>
                     </tr>
                   );
                 })}

@@ -39,6 +39,8 @@ const TRAZOS: Record<string, React.ReactNode> = {
   /* ─────────── ALMACENES ─────────── */
   // Existencias: cajas apiladas
   existencias: <><rect x="3" y="12.5" width="8" height="8" rx="1" /><rect x="13" y="12.5" width="8" height="8" rx="1" /><rect x="8" y="3.5" width="8" height="8" rx="1" /></>,
+  // Reservas: caja con candado — producto que está, pero está apartado
+  reservas: <><rect x="3" y="10.5" width="18" height="10.5" rx="1.4" /><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 9 0v3" /><circle cx="12" cy="15.5" r="1.3" /><path d="M12 16.8v1.7" /></>,
   // Kardex: libro abierto
   kardex: <><path d="M12 6.5C10.5 5 8 4.2 4 4.2v13c4 0 6.5.8 8 2.3 1.5-1.5 4-2.3 8-2.3v-13c-4 0-6.5.8-8 2.3z" /><path d="M12 6.5v13" /></>,
   // Ingresos: flecha entrando a una bandeja

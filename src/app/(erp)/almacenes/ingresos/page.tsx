@@ -30,6 +30,7 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
       />
       <Listado
         vista="v_kardex"
+        ficha={{ base: '/almacenes/lotes', clave: 'lote_id', titulo: 'Ver el lote que ingresó' }}
         parametros={q as Record<string, string | undefined>}
         orden="fecha"
         titulo="Ingresos registrados"

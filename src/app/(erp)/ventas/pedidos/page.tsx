@@ -22,6 +22,7 @@ import { CabeceraPagina, Panel, Vacio, Etiqueta, Semaforo, Barra } from '@/compo
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { tm, num, fecha, dinero, etiquetaEstado } from '@/lib/formato';
 import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { Icono } from '@/components/estructura/Icono';
 
 export const metadata: Metadata = { title: 'Pedidos' };
@@ -169,6 +170,7 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                     {puedeVerCostos && <th className="num">Venta</th>}
                     <th className="num">Compromiso</th>
                     <th>Prioridad</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -226,6 +228,21 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                               p.prioridad === 'urgente' ? 'critico'
                               : p.prioridad === 'alta' ? 'atencion'
                               : 'neutro'
+                            }
+                          />
+                        </td>
+                        <td>
+                          <AccionesLista
+                            ver={`/ventas/pedidos/${p.id}`}
+                            verTitulo={`Ver el pedido ${p.numero_proforma}`}
+                            extras={
+                              p.cliente_id
+                                ? [{
+                                    href: `/ventas/clientes/${p.cliente_id}`,
+                                    icono: 'clientes',
+                                    titulo: 'Ver la ficha del cliente',
+                                  }]
+                                : []
                             }
                           />
                         </td>

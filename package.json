@@ -11,7 +11,8 @@
     "seed": "node scripts/seed.mjs",
     "test": "node scripts/pruebas.mjs",
     "test:excel": "node scripts/probar-excel.mjs",
-    "test:pantallas": "node scripts/probar-pantallas.mjs"
+    "test:pantallas": "node scripts/probar-pantallas.mjs",
+    "test:reservas": "node scripts/probar-reservas.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

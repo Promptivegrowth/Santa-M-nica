@@ -80,6 +80,18 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
         )}
       </CabeceraPagina>
 
+      {/* Confirmación de un borrado que se hizo desde la ficha: al volver al
+          listado el usuario necesita saber que la acción se completó. */}
+      {q.borrada && (
+        <div className="ficha-aviso ficha-aviso-ok">
+          <Icono nombre="papelera" tamano={17} />
+          <span>
+            La cotización <strong>{q.borrada as string}</strong> fue eliminada. La acción quedó
+            registrada en la auditoría del sistema.
+          </span>
+        </div>
+      )}
+
       <RejillaKpi>
         <Kpi etiqueta="Total emitidas" valor={num((todas ?? []).length)} />
         <Kpi etiqueta="En borrador" valor={num(cuenta('borrador'))} nota="Aún sin enviar al cliente" />
@@ -125,7 +137,7 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
                     {puedeVerImportes && <th className="num">Valor</th>}
                     <th>Incoterm</th>
                     <th>Estado</th>
-                    {puedeCrear && <th>Acción</th>}
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -141,7 +153,13 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
                     );
                     return (
                       <tr key={c.id as number}>
-                        <td className="mono"><strong>{c.numero as string}</strong></td>
+                        <td className="mono">
+                          {/* El número es el enlace natural a la ficha: es lo
+                              primero que el ojo busca en la fila. */}
+                          <Link href={`/ventas/cotizaciones/${c.id}`} className="enlace-ficha">
+                            <strong>{c.numero as string}</strong>
+                          </Link>
+                        </td>
                         <td>{campo(c.clientes, 'razon_social')}</td>
                         <td style={{ fontSize: '.78rem' }}>{campo(c.destinos, 'puerto')}</td>
                         <td className="num">{fecha(c.fecha as string)}</td>
@@ -157,16 +175,15 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
                             tono={TONO[c.estado as string] ?? 'neutro'}
                           />
                         </td>
-                        {puedeCrear && (
-                          <td>
-                            <AccionesFila
-                              cotizacionId={c.id as number}
-                              numero={c.numero as string}
-                              estado={c.estado as string}
-                              yaConvertida={yaConvertidas.has(c.id as number)}
-                            />
-                          </td>
-                        )}
+                        <td>
+                          <AccionesFila
+                            cotizacionId={c.id as number}
+                            numero={c.numero as string}
+                            estado={c.estado as string}
+                            yaConvertida={yaConvertidas.has(c.id as number)}
+                            puedeOperar={puedeCrear}
+                          />
+                        </td>
                       </tr>
                     );
                   })}

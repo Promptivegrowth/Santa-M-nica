@@ -45,6 +45,7 @@ export default async function PaginaFacturas(props: PageProps<'/finanzas/factura
 
       <Listado
         vista="v_cuentas_cobrar"
+        ficha={{ base: '/finanzas/facturas', titulo: 'Ver la factura' }}
         parametros={q as Record<string, string | undefined>}
         orden="fecha_emision"
         titulo="Documentos emitidos"

@@ -21,6 +21,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { GraficoBarras } from '@/components/graficos/Graficos';
 import { num, tm, fechaHora, etiquetaEstado } from '@/lib/formato';
 
@@ -94,7 +95,7 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
             <table className="datos">
               <thead>
-                <tr><th>Estado</th><th>Lote</th><th>Tipo de evaluación</th><th>Motivo</th><th>Sustento</th><th>Emitió</th><th className="num">Fecha</th></tr>
+                <tr><th>Estado</th><th>Lote</th><th>Tipo de evaluación</th><th>Motivo</th><th>Sustento</th><th>Emitió</th><th className="num">Fecha</th><th>Acciones</th></tr>
               </thead>
               <tbody>
                 {(filas ?? []).map((d) => {
@@ -105,7 +106,7 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
                       <td><Etiqueta texto={etiquetaEstado(d.estado as string)} tono={TONO[d.estado as string] ?? 'neutro'} /></td>
                       <td className="mono">
                         {lote ? (
-                          <Link href={`/trazabilidad?q=${encodeURIComponent(String(lote.codigo_pallet))}`} className="enlace-dato">
+                          <Link href={`/almacenes/lotes/${lote.id}`} className="enlace-ficha">
                             {String(lote.codigo_pallet)}
                           </Link>
                         ) : '—'}
@@ -119,6 +120,14 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
                       </td>
                       <td style={{ fontSize: '.78rem', color: 'var(--tinta-3)' }}>{usr?.nombre ?? '—'}</td>
                       <td className="num" style={{ fontSize: '.72rem' }}>{fechaHora(d.emitido_en as string)}</td>
+                      <td>
+                        {/* El dictamen no tiene ficha propia: lo que hace falta
+                            revisar es el LOTE al que se le puso la observación. */}
+                        <AccionesLista
+                          ver={lote ? `/almacenes/lotes/${lote.id}` : null}
+                          verTitulo="Ver el lote dictaminado"
+                        />
+                      </td>
                     </tr>
                   );
                 })}

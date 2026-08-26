@@ -14,6 +14,7 @@
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { Panel, Vacio } from './Pagina';
 import { Filtros, Paginacion, type CampoFiltro } from './Filtros';
+import { AccionesLista } from './Acciones';
 import { num } from '@/lib/formato';
 
 export type Columna = {
@@ -48,6 +49,7 @@ export async function Listado({
   titulo,
   vacio,
   fijos,
+  ficha,
 }: {
   /** Nombre de la tabla o vista de la base de datos. */
   vista: string;
@@ -62,6 +64,20 @@ export async function Listado({
   vacio?: { titulo: string; mensaje: string };
   /** Condiciones fijas que siempre se aplican (por ejemplo, solo activos). */
   fijos?: { columna: string; valor: string | number | boolean; operador?: 'igual' | 'mayor' | 'en' }[];
+  /**
+   * A dónde lleva cada fila. Si se indica, el listado añade por su cuenta una
+   * última columna con el botón de «ver detalle», igual en todas las pantallas.
+   *
+   *   base   ruta de la ficha, sin el identificador. Ej. '/ventas/clientes'
+   *   clave  columna de la que sale ese identificador. Por defecto 'id', que
+   *          es lo habitual; algunas VISTAS lo exponen con otro nombre
+   *          (v_anticuamiento lo llama 'lote_id', por ejemplo).
+   *   titulo texto de ayuda del botón.
+   *
+   * Se declara en vez de pasarse una función porque así la pantalla no puede
+   * equivocarse construyendo la URL a mano, que es donde salen los 404.
+   */
+  ficha?: { base: string; clave?: string; titulo?: string };
 }) {
   const supabase = await crearClienteServidor();
   const pagina = Math.max(1, Number(parametros.pagina ?? 1));
@@ -129,6 +145,7 @@ export async function Listado({
                   {columnas.map((c) => (
                     <th key={c.clave} className={c.numerica ? 'num' : undefined}>{c.titulo}</th>
                   ))}
+                  {ficha && <th>Acciones</th>}
                 </tr>
               </thead>
               <tbody>
@@ -144,6 +161,20 @@ export async function Listado({
                           : ((fila as Record<string, unknown>)[c.clave] as React.ReactNode) ?? '—'}
                       </td>
                     ))}
+                    {ficha && (
+                      <td>
+                        <AccionesLista
+                          ver={
+                            // Sin identificador no hay ficha que abrir: el botón
+                            // se dibuja apagado en vez de llevar a un 404.
+                            (fila as Record<string, unknown>)[ficha.clave ?? 'id'] != null
+                              ? `${ficha.base}/${(fila as Record<string, unknown>)[ficha.clave ?? 'id']}`
+                              : null
+                          }
+                          verTitulo={ficha.titulo ?? 'Ver detalle'}
+                        />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

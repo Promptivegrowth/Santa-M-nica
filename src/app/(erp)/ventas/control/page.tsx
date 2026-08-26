@@ -14,6 +14,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta, Semaforo, Barra } from '@/components/ui/Pagina';
+import { AccionesLista } from '@/components/ui/Acciones';
 import { num, fecha, dinero } from '@/lib/formato';
 
 export const metadata: Metadata = { title: 'Control de pedidos' };
@@ -98,6 +99,7 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                   <th>Estado</th><th>Proforma</th><th>Cliente</th>
                   <th className="num">Pedido</th><th className="num">Avance</th><th className="num">Falta</th>
                   <th className="num">Venta</th><th className="num">Compromiso</th><th>Prioridad</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -123,6 +125,12 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                       <Etiqueta
                         texto={p.prioridad as string}
                         tono={p.prioridad === 'urgente' ? 'critico' : p.prioridad === 'alta' ? 'atencion' : 'neutro'}
+                      />
+                    </td>
+                    <td>
+                      <AccionesLista
+                        ver={`/ventas/pedidos/${p.id}`}
+                        verTitulo={`Ver el pedido ${p.numero_proforma}`}
                       />
                     </td>
                   </tr>

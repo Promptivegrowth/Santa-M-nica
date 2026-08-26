@@ -30,6 +30,7 @@ export default async function PaginaEmbarques(props: PageProps<'/logistica/embar
       />
       <Listado
         vista="embarques"
+        ficha={{ base: '/logistica/embarques', titulo: 'Ver el embarque' }}
         parametros={q as Record<string, string | undefined>}
         orden="fecha_programada"
         titulo="Embarques programados"

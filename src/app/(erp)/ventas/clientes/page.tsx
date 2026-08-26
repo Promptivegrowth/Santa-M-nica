@@ -39,6 +39,7 @@ export default async function PaginaClientes(props: PageProps<'/ventas/clientes'
 
       <Listado
         vista="clientes"
+        ficha={{ base: '/ventas/clientes', titulo: 'Ver la ficha del cliente' }}
         parametros={q as Record<string, string | undefined>}
         orden="razon_social"
         ascendente
