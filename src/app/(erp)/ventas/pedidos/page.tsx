@@ -21,7 +21,8 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Panel, Vacio, Etiqueta, Semaforo, Barra } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { tm, num, fecha, dinero, etiquetaEstado } from '@/lib/formato';
-import { veCostos, type Rol } from '@/lib/navegacion';
+import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
+import { Icono } from '@/components/estructura/Icono';
 
 export const metadata: Metadata = { title: 'Pedidos' };
 export const dynamic = 'force-dynamic';
@@ -51,7 +52,9 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
   const q = await props.searchParams;
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
-  const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
+  const rol = (usuario?.rol ?? 'consulta') as Rol;
+  const puedeVerCostos = veCostos(rol);
+  const puedeCrear = puedeVender(rol);
 
   const pagina = Math.max(1, Number(q.pagina ?? 1));
   const vista = (q.vista as string) ?? '';
@@ -59,6 +62,7 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
   const prioridad = (q.prioridad as string) ?? '';
 
   let consulta = supabase.from('v_pedidos_tablero').select('*', { count: 'exact' });
+
 
   /* ---- Vistas guardadas ---- */
   const hoy = new Date().toISOString().slice(0, 10);
@@ -81,9 +85,16 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
   }
   if (prioridad) consulta = consulta.eq('prioridad', prioridad);
 
-  const { data: filas, count } = await consulta
-    .order('fecha_solicitada', { ascending: false })
-    .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
+  const [{ data: filas, count }, { data: conCotizacion }] = await Promise.all([
+    consulta
+      .order('fecha_solicitada', { ascending: false })
+      .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
+    // Qué pedidos nacieron de una oferta previa. La columna cotizacion_id es
+    // lo único que distingue un camino del otro.
+    supabase.from('pedidos').select('id').not('cotizacion_id', 'is', null),
+  ]);
+
+  const origenes = new Set((conCotizacion ?? []).map((p) => Number(p.id)));
 
   /** Conserva los filtros al cambiar de vista. */
   function urlVista(clave: string) {
@@ -100,7 +111,14 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
       <CabeceraPagina
         titulo="Pedidos"
         descripcion="El COMPROMISO en firme. Cada pedido tiene su número de proforma (SM26-…), que es como Santa Mónica lo identifica en toda la operación. El color resume si está cubierto, en riesgo o bloqueado."
-      />
+      >
+        {puedeCrear && (
+          <Link href="/ventas/pedidos/nuevo" className="btn btn-primario">
+            <Icono nombre="mas" tamano={15} />
+            Nuevo pedido
+          </Link>
+        )}
+      </CabeceraPagina>
 
       {/* --- Vistas guardadas --- */}
       <nav className="pestanas no-imprimir" aria-label="Vistas de pedidos">
@@ -142,6 +160,7 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                   <tr>
                     <th>Estado</th>
                     <th>Proforma</th>
+                    <th>Origen</th>
                     <th>Cliente</th>
                     <th>Destino</th>
                     <th className="num">Pedido</th>
@@ -162,6 +181,13 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                           <Link href={`/ventas/pedidos/${p.id}`} className="enlace-dato">
                             {p.numero_proforma}
                           </Link>
+                        </td>
+                        <td>
+                          {/* De dónde vino: de una oferta negociada o directo del cliente */}
+                          <Etiqueta
+                            texto={origenes.has(p.id as number) ? 'Cotizado' : 'Directo'}
+                            tono={origenes.has(p.id as number) ? 'info' : 'neutro'}
+                          />
                         </td>
                         <td title={p.cliente as string}>
                           {(p.cliente as string).length > 28

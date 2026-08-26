@@ -37,6 +37,7 @@ const PANTALLAS = [
   ['/ventas/clientes',           'Clientes'],
   ['/ventas/cotizaciones',       'Cotizaciones'],
   ['/ventas/cotizaciones/nueva', 'Nueva cotización'],
+  ['/ventas/pedidos/nuevo',      'Nuevo pedido'],
   ['/ventas/pedidos',            'Pedidos'],
   ['/ventas/disponibilidad',     'Disponibilidad'],
   ['/ventas/control',            'Control de pedidos'],

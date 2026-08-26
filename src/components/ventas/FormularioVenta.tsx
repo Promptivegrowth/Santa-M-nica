@@ -2,31 +2,41 @@
 
 /**
  * ============================================================================
- *  FORMULARIO DE NUEVA COTIZACIÓN
+ *  FORMULARIO DE VENTA · sirve para cotización y para pedido directo
  * ============================================================================
- *  Es la pantalla más interactiva del sistema, así que se cuidaron tres cosas:
+ *  Es el mismo formulario en los dos casos —cliente, productos, precio,
+ *  descuento, totales— así que se define UNA vez y se le dice en qué modo
+ *  trabaja. Lo único que cambia son tres campos:
  *
- *  1. QUE NO HAYA QUE ADIVINAR NADA
- *     Al elegir un producto, el sistema consulta solo el precio que le
- *     corresponde a ese cliente por ese volumen, y muestra cuánto hay
- *     disponible. El vendedor no tiene que llamar al almacén.
+ *    COTIZACIÓN          PEDIDO DIRECTO
+ *    validez en días     orden de compra del cliente
+ *                        prioridad
+ *                        fechas de solicitud y compromiso
  *
- *  2. QUE AVISE ANTES DE EQUIVOCARSE
- *     Si la cantidad supera lo disponible, la línea se marca en ámbar al
- *     instante. No se bloquea —a veces se cotiza producción futura— pero
- *     queda advertido.
+ *  ¿Por qué existen los dos caminos?
+ *  Porque en Santa Mónica unos clientes negocian el precio antes de pedir y
+ *  otros piden directo. Obligar a inventarse una cotización para el segundo
+ *  caso ensuciaría el indicador de conversión, que es justo lo que se quiere
+ *  medir.
  *
- *  3. QUE LOS TOTALES SE VEAN SIEMPRE
- *     La barra inferior queda fija con el total, el IGV y las toneladas,
- *     actualizándose con cada tecla.
+ *  Tres cosas que se cuidaron en la experiencia:
+ *   1. QUE NO HAYA QUE ADIVINAR NADA. Al elegir un producto, el sistema
+ *      consulta solo el precio que le toca a ese cliente por ese volumen y
+ *      muestra cuánto hay disponible.
+ *   2. QUE AVISE ANTES DE EQUIVOCARSE. Si la cantidad supera lo disponible,
+ *      la línea se marca en ámbar al instante.
+ *   3. QUE LOS TOTALES SE VEAN SIEMPRE. La barra inferior queda fija.
  * ============================================================================
  */
 import { useState, useTransition, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { crearCotizacion, consultarPrecio, type LineaCotizacion } from '../acciones';
+import { crearCotizacion, consultarPrecio } from '@/app/(erp)/ventas/cotizaciones/acciones';
+import { crearPedidoDirecto } from '@/app/(erp)/ventas/pedidos/acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, tm } from '@/lib/formato';
+
+export type Modo = 'cotizacion' | 'pedido';
 
 type Unidad = {
   id: number;
@@ -41,15 +51,24 @@ type Unidad = {
 type Opcion = { id: number; nombre: string; extra?: string };
 
 /** Una línea en pantalla: lo que se guarda más lo que ayuda a decidir. */
-type LineaUI = LineaCotizacion & {
+type LineaUI = {
   clave: string;
+  sku_presentacion_id: number;
+  cantidad_tm: number;
+  precio_lista_tm: number;
+  precio_tm: number;
+  descuento_pct: number;
   disponible_kg: number;
   consultando: boolean;
 };
 
 const nuevaClave = () => Math.random().toString(36).slice(2, 9);
+const hoyISO = () => new Date().toISOString().slice(0, 10);
+const enDiasISO = (dias: number) =>
+  new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10);
 
-export function FormularioCotizacion({
+export function FormularioVenta({
+  modo,
   clientes,
   vendedores,
   destinos,
@@ -61,6 +80,7 @@ export function FormularioCotizacion({
   topeDescuento,
   puedeAutorizarDescuento,
 }: {
+  modo: Modo;
   clientes: (Opcion & { pais: string; moneda: string; bloqueado: boolean })[];
   vendedores: Opcion[];
   destinos: (Opcion & { pais: string })[];
@@ -74,8 +94,9 @@ export function FormularioCotizacion({
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
+  const esPedido = modo === 'pedido';
 
-  /* ---- Cabecera ---- */
+  /* ---- Cabecera común ---- */
   const [clienteId, setClienteId] = useState<number | ''>('');
   const [vendedorId, setVendedorId] = useState<number | ''>('');
   const [destinoId, setDestinoId] = useState<number | ''>('');
@@ -83,8 +104,16 @@ export function FormularioCotizacion({
   const [moneda, setMoneda] = useState<'USD' | 'PEN'>('USD');
   const [tipoCambio, setTipoCambio] = useState(tipoCambioDefecto);
   const [incoterm, setIncoterm] = useState<'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP'>('FOB');
-  const [validez, setValidez] = useState(validezDefecto);
   const [observaciones, setObservaciones] = useState('');
+
+  /* ---- Solo cotización ---- */
+  const [validez, setValidez] = useState(validezDefecto);
+
+  /* ---- Solo pedido ---- */
+  const [ocCliente, setOcCliente] = useState('');
+  const [prioridad, setPrioridad] = useState<'baja' | 'normal' | 'alta' | 'urgente'>('normal');
+  const [fechaSolicitada, setFechaSolicitada] = useState(hoyISO());
+  const [fechaComprometida, setFechaComprometida] = useState(enDiasISO(21));
 
   /* ---- Líneas ---- */
   const [lineas, setLineas] = useState<LineaUI[]>([]);
@@ -93,7 +122,7 @@ export function FormularioCotizacion({
 
   const cliente = clientes.find((c) => c.id === clienteId);
 
-  /* ---- Buscador de productos ---- */
+  /* ---- Buscador de productos: filtra en el navegador, sin esperas ---- */
   const resultados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     if (q.length < 2) return [];
@@ -122,7 +151,7 @@ export function FormularioCotizacion({
       return;
     }
     if (lineas.some((l) => l.sku_presentacion_id === u.id)) {
-      setMensaje({ ok: false, texto: 'Ese producto ya está en la cotización. Modifique su cantidad.' });
+      setMensaje({ ok: false, texto: 'Ese producto ya está en la lista. Modifique su cantidad.' });
       return;
     }
 
@@ -164,7 +193,7 @@ export function FormularioCotizacion({
     setLineas((ls) => ls.filter((l) => l.clave !== clave));
   }
 
-  /** Al cambiar la cantidad puede cambiar el tramo de precio. */
+  /** Al cambiar la cantidad puede cambiar el tramo de la escala de precio. */
   async function recalcularPrecio(clave: string, cantidad: number) {
     const linea = lineas.find((l) => l.clave === clave);
     if (!linea || !clienteId) return;
@@ -189,7 +218,7 @@ export function FormularioCotizacion({
     setMensaje(null);
 
     if (!clienteId) {
-      setMensaje({ ok: false, texto: 'Elija el cliente al que va dirigida la cotización.' });
+      setMensaje({ ok: false, texto: 'Elija el cliente.' });
       return;
     }
     if (!lineas.length) {
@@ -201,35 +230,66 @@ export function FormularioCotizacion({
       setMensaje({ ok: false, texto: `La cantidad de la línea ${sinCantidad + 1} debe ser mayor que cero.` });
       return;
     }
+    if (esPedido && fechaComprometida < fechaSolicitada) {
+      setMensaje({ ok: false, texto: 'La fecha comprometida no puede ser anterior a la de solicitud.' });
+      return;
+    }
+
+    const lineasLimpias = lineas.map(({ clave, disponible_kg, consultando, ...l }) => l);
 
     iniciar(async () => {
-      const r = await crearCotizacion({
-        cliente_id: Number(clienteId),
-        vendedor_id: vendedorId ? Number(vendedorId) : null,
-        destino_id: destinoId ? Number(destinoId) : null,
-        lista_id: listaId ? Number(listaId) : null,
-        moneda,
-        tipo_cambio: tipoCambio,
-        incoterm,
-        validez_dias: validez,
-        observaciones: observaciones.trim() || null,
-        lineas: lineas.map(({ clave, disponible_kg, consultando, ...l }) => l),
-      });
+      const r = esPedido
+        ? await crearPedidoDirecto({
+            cliente_id: Number(clienteId),
+            vendedor_id: vendedorId ? Number(vendedorId) : null,
+            destino_id: destinoId ? Number(destinoId) : null,
+            moneda,
+            tipo_cambio: tipoCambio,
+            incoterm,
+            oc_cliente: ocCliente.trim() || null,
+            prioridad,
+            fecha_solicitada: fechaSolicitada,
+            fecha_comprometida: fechaComprometida,
+            observaciones: observaciones.trim() || null,
+            lineas: lineasLimpias,
+          })
+        : await crearCotizacion({
+            cliente_id: Number(clienteId),
+            vendedor_id: vendedorId ? Number(vendedorId) : null,
+            destino_id: destinoId ? Number(destinoId) : null,
+            lista_id: listaId ? Number(listaId) : null,
+            moneda,
+            tipo_cambio: tipoCambio,
+            incoterm,
+            validez_dias: validez,
+            observaciones: observaciones.trim() || null,
+            lineas: lineasLimpias,
+          });
 
       if (r.ok) {
         setMensaje({ ok: true, texto: r.mensaje });
-        setTimeout(() => router.push('/ventas/cotizaciones'), 900);
+        setTimeout(
+          () => router.push(esPedido ? `/ventas/pedidos/${r.id}` : '/ventas/cotizaciones'),
+          900
+        );
       } else {
         setMensaje({ ok: false, texto: r.mensaje });
       }
     });
   }
 
+  const rutaVolver = esPedido ? '/ventas/pedidos' : '/ventas/cotizaciones';
+  const textoGuardar = esPedido ? 'Registrar pedido' : 'Guardar cotización';
+
   return (
-    <div className="form-cot">
+    <div className="form-venta">
       {/* ══════ CABECERA ══════ */}
       <section className="panel mb-espacio">
-        <div className="panel-cabecera"><span className="panel-titulo">Datos de la cotización</span></div>
+        <div className="panel-cabecera">
+          <span className="panel-titulo">
+            {esPedido ? 'Datos del pedido' : 'Datos de la cotización'}
+          </span>
+        </div>
         <div className="form-rejilla">
           <label className="form-campo form-ancho">
             <span className="etiqueta">Cliente *</span>
@@ -247,7 +307,10 @@ export function FormularioCotizacion({
                 // Los precios dependen del cliente: hay que rehacerlos
                 if (lineas.length) {
                   setLineas([]);
-                  setMensaje({ ok: false, texto: 'Se limpiaron las líneas: los precios dependen del cliente.' });
+                  setMensaje({
+                    ok: false,
+                    texto: 'Se limpiaron las líneas: los precios dependen del cliente.',
+                  });
                 }
               }}
             >
@@ -265,7 +328,11 @@ export function FormularioCotizacion({
 
           <label className="form-campo">
             <span className="etiqueta">Vendedor</span>
-            <select className="campo" value={vendedorId} onChange={(e) => setVendedorId(e.target.value ? Number(e.target.value) : '')}>
+            <select
+              className="campo"
+              value={vendedorId}
+              onChange={(e) => setVendedorId(e.target.value ? Number(e.target.value) : '')}
+            >
               <option value="">Venta directa</option>
               {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
             </select>
@@ -273,18 +340,40 @@ export function FormularioCotizacion({
 
           <label className="form-campo">
             <span className="etiqueta">Destino</span>
-            <select className="campo" value={destinoId} onChange={(e) => setDestinoId(e.target.value ? Number(e.target.value) : '')}>
+            <select
+              className="campo"
+              value={destinoId}
+              onChange={(e) => setDestinoId(e.target.value ? Number(e.target.value) : '')}
+            >
               <option value="">Sin definir</option>
               {destinos.map((d) => <option key={d.id} value={d.id}>{d.nombre} · {d.pais}</option>)}
             </select>
           </label>
 
-          <label className="form-campo">
-            <span className="etiqueta">Lista de precio</span>
-            <select className="campo" value={listaId} onChange={(e) => setListaId(e.target.value ? Number(e.target.value) : '')}>
-              {listas.map((l) => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-            </select>
-          </label>
+          {!esPedido && (
+            <label className="form-campo">
+              <span className="etiqueta">Lista de precio</span>
+              <select
+                className="campo"
+                value={listaId}
+                onChange={(e) => setListaId(e.target.value ? Number(e.target.value) : '')}
+              >
+                {listas.map((l) => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+              </select>
+            </label>
+          )}
+
+          {esPedido && (
+            <label className="form-campo">
+              <span className="etiqueta">Orden de compra del cliente</span>
+              <input
+                className="campo" type="text" maxLength={40}
+                placeholder="PO-12345"
+                value={ocCliente}
+                onChange={(e) => setOcCliente(e.target.value)}
+              />
+            </label>
+          )}
 
           <label className="form-campo">
             <span className="etiqueta">Moneda</span>
@@ -305,7 +394,11 @@ export function FormularioCotizacion({
 
           <label className="form-campo">
             <span className="etiqueta">Incoterm</span>
-            <select className="campo" value={incoterm} onChange={(e) => setIncoterm(e.target.value as typeof incoterm)}>
+            <select
+              className="campo"
+              value={incoterm}
+              onChange={(e) => setIncoterm(e.target.value as typeof incoterm)}
+            >
               <option value="FOB">FOB · hasta subirlo al barco</option>
               <option value="CFR">CFR · flete incluido</option>
               <option value="CIF">CIF · flete y seguro</option>
@@ -314,14 +407,56 @@ export function FormularioCotizacion({
             </select>
           </label>
 
-          <label className="form-campo">
-            <span className="etiqueta">Validez (días)</span>
-            <input
-              className="campo" type="number" min="1" max="365"
-              value={validez}
-              onChange={(e) => setValidez(Number(e.target.value))}
-            />
-          </label>
+          {!esPedido && (
+            <label className="form-campo">
+              <span className="etiqueta">Validez (días)</span>
+              <input
+                className="campo" type="number" min="1" max="365"
+                value={validez}
+                onChange={(e) => setValidez(Number(e.target.value))}
+              />
+            </label>
+          )}
+
+          {esPedido && (
+            <>
+              <label className="form-campo">
+                <span className="etiqueta">Prioridad</span>
+                <select
+                  className="campo"
+                  value={prioridad}
+                  onChange={(e) => setPrioridad(e.target.value as typeof prioridad)}
+                >
+                  <option value="baja">Baja</option>
+                  <option value="normal">Normal</option>
+                  <option value="alta">Alta</option>
+                  <option value="urgente">Urgente</option>
+                </select>
+              </label>
+
+              <label className="form-campo">
+                <span className="etiqueta">Fecha de solicitud</span>
+                <input
+                  className="campo" type="date"
+                  value={fechaSolicitada}
+                  onChange={(e) => setFechaSolicitada(e.target.value)}
+                />
+              </label>
+
+              <label className="form-campo">
+                <span className="etiqueta">Fecha comprometida</span>
+                <input
+                  className="campo" type="date"
+                  value={fechaComprometida}
+                  min={fechaSolicitada}
+                  onChange={(e) => setFechaComprometida(e.target.value)}
+                />
+                {fechaComprometida < fechaSolicitada && (
+                  <span className="form-aviso-campo">No puede ser anterior a la solicitud.</span>
+                )}
+              </label>
+            </>
+          )}
 
           <label className="form-campo form-ancho">
             <span className="etiqueta">Observaciones</span>
@@ -339,12 +474,9 @@ export function FormularioCotizacion({
       <section className="panel mb-espacio">
         <div className="panel-cabecera">
           <span className="panel-titulo">Productos · {lineas.length} línea(s)</span>
-          <span className="form-nota-cab">
-            El precio se resuelve solo según cliente y volumen
-          </span>
+          <span className="form-nota-cab">El precio se resuelve solo según cliente y volumen</span>
         </div>
 
-        {/* --- Buscador --- */}
         <div className="form-buscador">
           <Icono nombre="buscar" tamano={15} className="form-buscador-lupa" />
           <input
@@ -375,7 +507,6 @@ export function FormularioCotizacion({
           )}
         </div>
 
-        {/* --- Líneas --- */}
         {lineas.length === 0 ? (
           <div className="vacio">
             <strong>Sin productos todavía</strong>
@@ -479,10 +610,10 @@ export function FormularioCotizacion({
           <div className="destacado"><span>Total</span><strong>{dinero(totales.total, moneda, 2)}</strong></div>
         </div>
         <div className="form-totales-acciones">
-          <Link href="/ventas/cotizaciones" className="btn btn-secundario">Cancelar</Link>
+          <Link href={rutaVolver} className="btn btn-secundario">Cancelar</Link>
           <button type="button" className="btn btn-primario" onClick={guardar} disabled={guardando}>
             <Icono nombre="guardar" tamano={15} />
-            {guardando ? 'Guardando…' : 'Guardar cotización'}
+            {guardando ? 'Guardando…' : textoGuardar}
           </button>
         </div>
       </div>
@@ -492,149 +623,6 @@ export function FormularioCotizacion({
           {mensaje.texto}
         </p>
       )}
-
-      <style jsx>{`
-        .form-cot { padding-bottom: 5rem; }
-
-        .form-rejilla {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-          gap: 0.85rem;
-          padding: 1rem;
-        }
-        .form-campo { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
-        .form-ancho { grid-column: 1 / -1; }
-        @media (min-width: 900px) { .form-ancho { grid-column: span 2; } }
-        .form-aviso-campo { font-size: 0.72rem; color: var(--critico); margin-top: 0.2rem; }
-        .form-nota-cab { font-size: 0.72rem; color: var(--tinta-3); }
-
-        /* --- Buscador de productos --- */
-        .form-buscador { position: relative; padding: 0.85rem 1rem; border-bottom: 1px solid var(--linea); }
-        .form-buscador :global(.form-buscador-lupa) {
-          position: absolute;
-          inset-inline-start: 1.6rem;
-          top: 1.35rem;
-          color: var(--tinta-3);
-          pointer-events: none;
-        }
-        .form-buscador-input { padding-inline-start: 2.1rem; }
-        .form-resultados {
-          position: absolute;
-          inset-inline: 1rem;
-          top: calc(100% - 0.4rem);
-          z-index: 20;
-          list-style: none;
-          margin: 0;
-          padding: 0.25rem;
-          background: var(--superficie);
-          border: 1px solid var(--linea-2);
-          border-radius: var(--radio);
-          box-shadow: var(--sombra);
-          max-height: 20rem;
-          overflow-y: auto;
-        }
-        .form-resultados button {
-          display: grid;
-          grid-template-columns: 3rem 1fr auto;
-          gap: 0.6rem;
-          align-items: center;
-          width: 100%;
-          text-align: left;
-          background: transparent;
-          border: none;
-          padding: 0.45rem 0.55rem;
-          border-radius: 3px;
-          cursor: pointer;
-          color: var(--tinta);
-          font-family: var(--font-sans);
-        }
-        .form-resultados button:hover { background: var(--acento-suave); }
-        .form-res-sku {
-          font-family: var(--font-mono);
-          font-size: 0.72rem;
-          color: var(--tinta-3);
-        }
-        .form-res-nombre { font-size: 0.82rem; min-width: 0; }
-        .form-res-nombre small {
-          display: block;
-          font-size: 0.71rem;
-          color: var(--tinta-3);
-        }
-        .form-res-stock {
-          font-family: var(--font-mono);
-          font-size: 0.7rem;
-          white-space: nowrap;
-        }
-        .form-res-stock.hay { color: var(--ok); }
-        .form-res-stock.nohay { color: var(--tinta-3); }
-
-        /* --- Líneas --- */
-        .form-cot :global(tr[data-alerta='si']) {
-          background: color-mix(in srgb, var(--atencion) 7%, transparent);
-        }
-        .form-cot :global(.form-mini) {
-          width: 5.2rem;
-          padding: 0.22rem 0.4rem;
-          font-size: 0.8rem;
-          text-align: right;
-          font-family: var(--font-mono);
-        }
-        .form-cot :global(.form-mini-ancho) { width: 6.5rem; }
-        .form-quitar { padding: 0.25rem; color: var(--tinta-3); }
-        .form-quitar:hover { color: var(--critico); }
-
-        /* --- Barra de totales, fija abajo --- */
-        .form-totales {
-          position: sticky;
-          bottom: 0;
-          z-index: 15;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 1rem;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0.75rem 1rem;
-          background: color-mix(in srgb, var(--superficie) 94%, transparent);
-          backdrop-filter: blur(8px);
-          border: 1px solid var(--linea-2);
-          border-radius: var(--radio);
-          box-shadow: var(--sombra);
-        }
-        .form-totales-cifras { display: flex; flex-wrap: wrap; gap: 1.5rem; }
-        .form-totales-cifras > div { display: flex; flex-direction: column; }
-        .form-totales-cifras span {
-          font-family: var(--font-mono);
-          font-size: 0.58rem;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          color: var(--tinta-3);
-        }
-        .form-totales-cifras strong {
-          font-family: var(--font-titulo);
-          font-size: 1rem;
-          font-variant-numeric: tabular-nums;
-        }
-        .form-totales-cifras .destacado strong { font-size: 1.25rem; color: var(--acento); }
-        .form-totales-acciones { display: flex; gap: 0.45rem; align-items: center; }
-
-        .form-mensaje {
-          margin: 0.85rem 0 0;
-          padding: 0.65rem 0.85rem;
-          border-radius: var(--radio);
-          font-size: 0.85rem;
-          max-width: none;
-        }
-        .form-mensaje.ok {
-          background: var(--ok-suave);
-          color: var(--ok);
-          border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
-        }
-        .form-mensaje.error {
-          background: var(--critico-suave);
-          color: var(--critico);
-          border: 1px solid color-mix(in srgb, var(--critico) 30%, transparent);
-        }
-      `}</style>
     </div>
   );
 }

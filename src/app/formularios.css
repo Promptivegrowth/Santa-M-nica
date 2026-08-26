@@ -1,0 +1,161 @@
+/* ============================================================================
+   FORMULARIOS DE VENTA
+   ============================================================================
+   Estilos del formulario que sirve tanto para cotizaciones como para pedidos
+   directos. Van en un archivo CSS normal —y no en styled-jsx— por la misma
+   razón que los de la navegación: el formulario contiene componentes de React
+   (<Link>) y styled-jsx no alcanza a scoparlos.
+   ============================================================================ */
+
+.form-venta { padding-bottom: 5rem; }
+
+/* --- Rejilla de campos de cabecera --- */
+.form-rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.85rem;
+  padding: 1rem;
+}
+.form-campo { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.form-ancho { grid-column: 1 / -1; }
+@media (min-width: 900px) { .form-ancho { grid-column: span 2; } }
+.form-aviso-campo { font-size: 0.72rem; color: var(--critico); margin-top: 0.2rem; }
+.form-nota-cab { font-size: 0.72rem; color: var(--tinta-3); }
+
+/* --- Buscador de productos --- */
+.form-buscador {
+  position: relative;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--linea);
+}
+.form-buscador-lupa {
+  position: absolute;
+  inset-inline-start: 1.6rem;
+  top: 1.35rem;
+  color: var(--tinta-3);
+  pointer-events: none;
+}
+.form-buscador-input { padding-inline-start: 2.1rem; }
+
+.form-resultados {
+  position: absolute;
+  inset-inline: 1rem;
+  top: calc(100% - 0.4rem);
+  z-index: 20;
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  background: var(--superficie);
+  border: 1px solid var(--linea-2);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra);
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.form-resultados button {
+  display: grid;
+  grid-template-columns: 3rem 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0.45rem 0.55rem;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--tinta);
+  font-family: var(--font-sans);
+}
+.form-resultados button:hover { background: var(--acento-suave); }
+.form-res-sku { font-family: var(--font-mono); font-size: 0.72rem; color: var(--tinta-3); }
+.form-res-nombre { font-size: 0.82rem; min-width: 0; }
+.form-res-nombre small { display: block; font-size: 0.71rem; color: var(--tinta-3); }
+.form-res-stock { font-family: var(--font-mono); font-size: 0.7rem; white-space: nowrap; }
+.form-res-stock.hay { color: var(--ok); }
+.form-res-stock.nohay { color: var(--tinta-3); }
+
+/* --- Líneas de producto --- */
+.form-venta tr[data-alerta="si"] {
+  background: color-mix(in srgb, var(--atencion) 7%, transparent);
+}
+.form-mini {
+  width: 5.2rem;
+  padding: 0.22rem 0.4rem;
+  font-size: 0.8rem;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+.form-mini-ancho { width: 6.5rem; }
+.form-quitar { padding: 0.25rem; color: var(--tinta-3); }
+.form-quitar:hover { color: var(--critico); }
+
+/* --- Barra de totales, fija abajo --- */
+.form-totales {
+  position: sticky;
+  bottom: 0;
+  z-index: 15;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, var(--superficie) 94%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--linea-2);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra);
+}
+.form-totales-cifras { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+.form-totales-cifras > div { display: flex; flex-direction: column; }
+.form-totales-cifras span {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+.form-totales-cifras strong {
+  font-family: var(--font-titulo);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.form-totales-cifras .destacado strong { font-size: 1.25rem; color: var(--acento); }
+.form-totales-acciones { display: flex; gap: 0.45rem; align-items: center; }
+
+/* --- Mensajes de resultado --- */
+.form-mensaje {
+  margin: 0.85rem 0 0;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radio);
+  font-size: 0.85rem;
+  max-width: none;
+}
+.form-mensaje.ok {
+  background: var(--ok-suave);
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent);
+}
+.form-mensaje.error {
+  background: var(--critico-suave);
+  color: var(--critico);
+  border: 1px solid color-mix(in srgb, var(--critico) 30%, transparent);
+}
+
+/* --- Aviso sobre el camino elegido (cotización o pedido directo) --- */
+.aviso-camino {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.75rem 0.95rem;
+  margin-bottom: 0.85rem;
+  background: var(--acento-suave);
+  border: 1px solid color-mix(in srgb, var(--acento) 22%, transparent);
+  border-radius: var(--radio);
+  font-size: 0.82rem;
+  color: var(--tinta-2);
+  line-height: 1.5;
+}
+.aviso-camino strong { color: var(--tinta); font-weight: 600; }
+.aviso-camino a { color: var(--acento); font-weight: 600; }
