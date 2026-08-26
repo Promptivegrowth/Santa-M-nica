@@ -758,3 +758,72 @@ tr.plano-saldo td[data-saldo='resto'] { color: var(--atencion); font-weight: 600
 }
 .tarjeta-maestro strong { font-size: .86rem; }
 .tarjeta-maestro-desc { font-size: .74rem; color: var(--tinta-3); line-height: 1.45; }
+
+/* ---------------------------------------------------------------------------
+   ESQUELETOS DE CARGA
+   La silueta gris que se muestra mientras llegan los datos. El brillo que la
+   recorre indica que algo está pasando; sin él parecería contenido roto.
+   --------------------------------------------------------------------------- */
+.esq-bloque {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--superficie-2) 0%,
+    var(--superficie-3) 42%,
+    var(--superficie-2) 84%
+  );
+  background-size: 220% 100%;
+  animation: esq-brillo 1.5s ease-in-out infinite;
+}
+@keyframes esq-brillo {
+  0%   { background-position: 130% 0; }
+  100% { background-position: -30% 0; }
+}
+
+.esq-cabecera {
+  display: flex; flex-direction: column; gap: .5rem;
+  margin-bottom: 1.15rem;
+}
+
+.esq-tabla { padding: .2rem 0; }
+.esq-fila {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 6), minmax(0, 1fr));
+  gap: .75rem;
+  align-items: center;
+  padding: .62rem 1rem;
+  border-bottom: 1px solid var(--linea);
+}
+.esq-fila:last-child { border-bottom: none; }
+.esq-fila-cabecera { background: var(--superficie-2); padding-block: .55rem; }
+
+.esq-grafico {
+  display: flex; align-items: flex-end; gap: .45rem;
+  padding: 1.1rem 1rem;
+}
+.esq-barra {
+  flex: 1; min-width: 0; border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, var(--superficie-2), var(--superficie-3), var(--superficie-2));
+  background-size: 220% 100%;
+  animation: esq-brillo 1.5s ease-in-out infinite;
+}
+
+.esq-ficha { padding: .9rem 1rem; display: grid; gap: .6rem; }
+.esq-ficha-fila {
+  display: grid; grid-template-columns: minmax(7rem, 12rem) 1fr;
+  gap: .75rem; align-items: center;
+}
+
+.esq-pestanas { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .85rem; }
+
+/* Texto que solo leen los lectores de pantalla */
+.sr-solo {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* Quien pidió menos movimiento ve el esqueleto quieto */
+@media (prefers-reduced-motion: reduce) {
+  .esq-bloque, .esq-barra { animation: none; background: var(--superficie-2); }
+}

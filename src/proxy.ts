@@ -17,6 +17,7 @@
  */
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 
 /** Rutas que se pueden visitar sin haber iniciado sesión. */
 const RUTAS_PUBLICAS = ['/login', '/auth'];
@@ -77,6 +78,47 @@ export async function proxy(request: NextRequest) {
     destino.pathname = '/panel';
     destino.search = '';
     return NextResponse.redirect(destino);
+  }
+
+  /* ------------------------------------------------------------------------
+     CONTROL DE ACCESO POR ROL
+     Se comprueba aquí, ANTES de que la pantalla empiece a dibujarse. Si se
+     dejara solo dentro de la página, Next.js ya habría enviado el esqueleto de
+     carga y el usuario vería un parpadeo antes del rebote; además la respuesta
+     saldría con código 200, que confunde a cualquier cliente automatizado.
+
+     Esto NO sustituye a la seguridad de la base de datos: las políticas de
+     PostgreSQL siguen siendo la última palabra. Esto es la primera puerta.
+     ------------------------------------------------------------------------ */
+  if (user && !esPublica && ruta !== '/') {
+    const { data: ficha } = await supabase
+      .from('usuarios')
+      .select('rol, activo')
+      .eq('id', user.id)
+      .single();
+
+    // Cuenta desactivada: se cierra el paso por completo
+    if (!ficha || !ficha.activo) {
+      const destino = request.nextUrl.clone();
+      destino.pathname = '/login';
+      destino.searchParams.set('motivo', 'cuenta-inactiva');
+      return NextResponse.redirect(destino);
+    }
+
+    if (!rolPuedeVerRuta(ficha.rol as Rol, ruta)) {
+      if (ruta.startsWith('/api/')) {
+        return NextResponse.json(
+          { error: 'Su rol no tiene acceso a este recurso.' },
+          { status: 403 }
+        );
+      }
+      const destino = request.nextUrl.clone();
+      destino.pathname = '/panel';
+      destino.search = '';
+      // Se avisa en el panel por qué no pudo entrar
+      destino.searchParams.set('sinacceso', ruta);
+      return NextResponse.redirect(destino);
+    }
   }
 
   return respuesta;

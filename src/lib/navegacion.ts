@@ -18,6 +18,12 @@ export type Rol =
 export type Entrada = {
   titulo: string;
   ruta: string;
+  /**
+   * Icono PROPIO de esta entrada. No se comparte con el grupo: un icono
+   * repetido seis veces seguidas no informa nada y solo añade ruido visual.
+   * El objetivo es que se reconozca la pantalla por su forma antes de leerla.
+   */
+  icono: string;
   /** Descripción corta que se muestra como ayuda contextual. */
   ayuda?: string;
   roles: Rol[] | 'todos';
@@ -25,8 +31,6 @@ export type Entrada = {
 
 export type Grupo = {
   grupo: string;
-  /** Identificador corto para el icono. */
-  icono: string;
   entradas: Entrada[];
 };
 
@@ -35,71 +39,64 @@ const TODOS: 'todos' = 'todos';
 export const NAVEGACION: Grupo[] = [
   {
     grupo: 'Panel',
-    icono: 'panel',
     entradas: [
-      { titulo: 'Control Tower', ruta: '/panel', ayuda: 'Los indicadores del día', roles: TODOS },
-      { titulo: 'Alertas', ruta: '/alertas', ayuda: 'Lo que necesita atención', roles: TODOS },
+      { titulo: 'Control Tower', ruta: '/panel',   icono: 'panel',  ayuda: 'Los indicadores del día', roles: TODOS },
+      { titulo: 'Alertas',       ruta: '/alertas', icono: 'alerta', ayuda: 'Lo que necesita atención', roles: TODOS },
     ],
   },
   {
     grupo: 'Ventas',
-    icono: 'ventas',
     entradas: [
-      { titulo: 'Clientes',            ruta: '/ventas/clientes',      ayuda: 'Cartera, crédito e historial', roles: ['gerencia','operaciones','comercial','comex','consulta'] },
-      { titulo: 'Cotizaciones',        ruta: '/ventas/cotizaciones',  ayuda: 'Precios ofrecidos al cliente', roles: ['gerencia','operaciones','comercial','consulta'] },
-      { titulo: 'Pedidos',             ruta: '/ventas/pedidos',       ayuda: 'Las proformas y su avance', roles: TODOS },
-      { titulo: 'Disponibilidad',      ruta: '/ventas/disponibilidad',ayuda: 'Cuánto se puede vender de verdad', roles: TODOS },
-      { titulo: 'Control de pedidos',  ruta: '/ventas/control',       ayuda: 'Los que están en riesgo', roles: ['gerencia','operaciones','comercial','comex','consulta'] },
-      { titulo: 'Necesidades',         ruta: '/ventas/necesidades',   ayuda: 'Qué falta producir o comprar', roles: ['gerencia','operaciones','comercial','consulta'] },
+      { titulo: 'Clientes',           ruta: '/ventas/clientes',       icono: 'clientes',       ayuda: 'Cartera, crédito e historial', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
+      { titulo: 'Cotizaciones',       ruta: '/ventas/cotizaciones',   icono: 'cotizacion',     ayuda: 'Precios ofrecidos al cliente', roles: ['gerencia', 'operaciones', 'comercial', 'consulta'] },
+      { titulo: 'Pedidos',            ruta: '/ventas/pedidos',        icono: 'pedido',         ayuda: 'Las proformas y su avance', roles: TODOS },
+      { titulo: 'Disponibilidad',     ruta: '/ventas/disponibilidad', icono: 'disponibilidad', ayuda: 'Cuánto se puede vender de verdad', roles: TODOS },
+      { titulo: 'Control de pedidos', ruta: '/ventas/control',        icono: 'control',        ayuda: 'Los que están en riesgo', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
+      { titulo: 'Necesidades',        ruta: '/ventas/necesidades',    icono: 'necesidades',    ayuda: 'Qué falta producir o comprar', roles: ['gerencia', 'operaciones', 'comercial', 'consulta'] },
     ],
   },
   {
     grupo: 'Almacenes',
-    icono: 'almacen',
     entradas: [
-      { titulo: 'Existencias',          ruta: '/almacenes/existencias',  ayuda: 'Físico, reservado y disponible', roles: TODOS },
-      { titulo: 'Kardex',               ruta: '/almacenes/kardex',       ayuda: 'El diario del almacén', roles: TODOS },
-      { titulo: 'Ingresos',             ruta: '/almacenes/ingresos',     ayuda: 'Lo que entró a cámara', roles: ['gerencia','operaciones','almacen','consulta'] },
-      { titulo: 'Traslados',            ruta: '/almacenes/traslados',    ayuda: 'Movimientos entre bodegas', roles: ['gerencia','operaciones','almacen','comex','consulta'] },
-      { titulo: 'Calidad',              ruta: '/almacenes/calidad',      ayuda: 'Producto observado y liberado', roles: TODOS },
-      { titulo: 'Anticuamiento',        ruta: '/almacenes/anticuamiento',ayuda: 'Producto que lleva mucho tiempo', roles: TODOS },
-      { titulo: 'Inventario valorizado',ruta: '/almacenes/valorizado',   ayuda: 'Cuánto vale lo que hay', roles: ['gerencia','operaciones','comercial'] },
+      { titulo: 'Existencias',           ruta: '/almacenes/existencias',   icono: 'existencias',   ayuda: 'Físico, reservado y disponible', roles: TODOS },
+      { titulo: 'Kardex',                ruta: '/almacenes/kardex',        icono: 'kardex',        ayuda: 'El diario del almacén', roles: TODOS },
+      { titulo: 'Ingresos',              ruta: '/almacenes/ingresos',      icono: 'ingresos',      ayuda: 'Lo que entró a cámara', roles: ['gerencia', 'operaciones', 'almacen', 'consulta'] },
+      { titulo: 'Traslados',             ruta: '/almacenes/traslados',     icono: 'traslados',     ayuda: 'Movimientos entre bodegas', roles: ['gerencia', 'operaciones', 'almacen', 'comex', 'consulta'] },
+      { titulo: 'Calidad',               ruta: '/almacenes/calidad',       icono: 'calidad',       ayuda: 'Producto observado y liberado', roles: TODOS },
+      { titulo: 'Anticuamiento',         ruta: '/almacenes/anticuamiento', icono: 'anticuamiento', ayuda: 'Producto que lleva mucho tiempo', roles: TODOS },
+      { titulo: 'Inventario valorizado', ruta: '/almacenes/valorizado',    icono: 'valorizado',    ayuda: 'Cuánto vale lo que hay', roles: ['gerencia', 'operaciones', 'comercial'] },
     ],
   },
   {
     grupo: 'Logística',
-    icono: 'logistica',
     entradas: [
-      { titulo: 'Planificador',   ruta: '/logistica/planificador', ayuda: 'Calendario de embarques', roles: ['gerencia','operaciones','comex','almacen','consulta'] },
-      { titulo: 'Embarques',      ruta: '/logistica/embarques',    ayuda: 'Programación de salidas', roles: ['gerencia','operaciones','comex','almacen','consulta'] },
-      { titulo: 'Packing y estiba',ruta: '/logistica/packing',     ayuda: 'La carga del contenedor', roles: ['gerencia','operaciones','comex','almacen','consulta'] },
-      { titulo: 'Despachos',      ruta: '/logistica/despachos',    ayuda: 'Lo que ya salió', roles: TODOS },
+      { titulo: 'Planificador',     ruta: '/logistica/planificador', icono: 'planificador', ayuda: 'Calendario de embarques', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
+      { titulo: 'Embarques',        ruta: '/logistica/embarques',    icono: 'embarques',    ayuda: 'Programación de salidas', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
+      { titulo: 'Packing y estiba', ruta: '/logistica/packing',      icono: 'packing',      ayuda: 'La carga del contenedor', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
+      { titulo: 'Despachos',        ruta: '/logistica/despachos',    icono: 'despachos',    ayuda: 'Lo que ya salió', roles: TODOS },
     ],
   },
   {
     grupo: 'Finanzas',
-    icono: 'finanzas',
     entradas: [
-      { titulo: 'Facturación',        ruta: '/finanzas/facturas',    ayuda: 'Comprobantes emitidos', roles: ['gerencia','comercial','comex','consulta'] },
-      { titulo: 'Cuentas por cobrar', ruta: '/finanzas/cobrar',      ayuda: 'Quién debe y desde cuándo', roles: ['gerencia','comercial','consulta'] },
-      { titulo: 'Rentabilidad',       ruta: '/finanzas/rentabilidad',ayuda: 'Margen por pedido y cliente', roles: ['gerencia','operaciones','comercial'] },
+      { titulo: 'Facturación',        ruta: '/finanzas/facturas',     icono: 'facturas',     ayuda: 'Comprobantes emitidos', roles: ['gerencia', 'comercial', 'comex', 'consulta'] },
+      { titulo: 'Cuentas por cobrar', ruta: '/finanzas/cobrar',       icono: 'cobrar',       ayuda: 'Quién debe y desde cuándo', roles: ['gerencia', 'comercial', 'consulta'] },
+      { titulo: 'Rentabilidad',       ruta: '/finanzas/rentabilidad', icono: 'rentabilidad', ayuda: 'Margen por pedido y cliente', roles: ['gerencia', 'operaciones', 'comercial'] },
     ],
   },
   {
     grupo: 'Trazabilidad',
-    icono: 'trazabilidad',
     entradas: [
-      { titulo: 'Buscador universal', ruta: '/trazabilidad',            ayuda: 'Busque cualquier código del negocio', roles: TODOS },
-      { titulo: 'Retiro sanitario',   ruta: '/trazabilidad/retiro',     ayuda: 'Alcance de un lote observado', roles: ['gerencia','operaciones','calidad','comex'] },
-      { titulo: 'Auditoría',          ruta: '/trazabilidad/auditoria',  ayuda: 'Quién cambió qué y cuándo', roles: ['gerencia','operaciones'] },
+      { titulo: 'Buscador universal', ruta: '/trazabilidad',           icono: 'trazabilidad', ayuda: 'Busque cualquier código del negocio', roles: TODOS },
+      { titulo: 'Retiro sanitario',   ruta: '/trazabilidad/retiro',    icono: 'retiro',       ayuda: 'Alcance de un lote observado', roles: ['gerencia', 'operaciones', 'calidad', 'comex'] },
+      { titulo: 'Auditoría',          ruta: '/trazabilidad/auditoria', icono: 'auditoria',    ayuda: 'Quién cambió qué y cuándo', roles: ['gerencia', 'operaciones'] },
     ],
   },
   {
     grupo: 'Sistema',
-    icono: 'sistema',
     entradas: [
-      { titulo: 'Reportes',      ruta: '/reportes',      ayuda: 'Exportar a Excel con la marca', roles: TODOS },
-      { titulo: 'Configuración', ruta: '/configuracion', ayuda: 'Parámetros, maestros y reglas', roles: ['gerencia','operaciones'] },
+      { titulo: 'Reportes',      ruta: '/reportes',      icono: 'reportes',      ayuda: 'Exportar a Excel con la marca', roles: TODOS },
+      { titulo: 'Configuración', ruta: '/configuracion', icono: 'configuracion', ayuda: 'Parámetros, maestros y reglas', roles: ['gerencia', 'operaciones'] },
     ],
   },
 ];
@@ -130,4 +127,32 @@ export const NOMBRE_ROL: Record<Rol, string> = {
 /** ¿Este rol puede ver costos y márgenes? */
 export function veCostos(rol: Rol): boolean {
   return ['gerencia', 'operaciones', 'comercial'].includes(rol);
+}
+
+/** ¿Este rol puede crear cotizaciones y pedidos? */
+export function puedeVender(rol: Rol): boolean {
+  return ['gerencia', 'operaciones', 'comercial', 'comex'].includes(rol);
+}
+
+/**
+ * ¿Puede este rol abrir esta ruta?
+ * Se usa en el proxy para cortar el acceso ANTES de renderizar nada, en lugar
+ * de dejar que la pantalla se empiece a dibujar y luego rebote. Así el usuario
+ * no ve un esqueleto que desaparece, y la respuesta es una redirección real.
+ */
+export function rolPuedeVerRuta(rol: Rol, ruta: string): boolean {
+  // Se busca la entrada más específica que coincida con la ruta pedida
+  let mejor: Entrada | null = null;
+  for (const g of NAVEGACION) {
+    for (const e of g.entradas) {
+      const coincide = ruta === e.ruta || ruta.startsWith(e.ruta + '/');
+      if (coincide && (!mejor || e.ruta.length > mejor.ruta.length)) {
+        mejor = e;
+      }
+    }
+  }
+  // Si la ruta no está en el menú (por ejemplo, un formulario de alta), se
+  // permite: la propia pantalla y las políticas de la base la protegen.
+  if (!mejor) return true;
+  return mejor.roles === 'todos' || (mejor.roles as Rol[]).includes(rol);
 }
