@@ -106,7 +106,7 @@ export default async function PaginaNuevaCotizacion() {
     <>
       <CabeceraPagina
         titulo="Nueva cotización"
-        descripcion="Elija el cliente, agregue productos y el sistema resuelve el precio que le corresponde según su volumen. La disponibilidad se muestra al lado para que no prometa lo que no hay."
+        descripcion="Una oferta, todavía sin compromiso de entrega. Elija el cliente, agregue productos y el sistema resuelve el precio que le corresponde según su volumen. Si el cliente acepta, con un botón se convierte en pedido con su número de proforma."
         volver={{ href: '/ventas/cotizaciones', texto: 'Volver a cotizaciones' }}
       />
 

@@ -70,7 +70,7 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
     <>
       <CabeceraPagina
         titulo="Cotizaciones"
-        descripcion="Precios ofrecidos a los clientes. Al aceptarse, la cotización pasa a pedido heredando todos sus datos: no se vuelve a teclear nada."
+        descripcion="La OFERTA previa: un precio que se le pasa al cliente sin comprometerse todavía a entregar. Cuando el cliente acepta, se convierte en pedido y recién ahí nace la proforma."
       >
         {puedeCrear && (
           <Link href="/ventas/cotizaciones/nueva" className="btn btn-primario">

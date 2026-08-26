@@ -99,7 +99,7 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
     <>
       <CabeceraPagina
         titulo="Pedidos"
-        descripcion="Las proformas y su avance real. El color de cada fila resume si el pedido está cubierto, en riesgo o bloqueado."
+        descripcion="El COMPROMISO en firme. Cada pedido tiene su número de proforma (SM26-…), que es como Santa Mónica lo identifica en toda la operación. El color resume si está cubierto, en riesgo o bloqueado."
       />
 
       {/* --- Vistas guardadas --- */}
