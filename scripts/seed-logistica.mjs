@@ -13,10 +13,10 @@
 
 export async function sembrarLogistica(ctx) {
   const {
-    almDb, stock, bloqueados, pedDb, clientesDb, destinosDb,
+    almDb, stock, pedDb, clientesDb, destinosDb,
     insertarLote, consultar, ejecutarSQL,
     entero, elegir, decimal, suerte, fechaMenos, fechaMas, paso, ok,
-    uAlmacen, uOperaciones, uComercial, uComex, uGerencia,
+    uAlmacen, uComercial, uComex,
   } = ctx;
 
   const transDb = await consultar('select id from transportistas order by id');

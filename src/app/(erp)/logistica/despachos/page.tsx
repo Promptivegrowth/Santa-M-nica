@@ -14,7 +14,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
-import { num, fechaHora } from '@/lib/formato';
+import { fechaHora } from '@/lib/formato';
 
 export const metadata: Metadata = { title: 'Despachos' };
 export const dynamic = 'force-dynamic';

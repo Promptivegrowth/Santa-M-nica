@@ -150,23 +150,47 @@ async function principal() {
       `HTTP ${r.status}, ${html.length} bytes, marca=${html.includes(marca)}`);
   }
 
-  /* ----------------------------------------------------------------------
-     Un identificador que no existe tiene que acabar en la pagina de "no
-     encontrado", con su explicacion y su salida.
+  /* ======================================================================
+     UN IDENTIFICADOR QUE NO EXISTE TIENE QUE DAR 404 DE VERDAD
+     ======================================================================
+     Y no solo pintar la pantalla de "no encontrado" con un 200 detras.
 
-     Ojo con el codigo de estado: estas rutas tienen loading.tsx, asi que Next
-     responde 200 y empieza a transmitir el esqueleto antes de que la pagina
-     llegue a ejecutar notFound(). El 404 viaja despues, dentro del mismo
-     flujo. Por eso se comprueba el contenido y no el status.
-     ---------------------------------------------------------------------- */
-  const inexistente = await fetch(`${BASE}/almacenes/lotes/99999999`, { headers: { cookie } });
-  const htmlInexistente = await inexistente.text();
-  comprobar('Un lote inexistente acaba en la pagina de no encontrado',
-    htmlInexistente.includes('NEXT_HTTP_ERROR_FALLBACK;404')
-      && htmlInexistente.includes('No encontramos ese registro'),
-    `HTTP ${inexistente.status}, marca404=${htmlInexistente.includes('NEXT_HTTP_ERROR_FALLBACK;404')}`);
+     Que esto funcione depende de como este repartida cada pagina. Next.js
+     empieza a enviar la respuesta en cuanto encuentra el primer <Suspense>, y
+     una cabecera ya enviada no se puede cambiar. Un loading.tsx envuelve la
+     ruta ENTERA —y tambien sus rutas hijas—, asi que si el listado tuviera el
+     suyo sin aislar, su ficha heredaria el envoltorio y el notFound() llegaria
+     tarde.
 
-  comprobar('La pagina de no encontrado ofrece una salida',
+     Por eso cada ficha hace primero una consulta ligera fuera de todo Suspense
+     y cada listado vive en un grupo (lista). Esta comprobacion es la que
+     detecta si alguien deshace ese reparto sin darse cuenta.
+     ====================================================================== */
+  console.log('\n-- Codigo de estado de las fichas -------------------------------');
+
+  const ESTADOS = [
+    ['lote',       '/almacenes/lotes',     await unId('lotes')],
+    ['traslado',   '/almacenes/traslados', await unId('traslados')],
+    ['cliente',    '/ventas/clientes',     await unId('clientes')],
+    ['cotizacion', '/ventas/cotizaciones', await unId('cotizaciones')],
+    ['factura',    '/finanzas/facturas',   await unId('facturas')],
+    ['embarque',   '/logistica/embarques', await unId('embarques')],
+    ['pedido',     '/ventas/pedidos',      await unId('pedidos')],
+    ['packing',    '/logistica/packing',   await unId('packing_lists')],
+  ];
+
+  for (const [nombre, base, id] of ESTADOS) {
+    const existe = await fetch(`${BASE}${base}/${id}`, { headers: { cookie } });
+    comprobar(`${base}/${id} responde 200`, existe.status === 200, `HTTP ${existe.status}`);
+
+    const no = await fetch(`${BASE}${base}/99999999`, { headers: { cookie } });
+    comprobar(`Un ${nombre} inexistente responde 404`, no.status === 404, `HTTP ${no.status}`);
+  }
+
+  const htmlInexistente = await (await fetch(`${BASE}/almacenes/lotes/99999999`, { headers: { cookie } })).text();
+  comprobar('El 404 usa la pantalla propia, no la de Next.js en ingles',
+    htmlInexistente.includes('No encontramos ese registro'));
+  comprobar('Y ofrece una salida en vez de dejar al usuario encerrado',
     htmlInexistente.includes('Buscarlo por su c'), 'enlace al buscador universal');
 
   /* ======================================================================
@@ -239,19 +263,13 @@ async function principal() {
 
   const yaConvertida = [...idsConvertidas][0];
   if (yaConvertida) {
-    /* Mismo caso que el 404: el redirect() viaja dentro del flujo, no en la
-       cabecera, porque el esqueleto ya salio. Se comprueba que la orden de
-       redireccion esta en la respuesta y que apunta a la ficha. */
     const r = await fetch(`${BASE}/ventas/cotizaciones/${yaConvertida}/editar`,
       { headers: { cookie }, redirect: 'manual' });
-    const htmlEdit = await r.text();
-    const rebota = r.status === 307 || r.status === 302
-      || htmlEdit.includes('NEXT_REDIRECT')
-      || htmlEdit.includes(`/ventas/cotizaciones/${yaConvertida}?nohayeditar=`);
-    comprobar('Una cotizacion ya convertida NO se puede editar (rebota)',
-      rebota, `HTTP ${r.status}, redirect en el flujo=${htmlEdit.includes('NEXT_REDIRECT')}`);
-    comprobar('Y desde luego no muestra el formulario de edicion',
-      !htmlEdit.includes('Guardar cambios'));
+    comprobar('Una cotizacion ya convertida NO se puede editar (redirige)',
+      r.status === 307 || r.status === 302, `HTTP ${r.status}`);
+    comprobar('Y la redireccion apunta a su ficha, explicando el motivo',
+      (r.headers.get('location') ?? '').includes(`/ventas/cotizaciones/${yaConvertida}?nohayeditar=`),
+      r.headers.get('location') ?? 'sin cabecera location');
 
     const ficha = await fetch(`${BASE}/ventas/cotizaciones/${yaConvertida}`, { headers: { cookie } });
     const htmlFicha = await ficha.text();

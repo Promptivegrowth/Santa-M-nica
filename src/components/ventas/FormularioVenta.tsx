@@ -287,7 +287,10 @@ export function FormularioVenta({
       return;
     }
 
-    const lineasLimpias = lineas.map(({ clave, disponible_kg, consultando, ...l }) => l);
+    // Se descartan las tres ayudas de pantalla —la clave de React, el
+    // disponible y el indicador de consulta en curso— porque son del
+    // formulario, no del documento que se guarda.
+    const lineasLimpias = lineas.map(({ clave: _c, disponible_kg: _d, consultando: _q, ...l }) => l);
 
     iniciar(async () => {
       const r = esEdicion

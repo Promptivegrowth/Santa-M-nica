@@ -11,12 +11,14 @@
  *  pallets recibió y de qué día de producción salieron.
  * ============================================================================
  */
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
+import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { uno, campo } from '@/lib/relaciones';
@@ -32,18 +34,83 @@ export async function generateMetadata(
   return { title: data?.numero ?? 'Factura' };
 }
 
+/**
+ * ----------------------------------------------------------------------------
+ *  EL CASCARÓN
+ * ----------------------------------------------------------------------------
+ *  Una sola consulta —la que dice si el registro existe— y la cabecera. El
+ *  resto se cuelga de un <Suspense>.
+ *
+ *  El reparto decide el código HTTP: Next.js empieza a enviar la respuesta al
+ *  encontrar el primer <Suspense>, y una cabecera ya enviada no se puede
+ *  cambiar. Si toda la página estuviera dentro de un loading.tsx, el
+ *  notFound() llegaría tarde y un identificador inventado respondería 200.
+ * ----------------------------------------------------------------------------
+ */
 export default async function FichaFactura(props: PageProps<'/finanzas/facturas/[id]'>) {
   const { id } = await props.params;
   const facId = Number(id);
 
   const supabase = await crearClienteServidor();
+  const { data: f } = await supabase
+    .from('facturas')
+    .select('*, clientes(id, razon_social, pais, dias_credito), pedidos(id, numero_proforma, ciclo, incoterm, destinos(puerto, pais))')
+    .eq('id', facId)
+    .single();
 
-  const [{ data: f }, { data: lineas }, { data: cobros }, { data: origen }] = await Promise.all([
-    supabase
-      .from('facturas')
-      .select('*, clientes(id, razon_social, pais, dias_credito), pedidos(id, numero_proforma, ciclo, incoterm, destinos(puerto, pais))')
-      .eq('id', facId)
-      .single(),
+  if (!f) notFound();
+
+  /*
+   * La etiqueta de estado necesita saber si está cobrada, y eso depende de los
+   * cobros. Preguntar solo por la SUMA es una consulta de un renglón: no vale
+   * la pena hacer esperar la cabecera por el detalle completo.
+   */
+  const { data: sumaCobros } = await supabase
+    .from('cobranzas').select('monto').eq('factura_id', facId);
+  const cobradoCab = (sumaCobros ?? []).reduce((s, c) => s + Number(c.monto ?? 0), 0);
+  const saldoCab = Number(f.total ?? 0) - cobradoCab;
+  const anuladaCab = f.estado === 'anulada';
+  const vencidaCab = !anuladaCab && saldoCab > 0.01 && diasDesdeHoy(f.fecha_vencimiento as string) < 0;
+
+  return (
+    <>
+      <CabeceraPagina
+        titulo={f.numero as string}
+        descripcion={`${campo(f.clientes, 'razon_social')} · emitida el ${fecha(f.fecha_emision as string)}`}
+        volver={{ href: '/finanzas/facturas', texto: 'Volver a facturación' }}
+      >
+        <Etiqueta
+          texto={etiquetaEstado(f.estado as string)}
+          tono={anuladaCab ? 'critico' : saldoCab <= 0.01 ? 'ok' : vencidaCab ? 'critico' : 'info'}
+        />
+      </CabeceraPagina>
+
+      <Suspense fallback={<CargandoCuerpo />}>
+        <CuerpoFactura facId={facId} f={f} />
+      </Suspense>
+    </>
+  );
+}
+
+function CargandoCuerpo() {
+  return (
+    <>
+      <EsqueletoKpi cantidad={5} />
+      <div className="rejilla-2">
+        <EsqueletoFicha lineas={8} />
+        <EsqueletoTabla filas={3} columnas={4} conFiltros={false} />
+      </div>
+      <EsqueletoTabla filas={4} columnas={6} conFiltros={false} />
+      <span className="sr-solo" role="status">Cargando la factura…</span>
+    </>
+  );
+}
+
+/** El detalle: líneas, cobros y los lotes que respaldan el comprobante. */
+async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, unknown> }) {
+  const supabase = await crearClienteServidor();
+
+  const [{ data: lineas }, { data: cobros }, { data: origen }] = await Promise.all([
     supabase
       .from('factura_lineas')
       .select('id, cantidad_tm, precio_tm, importe, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
@@ -57,8 +124,6 @@ export default async function FichaFactura(props: PageProps<'/finanzas/facturas/
     supabase.rpc('trazar_origen', { p_tipo: 'factura', p_id: facId }),
   ]);
 
-  if (!f) notFound();
-
   const moneda = f.moneda as 'USD' | 'PEN';
   const cobrado = (cobros ?? []).reduce((s, c) => s + Number(c.monto ?? 0), 0);
   const saldo = Number(f.total ?? 0) - cobrado;
@@ -70,17 +135,6 @@ export default async function FichaFactura(props: PageProps<'/finanzas/facturas/
 
   return (
     <>
-      <CabeceraPagina
-        titulo={f.numero as string}
-        descripcion={`${campo(f.clientes, 'razon_social')} · emitida el ${fecha(f.fecha_emision as string)}`}
-        volver={{ href: '/finanzas/facturas', texto: 'Volver a facturación' }}
-      >
-        <Etiqueta
-          texto={etiquetaEstado(f.estado as string)}
-          tono={anulada ? 'critico' : saldo <= 0.01 ? 'ok' : vencida ? 'critico' : 'info'}
-        />
-      </CabeceraPagina>
-
       {anulada && (
         <div className="ficha-aviso ficha-aviso-critico">
           <Icono nombre="cerrar" tamano={17} />
@@ -156,7 +210,7 @@ export default async function FichaFactura(props: PageProps<'/finanzas/facturas/
             <div><dt>Emisión</dt><dd>{fecha(f.fecha_emision as string)}</dd></div>
             <div><dt>Vencimiento</dt><dd>{fecha(f.fecha_vencimiento as string)}</dd></div>
             <div><dt>Condición</dt><dd>{num(Number(cliente?.dias_credito ?? 0))} días de crédito</dd></div>
-            <div><dt>Moneda</dt><dd>{moneda} · TC {num(f.tipo_cambio, 3)}</dd></div>
+            <div><dt>Moneda</dt><dd>{moneda} · TC {num(Number(f.tipo_cambio), 3)}</dd></div>
             <div><dt>Incoterm</dt><dd>{campo(f.pedidos, 'incoterm', '—')}</dd></div>
             <div><dt>Destino</dt><dd>{campo(pedido?.destinos, 'puerto', '—')}</dd></div>
           </dl>

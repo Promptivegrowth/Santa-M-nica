@@ -3,17 +3,13 @@
  * Next.js lo muestra automáticamente mientras el servidor resuelve los datos.
  * Su forma imita la de la pantalla real para que nada salte de sitio al llegar.
  */
-import {
-  EsqueletoCabecera, EsqueletoKpi, EsqueletoTabla,
-  EsqueletoGrafico, EsqueletoPestanas, Bloque,
-} from '@/components/ui/Esqueleto';
+import { EsqueletoCabecera, EsqueletoTabla } from '@/components/ui/Esqueleto';
 
 export default function Cargando() {
   return (
     <>
       <EsqueletoCabecera />
-      <EsqueletoPestanas cantidad={8} />
-      <EsqueletoTabla filas={12} columnas={10} />
+      <EsqueletoTabla filas={12} columnas={6} />
       <span className="sr-solo" role="status">Cargando información…</span>
     </>
   );

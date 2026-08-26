@@ -16,7 +16,7 @@ import {
   GraficoComposicion,
   Medidor,
 } from '@/components/graficos/Graficos';
-import { tm, num, dinero } from '@/lib/formato';
+import { num } from '@/lib/formato';
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'set', 'oct', 'nov', 'dic'];
 

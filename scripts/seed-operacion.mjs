@@ -15,7 +15,7 @@
 export async function sembrarOperacion(ctx) {
   const {
     idAlm, almDb, usuarios,
-    insertarLote, consultar, ejecutarSQL,
+    insertarLote, consultar,
     entero, elegir, decimal, suerte, fechaMenos, fechaMas, paso, ok,
   } = ctx;
 
@@ -105,7 +105,6 @@ export async function sembrarOperacion(ctx) {
   const motPrimerProceso = motIngreso.find((m) => m.codigo === 'PRIMER_PROCESO').id;
 
   // Reparto de lotes entre bodegas: la mayoría entra a las cámaras propias
-  const codigosAlm = almDb.map((a) => a.codigo);
   const pesoAlmacen = { 'STM-C2': 22, 'STM-C3': 20, 'FREEKO': 18, 'ELAMAR': 10,
                         'PERUFR': 8, 'DEPSA': 8, 'STM-C1': 7, 'EMERG': 4, 'COINRE': 2, 'HAYDUK': 1 };
   const ruleta = [];

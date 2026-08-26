@@ -12,12 +12,14 @@
  *  mercadería apartada.
  * ============================================================================
  */
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
+import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
@@ -52,20 +54,76 @@ const TONO_COBERTURA: Record<string, 'ok' | 'atencion' | 'critico' | 'info' | 'n
   reservado: 'ok', programado: 'ok', en_preparacion: 'ok', preparado: 'ok',
 };
 
+/**
+ * ----------------------------------------------------------------------------
+ *  EL CASCARÓN
+ * ----------------------------------------------------------------------------
+ *  Una sola consulta —la que dice si el registro existe— y la cabecera. El
+ *  resto se cuelga de un <Suspense>.
+ *
+ *  El reparto decide el código HTTP: Next.js empieza a enviar la respuesta al
+ *  encontrar el primer <Suspense>, y una cabecera ya enviada no se puede
+ *  cambiar. Si toda la página estuviera dentro de un loading.tsx, el
+ *  notFound() llegaría tarde y un identificador inventado respondería 200.
+ * ----------------------------------------------------------------------------
+ */
 export default async function FichaEmbarque(props: PageProps<'/logistica/embarques/[id]'>) {
   const { id } = await props.params;
   const embId = Number(id);
 
   const supabase = await crearClienteServidor();
+  const { data: e } = await supabase
+    .from('embarques')
+    .select('*, almacenes(id, nombre), destinos(puerto, pais), transportistas(razon_social), vehiculos(placa), conductores(nombre)')
+    .eq('id', embId)
+    .single();
+
+  if (!e) notFound();
+
+  const estadoCab = e.estado as string;
+
+  return (
+    <>
+      <CabeceraPagina
+        titulo={e.numero as string}
+        descripcion={`${campo(e.almacenes, 'nombre')} → ${campo(e.destinos, 'puerto')}, ${campo(e.destinos, 'pais')}`}
+        volver={{ href: '/logistica/embarques', texto: 'Volver a embarques' }}
+      >
+        <Etiqueta texto={etiquetaEstado(estadoCab)} tono={TONO[estadoCab] ?? 'neutro'} />
+        <Link href={`/logistica/planificador?embarque=${embId}`} className="btn btn-secundario">
+          <Icono nombre="planificador" tamano={15} />
+          Ver en el calendario
+        </Link>
+      </CabeceraPagina>
+
+      <Suspense fallback={<CargandoCuerpo />}>
+        <CuerpoEmbarque embId={embId} e={e} />
+      </Suspense>
+    </>
+  );
+}
+
+function CargandoCuerpo() {
+  return (
+    <>
+      <EsqueletoKpi cantidad={5} />
+      <div className="rejilla-2">
+        <EsqueletoFicha lineas={8} />
+        <EsqueletoFicha lineas={3} />
+      </div>
+      <EsqueletoTabla filas={5} columnas={8} conFiltros={false} />
+      <span className="sr-solo" role="status">Cargando el embarque…</span>
+    </>
+  );
+}
+
+/** El detalle: los pedidos que van dentro y sus packing lists. */
+async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, unknown> }) {
+  const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const puedeVerImportes = veCostos((usuario?.rol ?? 'consulta') as Rol);
 
-  const [{ data: e }, { data: vinculos }, { data: packings }] = await Promise.all([
-    supabase
-      .from('embarques')
-      .select('*, almacenes(id, nombre), destinos(puerto, pais), transportistas(razon_social), vehiculos(placa), conductores(nombre)')
-      .eq('id', embId)
-      .single(),
+  const [{ data: vinculos }, { data: packings }] = await Promise.all([
     supabase
       .from('embarque_pedidos')
       .select('pedidos(id, numero_proforma, ciclo, cobertura, situacion, moneda, fecha_comprometida, clientes(id, razon_social, pais), pedido_lineas(cantidad_tm, precio_tm, descuento_pct))')
@@ -75,8 +133,6 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
       .select('id, codigo, estado, contenedor, precinto')
       .eq('embarque_id', embId),
   ]);
-
-  if (!e) notFound();
 
   const estado = e.estado as string;
   const pedidos = (vinculos ?? [])
@@ -101,18 +157,6 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
 
   return (
     <>
-      <CabeceraPagina
-        titulo={e.numero as string}
-        descripcion={`${campo(e.almacenes, 'nombre')} → ${campo(e.destinos, 'puerto')}, ${campo(e.destinos, 'pais')}`}
-        volver={{ href: '/logistica/embarques', texto: 'Volver a embarques' }}
-      >
-        <Etiqueta texto={etiquetaEstado(estado)} tono={TONO[estado] ?? 'neutro'} />
-        <Link href={`/logistica/planificador?embarque=${embId}`} className="btn btn-secundario">
-          <Icono nombre="planificador" tamano={15} />
-          Ver en el calendario
-        </Link>
-      </CabeceraPagina>
-
       {sinCobertura.length > 0 && !['despachado', 'cancelado'].includes(estado) && (
         <div className="ficha-aviso ficha-aviso-critico">
           <Icono nombre="alerta" tamano={17} />

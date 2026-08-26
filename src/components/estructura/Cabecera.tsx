@@ -16,6 +16,7 @@
  * ============================================================================
  */
 import { useState, useEffect, useRef } from 'react';
+import { usePreferencia, guardarPreferencia, useTemaOscuro } from '@/lib/preferencias';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { crearClienteNavegador } from '@/lib/supabase/navegador';
@@ -34,19 +35,16 @@ export function Cabecera({
   alertasPendientes: number;
 }) {
   const router = useRouter();
-  const [tema, setTema] = useState<Tema>('sistema');
+
+  // El tema elegido y si eso acaba siendo oscuro son dos cosas distintas:
+  // «sistema» no dice nada por si mismo, hay que preguntarle al equipo.
+  const tema = (usePreferencia('local', 'tema-sm') as Tema | null) ?? 'sistema';
+  const oscuroActivo = useTemaOscuro();
+
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [saliendo, setSaliendo] = useState(false);
   const refMenu = useRef<HTMLDivElement>(null);
-
-  // Lee el tema guardado al montar
-  useEffect(() => {
-    try {
-      const guardado = localStorage.getItem('tema-sm') as Tema | null;
-      setTema(guardado ?? 'sistema');
-    } catch { /* sin almacenamiento: se usa la preferencia del sistema */ }
-  }, []);
 
   // Cierra el menú al hacer clic fuera o pulsar Escape
   useEffect(() => {
@@ -65,24 +63,24 @@ export function Cabecera({
     };
   }, [menuAbierto]);
 
-  /** Aplica el tema elegido. 'sistema' deja mandar a la preferencia del equipo. */
+  /**
+   * Aplica el tema elegido. 'sistema' no guarda nada: deja mandar a la
+   * preferencia del equipo, y la ausencia de valor es justo lo que significa.
+   *
+   * El atributo del <html> se toca directamente porque tiene que aplicarse
+   * antes de que React vuelva a dibujar: si esperase al renderizado, el color
+   * de fondo cambiaria un instante despues que el resto.
+   */
   function elegirTema(nuevo: Tema) {
-    if (nuevo === 'sistema') {
-      document.documentElement.removeAttribute('data-tema');
-      try { localStorage.removeItem('tema-sm'); } catch {}
-    } else {
-      document.documentElement.setAttribute('data-tema', nuevo);
-      try { localStorage.setItem('tema-sm', nuevo); } catch {}
-    }
-    setTema(nuevo);
+    if (nuevo === 'sistema') document.documentElement.removeAttribute('data-tema');
+    else document.documentElement.setAttribute('data-tema', nuevo);
+
+    guardarPreferencia('local', 'tema-sm', nuevo === 'sistema' ? null : nuevo);
   }
 
   /** Alterna rápido entre claro y oscuro desde el botón de la cabecera. */
   function alternarTemaRapido() {
-    const oscuroAhora =
-      tema === 'oscuro' ||
-      (tema === 'sistema' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    elegirTema(oscuroAhora ? 'claro' : 'oscuro');
+    elegirTema(oscuroActivo ? 'claro' : 'oscuro');
   }
 
   async function salir() {
@@ -104,10 +102,6 @@ export function Cabecera({
     .split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
 
   const puedeConfigurar = ['gerencia', 'operaciones'].includes(usuario.rol);
-  const oscuroActivo =
-    tema === 'oscuro' ||
-    (tema === 'sistema' && typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-color-scheme: dark)').matches);
 
   return (
     <header className="cabecera no-imprimir">
@@ -199,7 +193,6 @@ export function Cabecera({
                     className="cabecera-opcion"
                     role="menuitemradio"
                     aria-checked={tema === o.valor}
-                    aria-pressed={tema === o.valor}
                     onClick={() => elegirTema(o.valor)}
                   >
                     <Icono nombre={o.icono} tamano={15} />

@@ -67,24 +67,32 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
   if (idBuscado) consulta = consulta.eq('id', idBuscado);
   else if (estado) consulta = consulta.eq('estado', estado);
 
-  const [{ data: filas, count }, { data: todas }] = await Promise.all([
+  const [{ data: filas, count }, { data: todas }, { data: yaVencidas }] = await Promise.all([
     consulta
       .order('creado_en', { ascending: false })
       .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
-    supabase.from('reservas').select('estado, peso_neto_kg, vence_el'),
+    supabase.from('reservas').select('estado, peso_neto_kg'),
+    /*
+     * Quién está vencida lo decide la BASE DE DATOS, con su propio reloj.
+     *
+     * Es deliberado y no una manía: la función reservas_expirar_vencidas()
+     * usa el now() de PostgreSQL, así que si aquí comparásemos contra el
+     * reloj del servidor web, el botón podría decir «3 vencidas» y la
+     * expiración liberar 2. Un desfase de segundos entre dos máquinas basta
+     * para que la cuenta que ve el usuario no cuadre con lo que ocurre.
+     */
+    supabase
+      .from('reservas')
+      .select('peso_neto_kg')
+      .eq('estado', 'activa')
+      .lt('vence_el', 'now()'),
   ]);
 
   const universo = todas ?? [];
   const activas = universo.filter((r) => r.estado === 'activa');
   const kgActivos = activas.reduce((s, r) => s + Number(r.peso_neto_kg ?? 0), 0);
 
-  // El instante se toma UNA vez y se reutiliza. Leer el reloj dentro del
-  // filtro haría que dos reservas se comparasen contra momentos distintos, y
-  // convierte el render en impuro: mismo dato, resultado distinto.
-  const ahora = Date.now();
-  const vencidas = activas.filter(
-    (r) => r.vence_el && new Date(r.vence_el as string).getTime() < ahora
-  );
+  const vencidas = yaVencidas ?? [];
   const kgVencidos = vencidas.reduce((s, r) => s + Number(r.peso_neto_kg ?? 0), 0);
 
   return (

@@ -18,7 +18,8 @@
  *   · Rejilla discreta que no compite con los datos.
  * ============================================================================
  */
-import { useState, useEffect, useId } from 'react';
+import { useState, useId } from 'react';
+import { useTemaOscuro } from '@/lib/preferencias';
 import { colorSerie, colorRampa, ESTADO } from './paleta';
 import { tm, num, dinero } from '@/lib/formato';
 
@@ -53,33 +54,11 @@ function aplicarFormato(valor: number, formato: Formato = 'entero', sufijo?: str
 }
 
 /* --------------------------------------------------------------------------
-   Detecta si estamos en tema oscuro, para elegir la paleta correcta.
+   La deteccion del tema oscuro vive en src/lib/preferencias.ts, junto con el
+   resto de lecturas del navegador. La cabecera necesita exactamente lo mismo
+   para pintar su boton, y dos implementaciones del mismo dato acaban
+   discrepando: el grafico en colores claros y el boton diciendo «oscuro».
    -------------------------------------------------------------------------- */
-function useTemaOscuro(): boolean {
-  const [oscuro, setOscuro] = useState(false);
-
-  useEffect(() => {
-    function calcular() {
-      const marca = document.documentElement.getAttribute('data-tema');
-      if (marca === 'oscuro') return true;
-      if (marca === 'claro') return false;
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    setOscuro(calcular());
-
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const alCambiar = () => setOscuro(calcular());
-    mq.addEventListener('change', alCambiar);
-
-    // También reaccionamos si el usuario cambia el tema desde la cabecera
-    const obs = new MutationObserver(alCambiar);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-tema'] });
-
-    return () => { mq.removeEventListener('change', alCambiar); obs.disconnect(); };
-  }, []);
-
-  return oscuro;
-}
 
 /* --------------------------------------------------------------------------
    Leyenda compartida

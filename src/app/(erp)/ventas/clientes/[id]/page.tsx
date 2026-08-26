@@ -14,12 +14,14 @@
  *  información está repartida entre Comercial y Finanzas y nadie la ve junta.
  * ============================================================================
  */
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, RejillaKpi, Kpi, Barra } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
+import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
@@ -42,21 +44,79 @@ const TONO_CICLO: Record<string, 'ok' | 'atencion' | 'critico' | 'info' | 'neutr
   despachado: 'ok', cerrado: 'ok', cancelado: 'critico',
 };
 
+/**
+ * ----------------------------------------------------------------------------
+ *  EL CASCARÓN
+ * ----------------------------------------------------------------------------
+ *  Una sola consulta —la que dice si el registro existe— y la cabecera. El
+ *  resto se cuelga de un <Suspense>.
+ *
+ *  El reparto decide el código HTTP: Next.js empieza a enviar la respuesta al
+ *  encontrar el primer <Suspense>, y una cabecera ya enviada no se puede
+ *  cambiar. Si toda la página estuviera dentro de un loading.tsx, el
+ *  notFound() llegaría tarde y un identificador inventado respondería 200.
+ * ----------------------------------------------------------------------------
+ */
 export default async function FichaCliente(props: PageProps<'/ventas/clientes/[id]'>) {
   const { id } = await props.params;
   const cliId = Number(id);
 
   const supabase = await crearClienteServidor();
+  const { data: c } = await supabase
+    .from('clientes')
+    .select('*, vendedores(id, nombre, email)')
+    .eq('id', cliId)
+    .single();
+
+  if (!c) notFound();
+
+  return (
+    <>
+      <CabeceraPagina
+        titulo={c.razon_social as string}
+        descripcion={`${c.pais as string} · ${(c.tipo as string) ?? 'cliente'} · ${(c.ruc_tax_id as string) ?? 'sin identificación fiscal'}`}
+        volver={{ href: '/ventas/clientes', texto: 'Volver a clientes' }}
+      >
+        <Link href={`/ventas/cotizaciones/nueva?cliente=${cliId}`} className="btn btn-secundario">
+          <Icono nombre="cotizacion" tamano={15} />
+          Cotizar
+        </Link>
+        <Link href={`/ventas/pedidos/nuevo?cliente=${cliId}`} className="btn btn-primario">
+          <Icono nombre="mas" tamano={15} />
+          Nuevo pedido
+        </Link>
+      </CabeceraPagina>
+
+      <Suspense fallback={<CargandoCuerpo />}>
+        <CuerpoCliente cliId={cliId} c={c} />
+      </Suspense>
+    </>
+  );
+}
+
+function CargandoCuerpo() {
+  return (
+    <>
+      <EsqueletoKpi cantidad={5} />
+      <div className="rejilla-2">
+        <EsqueletoFicha lineas={10} />
+        <EsqueletoFicha lineas={5} />
+      </div>
+      <EsqueletoTabla filas={5} columnas={8} conFiltros={false} />
+      <EsqueletoTabla filas={4} columnas={6} conFiltros={false} />
+      <span className="sr-solo" role="status">Cargando la información del cliente…</span>
+    </>
+  );
+}
+
+/** Su cartera: crédito, pedidos, cotizaciones y facturas. */
+async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, unknown> }) {
+  const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const puedeVerImportes = veCostos((usuario?.rol ?? 'consulta') as Rol);
 
-  const [{ data: c }, { data: pedidos }, { data: cotizaciones }, { data: facturas }] =
+  const [{ data: pedidos }, { data: cotizaciones }, { data: facturas }] =
     await Promise.all([
-      supabase
-        .from('clientes')
-        .select('*, vendedores(id, nombre, email)')
-        .eq('id', cliId)
-        .single(),
       supabase
         .from('pedidos')
         .select('id, numero_proforma, fecha_comprometida, ciclo, cobertura, situacion, moneda, prioridad, pedido_lineas(cantidad_tm, precio_tm, descuento_pct)')
@@ -76,8 +136,6 @@ export default async function FichaCliente(props: PageProps<'/ventas/clientes/[i
         .order('fecha_emision', { ascending: false })
         .limit(25),
     ]);
-
-  if (!c) notFound();
 
   /* ---- Deuda viva: lo facturado menos lo cobrado, sin contar anuladas ---- */
   const vivas = (facturas ?? []).filter((f) => f.estado !== 'anulada');
@@ -103,21 +161,6 @@ export default async function FichaCliente(props: PageProps<'/ventas/clientes/[i
 
   return (
     <>
-      <CabeceraPagina
-        titulo={c.razon_social as string}
-        descripcion={`${c.pais as string} · ${(c.tipo as string) ?? 'cliente'} · ${(c.ruc_tax_id as string) ?? 'sin identificación fiscal'}`}
-        volver={{ href: '/ventas/clientes', texto: 'Volver a clientes' }}
-      >
-        <Link href={`/ventas/cotizaciones/nueva?cliente=${cliId}`} className="btn btn-secundario">
-          <Icono nombre="cotizacion" tamano={15} />
-          Cotizar
-        </Link>
-        <Link href={`/ventas/pedidos/nuevo?cliente=${cliId}`} className="btn btn-primario">
-          <Icono nombre="mas" tamano={15} />
-          Nuevo pedido
-        </Link>
-      </CabeceraPagina>
-
       {c.bloqueado === true && (
         <div className="ficha-aviso ficha-aviso-critico">
           <Icono nombre="alerta" tamano={17} />
@@ -187,7 +230,7 @@ export default async function FichaCliente(props: PageProps<'/ventas/clientes/[i
         <Panel titulo="Condiciones comerciales">
           <dl className="ficha">
             <div><dt>Moneda</dt><dd>{c.moneda as string}</dd></div>
-            <div><dt>Días de crédito</dt><dd>{num(c.dias_credito)} días</dd></div>
+            <div><dt>Días de crédito</dt><dd>{num(Number(c.dias_credito))} días</dd></div>
             <div>
               <dt>Línea de crédito</dt>
               <dd>{linea > 0 ? dinero(linea, c.moneda as 'USD' | 'PEN', 0) : 'Sin línea asignada'}</dd>

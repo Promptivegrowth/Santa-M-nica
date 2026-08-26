@@ -11,12 +11,14 @@
  *  poder seguir el hilo.
  * ============================================================================
  */
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
+import { EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { AccionesFicha } from './AccionesFicha';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, pct, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
@@ -40,27 +42,39 @@ const TONO: Record<string, 'ok' | 'atencion' | 'critico' | 'info' | 'neutro'> = 
   rechazada: 'critico', vencida: 'atencion',
 };
 
+/**
+ * ----------------------------------------------------------------------------
+ *  EL CASCARÓN
+ * ----------------------------------------------------------------------------
+ *  Una sola consulta —la que dice si el registro existe— y la cabecera. El
+ *  resto se cuelga de un <Suspense>.
+ *
+ *  El reparto decide el código HTTP: Next.js empieza a enviar la respuesta al
+ *  encontrar el primer <Suspense>, y una cabecera ya enviada no se puede
+ *  cambiar. Si toda la página estuviera dentro de un loading.tsx, el
+ *  notFound() llegaría tarde y un identificador inventado respondería 200.
+ * ----------------------------------------------------------------------------
+ */
 export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaciones/[id]'>) {
   const { id } = await props.params;
   const cotId = Number(id);
 
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
-  const rol = (usuario?.rol ?? 'consulta') as Rol;
-  const puedeVerImportes = veCostos(rol);
-  const puedeOperar = puedeVender(rol);
+  const puedeOperar = puedeVender((usuario?.rol ?? 'consulta') as Rol);
 
-  const [{ data: cot }, { data: lineas }, { data: pedido }] = await Promise.all([
+  /*
+   * El pedido se consulta aquí, junto a la cotización, porque la botonera de
+   * la cabecera necesita saber si ya se convirtió: es lo que decide si los
+   * botones de editar y eliminar salen activos o apagados. Son dos consultas
+   * ligeras, ambas por clave.
+   */
+  const [{ data: cot }, { data: pedido }] = await Promise.all([
     supabase
       .from('cotizaciones')
       .select('*, clientes(id, razon_social, pais, moneda, bloqueado), vendedores(nombre), destinos(puerto, pais), listas_precio(nombre), usuarios!cotizaciones_creado_por_fkey(nombre)')
       .eq('id', cotId)
       .single(),
-    supabase
-      .from('cotizacion_lineas')
-      .select('id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct, orden, sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
-      .eq('cotizacion_id', cotId)
-      .order('orden'),
     supabase
       .from('pedidos')
       .select('id, numero_proforma, ciclo')
@@ -69,6 +83,67 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
   ]);
 
   if (!cot) notFound();
+
+  const estado = cot.estado as string;
+
+  return (
+    <>
+      <CabeceraPagina
+        titulo={cot.numero as string}
+        descripcion={`${campo(cot.clientes, 'razon_social')} · ${campo(cot.destinos, 'puerto')}`}
+        volver={{ href: '/ventas/cotizaciones', texto: 'Volver a cotizaciones' }}
+      >
+        <Etiqueta texto={etiquetaEstado(estado)} tono={TONO[estado] ?? 'neutro'} />
+        {puedeOperar && (
+          <AccionesFicha
+            cotizacionId={cotId}
+            numero={cot.numero as string}
+            estado={estado}
+            yaConvertida={!!pedido}
+          />
+        )}
+      </CabeceraPagina>
+
+      <Suspense fallback={<CargandoCuerpo />}>
+        <CuerpoCotizacion cotId={cotId} cot={cot} pedido={pedido} />
+      </Suspense>
+    </>
+  );
+}
+
+function CargandoCuerpo() {
+  return (
+    <>
+      <EsqueletoFicha lineas={3} />
+      <EsqueletoTabla filas={5} columnas={8} conFiltros={false} />
+      <div className="rejilla-2">
+        <EsqueletoFicha lineas={7} />
+        <EsqueletoFicha lineas={5} />
+      </div>
+      <span className="sr-solo" role="status">Cargando la cotización…</span>
+    </>
+  );
+}
+
+/** El detalle: líneas, totales, avisos e historial. */
+async function CuerpoCotizacion({
+  cotId,
+  cot,
+  pedido,
+}: {
+  cotId: number;
+  cot: Record<string, unknown>;
+  pedido: { id: number; numero_proforma: string; ciclo: string } | null;
+}) {
+  const supabase = await crearClienteServidor();
+  const usuario = await obtenerUsuarioActual();
+  const puedeVerImportes = veCostos((usuario?.rol ?? 'consulta') as Rol);
+
+  const { data: lineas } = await supabase
+    .from('cotizacion_lineas')
+    .select('id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct, orden, sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
+    .eq('cotizacion_id', cotId)
+    .order('orden');
 
   const cliente = uno<Record<string, unknown>>(cot.clientes);
   const moneda = cot.moneda as 'USD' | 'PEN';
@@ -92,22 +167,6 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
 
   return (
     <>
-      <CabeceraPagina
-        titulo={cot.numero as string}
-        descripcion={`${campo(cot.clientes, 'razon_social')} · ${campo(cot.destinos, 'puerto')}`}
-        volver={{ href: '/ventas/cotizaciones', texto: 'Volver a cotizaciones' }}
-      >
-        <Etiqueta texto={etiquetaEstado(estado)} tono={TONO[estado] ?? 'neutro'} />
-        {puedeOperar && (
-          <AccionesFicha
-            cotizacionId={cotId}
-            numero={cot.numero as string}
-            estado={estado}
-            yaConvertida={!!pedido}
-          />
-        )}
-      </CabeceraPagina>
-
       {/* ---- Avisos de situación ---- */}
       {pedido && (
         <div className="ficha-aviso ficha-aviso-ok">
@@ -147,7 +206,7 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
         <div><dt>Fecha</dt><dd>{fecha(cot.fecha as string)}</dd></div>
         <div><dt>Validez</dt><dd>{diasValidez} días · vence {fecha(vence)}</dd></div>
         <div><dt>Incoterm</dt><dd>{cot.incoterm as string}</dd></div>
-        <div><dt>Moneda</dt><dd>{moneda} · TC {num(cot.tipo_cambio, 2)}</dd></div>
+        <div><dt>Moneda</dt><dd>{moneda} · TC {num(Number(cot.tipo_cambio), 2)}</dd></div>
         <div><dt>Líneas</dt><dd>{num(filas.length)}</dd></div>
         <div><dt>Toneladas</dt><dd>{num(toneladas, 3)} TM</dd></div>
         {puedeVerImportes && (

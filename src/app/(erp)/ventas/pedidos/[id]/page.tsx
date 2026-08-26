@@ -23,12 +23,14 @@
  * ============================================================================
  */
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, Semaforo, Barra, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
-import { tm, num, fecha, fechaHora, dinero, pct, etiquetaEstado } from '@/lib/formato';
+import { EsqueletoKpi, EsqueletoPestanas, EsqueletoFicha } from '@/components/ui/Esqueleto';
+import { tm, num, fecha, dinero, pct, etiquetaEstado } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
 
@@ -56,6 +58,29 @@ const PESTANAS = [
   { clave: 'historial',      titulo: 'Historial' },
 ];
 
+/**
+ * ----------------------------------------------------------------------------
+ *  EL CASCARÓN
+ * ----------------------------------------------------------------------------
+ *  Una sola consulta —la que dice si el registro existe— y la cabecera. El
+ *  resto se cuelga de un <Suspense>.
+ *
+ *  El reparto decide el código HTTP: Next.js empieza a enviar la respuesta al
+ *  encontrar el primer <Suspense>, y una cabecera ya enviada no se puede
+ *  cambiar. Si toda la página estuviera dentro de un loading.tsx, el
+ *  notFound() llegaría tarde y un identificador inventado respondería 200.
+ * ----------------------------------------------------------------------------
+ */
+/**
+ * Una fila de v_pedidos_tablero.
+ *
+ * Todos sus valores son escalares —la vista ya aplanó las relaciones— asi que
+ * se pueden pintar directamente y pasar a los formateadores sin ir casteando
+ * campo por campo. Se declara aqui porque la fila viaja del cascarón al
+ * cuerpo y ambos necesitan saber qué reciben.
+ */
+type FilaPedido = Record<string, string | number | boolean | null>;
+
 export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[id]'>) {
   const { id } = await props.params;
   const q = await props.searchParams;
@@ -63,13 +88,54 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
   const pestana = (q.t as string) ?? 'general';
 
   const supabase = await crearClienteServidor();
-  const usuario = await obtenerUsuarioActual();
-  const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
-
-  /* ---- Cabecera del pedido ---- */
   const { data: pedido } = await supabase
     .from('v_pedidos_tablero').select('*').eq('id', pedidoId).single();
   if (!pedido) notFound();
+
+  return (
+    <>
+      <CabeceraPagina
+        titulo={pedido.numero_proforma as string}
+        descripcion={`${pedido.cliente} · ${pedido.destino ?? 'sin destino'}`}
+        volver={{ href: '/ventas/pedidos', texto: 'Volver a pedidos' }}
+      >
+        <Semaforo estado={pedido.semaforo as never} />
+      </CabeceraPagina>
+
+      <Suspense fallback={<CargandoCuerpo />}>
+        <CuerpoPedido pedidoId={pedidoId} pestana={pestana} pedido={pedido} />
+      </Suspense>
+    </>
+  );
+}
+
+function CargandoCuerpo() {
+  return (
+    <>
+      <EsqueletoKpi cantidad={5} />
+      <EsqueletoPestanas cantidad={11} />
+      <div className="rejilla-2">
+        <EsqueletoFicha lineas={7} />
+        <EsqueletoFicha lineas={6} />
+      </div>
+      <span className="sr-solo" role="status">Cargando el pedido…</span>
+    </>
+  );
+}
+
+/** Indicadores, pestañas y el contenido de la pestaña activa. */
+async function CuerpoPedido({
+  pedidoId,
+  pestana,
+  pedido,
+}: {
+  pedidoId: number;
+  pestana: string;
+  pedido: FilaPedido;
+}) {
+  const supabase = await crearClienteServidor();
+  const usuario = await obtenerUsuarioActual();
+  const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
 
   const moneda = pedido.moneda as 'USD' | 'PEN';
 
@@ -105,26 +171,18 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
 
   return (
     <>
-      <CabeceraPagina
-        titulo={pedido.numero_proforma as string}
-        descripcion={`${pedido.cliente} · ${pedido.destino ?? 'sin destino'}`}
-        volver={{ href: '/ventas/pedidos', texto: 'Volver a pedidos' }}
-      >
-        <Semaforo estado={pedido.semaforo as never} />
-      </CabeceraPagina>
-
       <RejillaKpi>
-        <Kpi etiqueta="Cantidad pedida" valor={num(pedido.tm_pedidas, 1)} sufijo="TM" />
-        <Kpi etiqueta="Reservado" valor={num(pedido.tm_reservadas, 1)} sufijo="TM" tono="atencion" />
-        <Kpi etiqueta="Despachado" valor={num(pedido.tm_despachadas, 1)} sufijo="TM" tono="ok" />
+        <Kpi etiqueta="Cantidad pedida" valor={num(Number(pedido.tm_pedidas), 1)} sufijo="TM" />
+        <Kpi etiqueta="Reservado" valor={num(Number(pedido.tm_reservadas), 1)} sufijo="TM" tono="atencion" />
+        <Kpi etiqueta="Despachado" valor={num(Number(pedido.tm_despachadas), 1)} sufijo="TM" tono="ok" />
         <Kpi
           etiqueta="Falta por cubrir"
-          valor={num(pedido.tm_faltantes, 1)}
+          valor={num(Number(pedido.tm_faltantes), 1)}
           sufijo="TM"
           tono={Number(pedido.tm_faltantes) > 0 ? 'critico' : 'ok'}
         />
         {puedeVerCostos && (
-          <Kpi etiqueta="Valor de la venta" valor={dinero(pedido.venta, moneda, 0)} tono="marca" />
+          <Kpi etiqueta="Valor de la venta" valor={dinero(Number(pedido.venta), moneda, 0)} tono="marca" />
         )}
       </RejillaKpi>
 
@@ -152,7 +210,7 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
               <div><dt>País</dt><dd>{pedido.pais ?? '—'}</dd></div>
               <div><dt>Destino</dt><dd>{pedido.destino ?? '—'}{pedido.destino_pais ? `, ${pedido.destino_pais}` : ''}</dd></div>
               <div><dt>Incoterm</dt><dd>{pedido.incoterm}</dd></div>
-              <div><dt>Moneda</dt><dd>{moneda} · TC {num(pedido.tipo_cambio, 2)}</dd></div>
+              <div><dt>Moneda</dt><dd>{moneda} · TC {num(Number(pedido.tipo_cambio), 2)}</dd></div>
               <div><dt>Prioridad</dt><dd><Etiqueta texto={etiquetaEstado(pedido.prioridad as string)} tono={pedido.prioridad === 'urgente' ? 'critico' : 'neutro'} /></dd></div>
             </dl>
           </Panel>
@@ -398,7 +456,7 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
       {pestana === 'despachos' && (
         <Panel titulo="Despachos realizados">
           <Vacio
-            titulo={Number(pedido.tm_despachadas) > 0 ? `${num(pedido.tm_despachadas, 1)} TM despachadas` : 'Sin despachos'}
+            titulo={Number(pedido.tm_despachadas) > 0 ? `${num(Number(pedido.tm_despachadas), 1)} TM despachadas` : 'Sin despachos'}
             mensaje="El detalle por contenedor está en la pestaña Embarques y en el módulo de Logística."
           />
         </Panel>

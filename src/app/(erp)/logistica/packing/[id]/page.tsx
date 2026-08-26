@@ -21,11 +21,12 @@
  *  en cero.
  * ============================================================================
  */
-import Link from 'next/link';
+import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
+import { EsqueletoKpi, EsqueletoTabla } from '@/components/ui/Esqueleto';
 import { Historial } from '@/components/ui/Historial';
 import { tm, num, fecha } from '@/lib/formato';
 
@@ -38,6 +39,19 @@ export async function generateMetadata(props: PageProps<'/logistica/packing/[id]
   return { title: data?.codigo ?? 'Packing list' };
 }
 
+/**
+ * ----------------------------------------------------------------------------
+ *  EL CASCARÓN
+ * ----------------------------------------------------------------------------
+ *  Una sola consulta —la que dice si el registro existe— y la cabecera. El
+ *  resto se cuelga de un <Suspense>.
+ *
+ *  El reparto decide el código HTTP: Next.js empieza a enviar la respuesta al
+ *  encontrar el primer <Suspense>, y una cabecera ya enviada no se puede
+ *  cambiar. Si toda la página estuviera dentro de un loading.tsx, el
+ *  notFound() llegaría tarde y un identificador inventado respondería 200.
+ * ----------------------------------------------------------------------------
+ */
 export default async function PaginaPlano(props: PageProps<'/logistica/packing/[id]'>) {
   const { id } = await props.params;
   const packingId = Number(id);
@@ -50,6 +64,44 @@ export default async function PaginaPlano(props: PageProps<'/logistica/packing/[
     .single();
 
   if (!pk) notFound();
+
+  const embCab = Array.isArray(pk.embarques) ? pk.embarques[0] : pk.embarques;
+  const almCab = embCab ? (Array.isArray(embCab.almacenes) ? embCab.almacenes[0] : embCab.almacenes) : null;
+  const dstCab = embCab ? (Array.isArray(embCab.destinos) ? embCab.destinos[0] : embCab.destinos) : null;
+
+  return (
+    <>
+      <CabeceraPagina
+        titulo={pk.codigo as string}
+        descripcion={`Contenedor ${pk.contenedor ?? 's/n'} · ${almCab?.nombre ?? ''} → ${dstCab?.puerto ?? ''}${dstCab?.pais ? ', ' + dstCab.pais : ''}`}
+        volver={{ href: '/logistica/packing', texto: 'Volver a packing lists' }}
+      >
+        <Etiqueta
+          texto={String(pk.estado).replace('_', ' ')}
+          tono={pk.estado === 'cerrado' ? 'ok' : 'atencion'}
+        />
+      </CabeceraPagina>
+
+      <Suspense fallback={<CargandoCuerpo />}>
+        <CuerpoPlano packingId={packingId} pk={pk} />
+      </Suspense>
+    </>
+  );
+}
+
+function CargandoCuerpo() {
+  return (
+    <>
+      <EsqueletoKpi cantidad={4} />
+      <EsqueletoTabla filas={8} columnas={10} conFiltros={false} />
+      <span className="sr-solo" role="status">Cargando el plano de estiba…</span>
+    </>
+  );
+}
+
+/** La matriz lote x fila, que es lo que cuesta calcular. */
+async function CuerpoPlano({ packingId, pk }: { packingId: number; pk: Record<string, unknown> }) {
+  const supabase = await crearClienteServidor();
 
   const [{ data: lineas }, { data: celdas }] = await Promise.all([
     supabase
@@ -64,8 +116,6 @@ export default async function PaginaPlano(props: PageProps<'/logistica/packing/[
   ]);
 
   const emb = Array.isArray(pk.embarques) ? pk.embarques[0] : pk.embarques;
-  const alm = emb ? (Array.isArray(emb.almacenes) ? emb.almacenes[0] : emb.almacenes) : null;
-  const dst = emb ? (Array.isArray(emb.destinos) ? emb.destinos[0] : emb.destinos) : null;
   const sup = Array.isArray(pk.usuarios) ? pk.usuarios[0] : pk.usuarios;
 
   const filasContenedor = Number(pk.filas_contenedor ?? 22);
@@ -115,17 +165,6 @@ export default async function PaginaPlano(props: PageProps<'/logistica/packing/[
 
   return (
     <>
-      <CabeceraPagina
-        titulo={pk.codigo as string}
-        descripcion={`Contenedor ${pk.contenedor ?? 's/n'} · ${alm?.nombre ?? ''} → ${dst?.puerto ?? ''}${dst?.pais ? ', ' + dst.pais : ''}`}
-        volver={{ href: '/logistica/packing', texto: 'Volver a packing lists' }}
-      >
-        <Etiqueta
-          texto={String(pk.estado).replace('_', ' ')}
-          tono={pk.estado === 'cerrado' ? 'ok' : 'atencion'}
-        />
-      </CabeceraPagina>
-
       <RejillaKpi>
         <Kpi etiqueta="Total de bultos" valor={num(totalBultos)} nota={`${lotes.length} lotes distintos`} />
         <Kpi etiqueta="Peso neto" valor={tm(totalPeso)} sufijo="TM" />

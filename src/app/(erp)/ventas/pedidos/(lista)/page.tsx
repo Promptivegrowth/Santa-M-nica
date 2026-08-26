@@ -20,7 +20,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, Semaforo, Barra } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
-import { tm, num, fecha, dinero, etiquetaEstado } from '@/lib/formato';
+import { num, fecha, dinero, etiquetaEstado } from '@/lib/formato';
 import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
 import { AccionesLista } from '@/components/ui/Acciones';
 import { Icono } from '@/components/estructura/Icono';

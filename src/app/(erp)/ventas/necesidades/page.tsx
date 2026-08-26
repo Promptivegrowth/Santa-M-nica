@@ -27,6 +27,8 @@ export default async function PaginaNecesidades() {
   const totalFalta = lista.reduce((s, f) => s + Number(f.tm_faltantes ?? 0), 0);
   const totalPedido = lista.reduce((s, f) => s + Number(f.tm_pedidas ?? 0), 0);
   const skusAfectados = lista.length;
+  // Cuántos pedidos distintos dependen de que esto se produzca. Es el dato
+  // que convierte «faltan 40 TM» en «hay 6 clientes esperando».
   const pedidosAfectados = new Set(lista.flatMap((f) => [f.pedidos])).size;
 
   return (
@@ -39,6 +41,12 @@ export default async function PaginaNecesidades() {
       <RejillaKpi>
         <Kpi etiqueta="Toneladas faltantes" valor={num(totalFalta, 1)} sufijo="TM" tono={totalFalta > 0 ? 'critico' : 'ok'} />
         <Kpi etiqueta="Productos afectados" valor={num(skusAfectados)} tono="atencion" />
+        <Kpi
+          etiqueta="Pedidos en espera"
+          valor={num(pedidosAfectados)}
+          tono={pedidosAfectados > 0 ? 'atencion' : 'ok'}
+          nota="Dependen de esta producción"
+        />
         <Kpi etiqueta="Total comprometido" valor={num(totalPedido, 1)} sufijo="TM" nota="En pedidos confirmados" />
       </RejillaKpi>
 

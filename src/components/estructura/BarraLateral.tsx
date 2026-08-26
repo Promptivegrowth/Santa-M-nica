@@ -21,7 +21,7 @@
  *     entradas el espacio en blanco se agota enseguida.
  * ============================================================================
  */
-import { useState, useEffect } from 'react';
+import { usePreferencia, guardarPreferencia } from '@/lib/preferencias';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { Grupo } from '@/lib/navegacion';
@@ -38,23 +38,14 @@ export function BarraLateral({
   onCerrar: () => void;
 }) {
   const ruta = usePathname();
-  const [colapsada, setColapsada] = useState(false);
 
-  // Recordamos si el usuario prefiere la barra angosta
-  useEffect(() => {
-    try {
-      setColapsada(localStorage.getItem('barra-colapsada') === 'si');
-    } catch {
-      /* almacenamiento no disponible: seguimos con el valor por defecto */
-    }
-  }, []);
+  // Si el usuario prefiere la barra angosta. Se lee del navegador sin efectos:
+  // asi la barra sale ya con su ancho definitivo en lugar de encogerse a la
+  // vista despues del primer dibujado.
+  const colapsada = usePreferencia('local', 'barra-colapsada') === 'si';
 
   function alternarAncho() {
-    setColapsada((c) => {
-      const nuevo = !c;
-      try { localStorage.setItem('barra-colapsada', nuevo ? 'si' : 'no'); } catch {}
-      return nuevo;
-    });
+    guardarPreferencia('local', 'barra-colapsada', colapsada ? 'no' : 'si');
   }
 
   /** ¿Esta entrada corresponde a la pantalla actual? */

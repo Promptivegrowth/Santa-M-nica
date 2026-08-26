@@ -11,7 +11,8 @@
  *  abierto, si el preloader ya terminó, etc.
  * ============================================================================
  */
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { usePreferencia, guardarPreferencia, useEnNavegador } from '@/lib/preferencias';
 import type { Grupo, Rol } from '@/lib/navegacion';
 import { BarraLateral } from './BarraLateral';
 import { Cabecera } from './Cabecera';
@@ -29,23 +30,26 @@ export function Marco({
   children: React.ReactNode;
 }) {
   const [menuAbierto, setMenuAbierto] = useState(false);
-  // El preloader solo se muestra una vez por sesión del navegador, para no
-  // hacer esperar al usuario cada vez que cambia de pantalla.
-  const [mostrarCarga, setMostrarCarga] = useState(false);
 
-  useEffect(() => {
-    try {
-      if (!sessionStorage.getItem('carga-vista')) {
-        setMostrarCarga(true);
-      }
-    } catch {
-      /* sin sessionStorage (modo privado): simplemente no mostramos el preloader */
-    }
-  }, []);
+  /*
+   * El preloader solo se muestra UNA vez por sesión del navegador: hacer
+   * esperar al usuario en cada cambio de pantalla seria una molestia, no una
+   * mejora.
+   *
+   * Las dos condiciones son necesarias:
+   *  · enNavegador  el servidor no puede saber si ya se vio, y dibujar el
+   *                 preloader en el HTML inicial lo haria aparecer y
+   *                 desaparecer de golpe en cada navegación.
+   *  · !yaVista     la marca que se deja al terminar.
+   */
+  const enNavegador = useEnNavegador();
+  const yaVista = usePreferencia('session', 'carga-vista') === 'si';
+  const mostrarCarga = enNavegador && !yaVista;
 
   function cargaTerminada() {
-    try { sessionStorage.setItem('carga-vista', 'si'); } catch {}
-    setMostrarCarga(false);
+    // Guardar la marca basta para que mostrarCarga pase a false: el valor se
+    // observa, no se copia a un estado propio.
+    guardarPreferencia('session', 'carga-vista', 'si');
   }
 
   return (

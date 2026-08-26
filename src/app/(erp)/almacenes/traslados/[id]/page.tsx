@@ -16,12 +16,14 @@
  *  en el Kardex como merma, con su motivo.
  * ============================================================================
  */
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
+import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, tm, etiquetaEstado } from '@/lib/formato';
 import { uno, campo } from '@/lib/relaciones';
@@ -45,26 +47,75 @@ const TONO: Record<string, 'ok' | 'atencion' | 'critico' | 'info' | 'neutro'> = 
   anulado: 'critico',
 };
 
+/**
+ * ----------------------------------------------------------------------------
+ *  EL CASCARÓN
+ * ----------------------------------------------------------------------------
+ *  Una sola consulta —la que dice si el registro existe— y la cabecera. El
+ *  resto se cuelga de un <Suspense>.
+ *
+ *  El reparto decide el código HTTP: Next.js empieza a enviar la respuesta al
+ *  encontrar el primer <Suspense>, y una cabecera ya enviada no se puede
+ *  cambiar. Si toda la página estuviera dentro de un loading.tsx, el
+ *  notFound() llegaría tarde y un identificador inventado respondería 200.
+ * ----------------------------------------------------------------------------
+ */
 export default async function FichaTraslado(props: PageProps<'/almacenes/traslados/[id]'>) {
   const { id } = await props.params;
   const trasId = Number(id);
 
   const supabase = await crearClienteServidor();
-
-  const [{ data: t }, { data: lineas }] = await Promise.all([
-    supabase
-      .from('traslados')
-      .select('*, origen:almacenes!traslados_almacen_origen_id_fkey(id, nombre, tipo), destino:almacenes!traslados_almacen_destino_id_fkey(id, nombre, tipo), transportistas(razon_social), vehiculos(placa), conductores(nombre, licencia), autorizador:usuarios!traslados_autorizado_por_fkey(nombre), despachador:usuarios!traslados_despachado_por_fkey(nombre), aceptador:usuarios!traslados_aceptado_por_fkey(nombre)')
-      .eq('id', trasId)
-      .single(),
-    supabase
-      .from('traslado_lineas')
-      .select('id, bultos_enviados, peso_enviado_kg, bultos_aceptados, peso_aceptado_kg, observacion, lotes(id, codigo_pallet, fecha_produccion, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre))))')
-      .eq('traslado_id', trasId)
-      .order('id'),
-  ]);
+  const { data: t } = await supabase
+    .from('traslados')
+    .select('*, origen:almacenes!traslados_almacen_origen_id_fkey(id, nombre, tipo), destino:almacenes!traslados_almacen_destino_id_fkey(id, nombre, tipo), transportistas(razon_social), vehiculos(placa), conductores(nombre, licencia), autorizador:usuarios!traslados_autorizado_por_fkey(nombre), despachador:usuarios!traslados_despachado_por_fkey(nombre), aceptador:usuarios!traslados_aceptado_por_fkey(nombre)')
+    .eq('id', trasId)
+    .single();
 
   if (!t) notFound();
+
+  const estadoCab = t.estado as string;
+
+  return (
+    <>
+      <CabeceraPagina
+        titulo={t.numero as string}
+        descripcion={`${campo(t.origen, 'nombre')} → ${campo(t.destino, 'nombre')}`}
+        volver={{ href: '/almacenes/traslados', texto: 'Volver a traslados' }}
+      >
+        <Etiqueta texto={etiquetaEstado(estadoCab)} tono={TONO[estadoCab] ?? 'neutro'} />
+      </CabeceraPagina>
+
+      <Suspense fallback={<CargandoCuerpo />}>
+        <CuerpoTraslado trasId={trasId} t={t} />
+      </Suspense>
+    </>
+  );
+}
+
+function CargandoCuerpo() {
+  return (
+    <>
+      <EsqueletoKpi cantidad={4} />
+      <EsqueletoFicha lineas={2} />
+      <div className="rejilla-2">
+        <EsqueletoFicha lineas={6} />
+        <EsqueletoFicha lineas={4} />
+      </div>
+      <EsqueletoTabla filas={5} columnas={8} conFiltros={false} />
+      <span className="sr-solo" role="status">Cargando el traslado…</span>
+    </>
+  );
+}
+
+/** El detalle: cadena de custodia, transporte y los lotes que van dentro. */
+async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string, unknown> }) {
+  const supabase = await crearClienteServidor();
+
+  const { data: lineas } = await supabase
+    .from('traslado_lineas')
+    .select('id, bultos_enviados, peso_enviado_kg, bultos_aceptados, peso_aceptado_kg, observacion, lotes(id, codigo_pallet, fecha_produccion, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre))))')
+    .eq('traslado_id', trasId)
+    .order('id');
 
   const estado = t.estado as string;
   const filas = lineas ?? [];
@@ -77,14 +128,6 @@ export default async function FichaTraslado(props: PageProps<'/almacenes/traslad
 
   return (
     <>
-      <CabeceraPagina
-        titulo={t.numero as string}
-        descripcion={`${campo(t.origen, 'nombre')} → ${campo(t.destino, 'nombre')}`}
-        volver={{ href: '/almacenes/traslados', texto: 'Volver a traslados' }}
-      >
-        <Etiqueta texto={etiquetaEstado(estado)} tono={TONO[estado] ?? 'neutro'} />
-      </CabeceraPagina>
-
       {estado === 'en_transito' && (
         <div className="ficha-aviso ficha-aviso-atencion">
           <Icono nombre="traslados" tamano={17} />

@@ -16,7 +16,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
-import { AccionesFila } from './AccionesFila';
+import { AccionesFila } from '../AccionesFila';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, etiquetaEstado } from '@/lib/formato';
 import { puedeVender, veCostos, type Rol } from '@/lib/navegacion';

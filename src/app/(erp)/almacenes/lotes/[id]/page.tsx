@@ -19,12 +19,14 @@
  *  llevó». Aquí se ve el nombre de ese cliente, desde cuándo, y cuándo expira.
  * ============================================================================
  */
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
+import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
@@ -41,27 +43,112 @@ export async function generateMetadata(
   return { title: data?.codigo_pallet ?? 'Lote' };
 }
 
+/**
+ * ----------------------------------------------------------------------------
+ *  EL CASCARÓN
+ * ----------------------------------------------------------------------------
+ *  Hace UNA sola consulta —la que dice si este lote existe— y dibuja la
+ *  cabecera. Todo lo demás se cuelga de un <Suspense> y llega después.
+ *
+ *  El reparto no es estético, es lo que hace que un identificador inventado
+ *  responda 404 de verdad. Next.js empieza a enviar la respuesta en cuanto
+ *  encuentra el primer <Suspense>, y una vez enviada la cabecera HTTP ya no se
+ *  puede cambiar el código de estado. Con un loading.tsx —que envuelve la
+ *  página entera— eso ocurre ANTES de que nadie haya mirado la base, así que
+ *  el notFound() llegaba tarde: el navegador veía la pantalla correcta, pero
+ *  con un 200 en la cabecera.
+ *
+ *  De regalo, la cabecera con el código del pallet aparece al instante en vez
+ *  de esperar a las seis consultas.
+ * ----------------------------------------------------------------------------
+ */
 export default async function FichaLote(props: PageProps<'/almacenes/lotes/[id]'>) {
   const { id } = await props.params;
   const loteId = Number(id);
 
   const supabase = await crearClienteServidor();
+  const { data: lote } = await supabase
+    .from('lotes')
+    .select('*, plantas(nombre, codigo), sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg))')
+    .eq('id', loteId)
+    .single();
+
+  if (!lote) notFound();
+
+  const sp = uno<Record<string, unknown>>(lote.sku_presentaciones);
+  const sku = uno<Record<string, unknown>>(sp?.skus);
+
+  return (
+    <>
+      <CabeceraPagina
+        titulo={lote.codigo_pallet as string}
+        descripcion={`${campo(sku?.especies, 'nombre')} · ${campo(sku?.formatos, 'nombre')} · ${campo(sku, 'corte')}`}
+        volver={{ href: '/almacenes/existencias', texto: 'Volver a existencias' }}
+      >
+        <Link href={`/trazabilidad?lote=${loteId}`} className="btn btn-secundario">
+          <Icono nombre="trazabilidad" tamano={15} />
+          Trazabilidad completa
+        </Link>
+        <Link href={`/trazabilidad/retiro?lote=${loteId}`} className="btn btn-peligro-borde">
+          <Icono nombre="retiro" tamano={15} />
+          Simular retiro
+        </Link>
+      </CabeceraPagina>
+
+      <Suspense fallback={<CargandoCuerpo />}>
+        <CuerpoLote loteId={loteId} lote={lote} />
+      </Suspense>
+    </>
+  );
+}
+
+/** El esqueleto de lo que está por llegar: mismas alturas, mismas columnas. */
+function CargandoCuerpo() {
+  return (
+    <>
+      <EsqueletoKpi cantidad={5} />
+      <div className="rejilla-2">
+        <EsqueletoFicha lineas={10} />
+        <EsqueletoTabla filas={3} columnas={5} conFiltros={false} />
+      </div>
+      <EsqueletoTabla filas={4} columnas={7} conFiltros={false} />
+      <EsqueletoTabla filas={6} columnas={9} conFiltros={false} />
+      <span className="sr-solo" role="status">Cargando la información del lote…</span>
+    </>
+  );
+}
+
+/**
+ * ----------------------------------------------------------------------------
+ *  EL CUERPO
+ * ----------------------------------------------------------------------------
+ *  Las cinco consultas pesadas. Se lanzan a la vez, no en fila: la más lenta
+ *  marca el tiempo total en lugar de sumarse a las demás.
+ * ----------------------------------------------------------------------------
+ */
+async function CuerpoLote({
+  loteId,
+  lote,
+}: {
+  loteId: number;
+  /** Ya viene resuelto del cascarón: no se vuelve a consultar. */
+  lote: Record<string, unknown>;
+}) {
+  const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
 
+  // Se vuelven a desanidar aquí porque la ficha de identidad los necesita.
+  const sp = uno<Record<string, unknown>>(lote.sku_presentaciones);
+  const sku = uno<Record<string, unknown>>(sp?.skus);
+
   const [
-    { data: lote },
     { data: existencias },
     { data: dictamenes },
     { data: reservas },
     { data: traza },
     { data: antiguedad },
   ] = await Promise.all([
-    supabase
-      .from('lotes')
-      .select('*, plantas(nombre, codigo), sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg))')
-      .eq('id', loteId)
-      .single(),
     supabase
       .from('existencias')
       .select('bultos, peso_neto_kg, costo_promedio, actualizado_en, almacenes(id, nombre, tipo), camaras(nombre)')
@@ -79,11 +166,6 @@ export default async function FichaLote(props: PageProps<'/almacenes/lotes/[id]'
     supabase.rpc('trazar_lote_adelante', { p_lote_id: loteId }),
     supabase.from('v_anticuamiento').select('meses_almacenado, rango, en_alerta, vencido').eq('lote_id', loteId).limit(1),
   ]);
-
-  if (!lote) notFound();
-
-  const sp = uno<Record<string, unknown>>(lote.sku_presentaciones);
-  const sku = uno<Record<string, unknown>>(sp?.skus);
 
   /* ---- Cuánto hay, cuánto está comprometido, cuánto queda libre ---- */
   const fisicoKg = (existencias ?? []).reduce((s, e) => s + Number(e.peso_neto_kg ?? 0), 0);
@@ -103,21 +185,6 @@ export default async function FichaLote(props: PageProps<'/almacenes/lotes/[id]'
 
   return (
     <>
-      <CabeceraPagina
-        titulo={lote.codigo_pallet as string}
-        descripcion={`${campo(sku?.especies, 'nombre')} · ${campo(sku?.formatos, 'nombre')} · ${campo(sku, 'corte')}`}
-        volver={{ href: '/almacenes/existencias', texto: 'Volver a existencias' }}
-      >
-        <Link href={`/trazabilidad?lote=${loteId}`} className="btn btn-secundario">
-          <Icono nombre="trazabilidad" tamano={15} />
-          Trazabilidad completa
-        </Link>
-        <Link href={`/trazabilidad/retiro?lote=${loteId}`} className="btn btn-peligro-borde">
-          <Icono nombre="retiro" tamano={15} />
-          Simular retiro
-        </Link>
-      </CabeceraPagina>
-
       {/* ---- Avisos que condicionan si este lote se puede vender ---- */}
       {bloqueoVigente && (
         <div className="ficha-aviso ficha-aviso-critico">
@@ -194,7 +261,7 @@ export default async function FichaLote(props: PageProps<'/almacenes/lotes/[id]'
             <div><dt>Turno / proceso</dt><dd>{String(lote.turno)} · {String(lote.proceso)}</dd></div>
             <div><dt>SKU</dt><dd className="mono">{campo(sku, 'codigo')}</dd></div>
             <div><dt>Presentación</dt><dd>{campo(sp?.presentaciones, 'descripcion')}</dd></div>
-            <div><dt>Producción inicial</dt><dd>{num(lote.bultos_iniciales)} bultos · {tm(Number(lote.peso_neto_inicial_kg))}</dd></div>
+            <div><dt>Producción inicial</dt><dd>{num(Number(lote.bultos_iniciales))} bultos · {tm(Number(lote.peso_neto_inicial_kg))}</dd></div>
             {puedeVerCostos && (
               <div><dt>Costo unitario de origen</dt><dd>{dinero(Number(lote.costo_unitario), 'USD', 4)}/kg</dd></div>
             )}

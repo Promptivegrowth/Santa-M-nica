@@ -172,7 +172,7 @@ async function sincronizarUsuarios(creados, idAlm) {
 /* ==========================================================================
    PASO 2 · MAESTROS
    ========================================================================== */
-async function sembrarMaestros(catalogo, usuarios) {
+async function sembrarMaestros(catalogo, _usuarios) {
   paso(2, 'Sembrando maestros (plantas, almacenes, productos, clientes)…');
 
   // --- Limpieza de datos operativos previos (mantiene parámetros y motivos) ---
@@ -389,7 +389,7 @@ async function sembrarMaestros(catalogo, usuarios) {
 
   const nombresCond = ['Juan Palacios Ríos','Carlos Sullón Vega','Miguel Ancajima','Jean Carlos Zapata',
     'Eduardo Sánchez','Jesús Mendoza','Anghelo Ruiz','Henrry Chávez','Jhonatan Príncipe','Estefani Rojas'];
-  const conductores = nombresCond.map((n, i) => ({
+  const conductores = nombresCond.map((n) => ({
     nombre: n,
     dni: String(40000000 + entero(1, 9999999)),
     licencia: `Q${entero(10000000, 99999999)}`,

@@ -15,12 +15,23 @@
  * ============================================================================
  */
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { useState, useEffect, useTransition } from 'react';
+import type { ReadonlyURLSearchParams } from 'next/navigation';
+import { useState, useTransition } from 'react';
 
 export type CampoFiltro =
   | { tipo: 'texto'; clave: string; etiqueta: string; ancho?: string }
   | { tipo: 'select'; clave: string; etiqueta: string; opciones: { valor: string; texto: string }[] }
   | { tipo: 'fecha'; clave: string; etiqueta: string };
+
+/** Los valores que dicta la direccion web en este momento. Funcion pura. */
+function desdeLaUrl(
+  campos: CampoFiltro[],
+  params: URLSearchParams | ReadonlyURLSearchParams
+): Record<string, string> {
+  const salida: Record<string, string> = {};
+  campos.forEach((c) => { salida[c.clave] = params.get(c.clave) ?? ''; });
+  return salida;
+}
 
 export function Filtros({ campos }: { campos: CampoFiltro[] }) {
   const router = useRouter();
@@ -28,15 +39,27 @@ export function Filtros({ campos }: { campos: CampoFiltro[] }) {
   const params = useSearchParams();
   const [pendiente, iniciar] = useTransition();
 
-  // Estado local para que escribir se sienta inmediato
-  const [valores, setValores] = useState<Record<string, string>>({});
+  /*
+   * Hay estado local porque escribir tiene que sentirse instantaneo: la caja
+   * de texto no puede esperar a que el servidor devuelva la pagina filtrada.
+   * Pero la verdad sigue estando en la URL, asi que cuando esta cambia —el
+   * boton «atras», un enlace con filtros, el borrado de todos— hay que
+   * resincronizar.
+   *
+   * Esa resincronizacion se hace DURANTE el renderizado y no dentro de un
+   * useEffect. Es el patron que documenta React para ajustar estado cuando
+   * cambian las entradas: React descarta el renderizado a medias y repite con
+   * el valor nuevo, sin llegar a pintar el intermedio. Con un efecto, en
+   * cambio, el usuario alcanza a ver un fotograma con los filtros viejos.
+   */
+  const claveUrl = params.toString();
+  const [ultimaClave, setUltimaClave] = useState(claveUrl);
+  const [valores, setValores] = useState<Record<string, string>>(() => desdeLaUrl(campos, params));
 
-  useEffect(() => {
-    const inicial: Record<string, string> = {};
-    campos.forEach((c) => { inicial[c.clave] = params.get(c.clave) ?? ''; });
-    setValores(inicial);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params]);
+  if (claveUrl !== ultimaClave) {
+    setUltimaClave(claveUrl);
+    setValores(desdeLaUrl(campos, params));
+  }
 
   function aplicar(nuevos: Record<string, string>) {
     const p = new URLSearchParams();

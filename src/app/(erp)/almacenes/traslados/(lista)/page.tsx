@@ -28,7 +28,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
-import { num, fecha, fechaHora, tm } from '@/lib/formato';
+import { num, fechaHora } from '@/lib/formato';
 
 export const metadata: Metadata = { title: 'Traslados' };
 export const dynamic = 'force-dynamic';
