@@ -240,6 +240,17 @@ tr[data-abierta="si"] > td:first-child { box-shadow: inset 3px 0 0 var(--acento)
 }
 .reservar-aviso svg { flex: none; margin-block-start: .1rem; }
 
+/* El atajo va junto a la explicación, no al final: quien lee «se toma de
+   varios pallets» es justo quien quiere hacerlo de una vez. */
+.reservar-atajo {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  flex-wrap: wrap;
+  padding-inline-end: .8rem;
+}
+.reservar-atajo .reservar-pista { flex: 1 1 20rem; }
+
 .reservar-pista,
 .reservar-vacio {
   margin: 0;
@@ -274,3 +285,152 @@ tr[data-abierta="si"] > td:first-child { box-shadow: inset 3px 0 0 var(--acento)
 @media (max-width: 560px) {
   .reservar-confirma { flex-direction: column; align-items: stretch; }
 }
+
+
+/* ===========================================================================
+   REGISTRAR INGRESO
+   =========================================================================== */
+
+/* El selector de cómo se escribe el peso. Va arriba de las casillas porque
+   cambia lo que se pide debajo. */
+.form-modo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .3rem 1.1rem;
+  margin-block-end: .9rem;
+  padding-block-end: .7rem;
+  border-block-end: 1px dashed var(--linea);
+  font-size: .82rem;
+}
+.form-modo > span { color: var(--tinta-3); }
+.form-modo label {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  cursor: pointer;
+  color: var(--tinta-2);
+}
+.form-modo input { accent-color: var(--acento); }
+
+/*
+   La lista de lo registrado en la sesión.
+   Quien carga treinta pallets seguidos necesita ver que los anteriores
+   entraron, sin ir al listado y volver. Es la confirmación acumulada.
+*/
+.ingresos-hechos {
+  border: 1px solid var(--ok);
+  border-radius: 4px;
+  background: var(--ok-suave);
+  padding: .8rem .9rem;
+}
+.ingresos-hechos h4 {
+  margin: 0 0 .5rem;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ok);
+}
+.ingresos-hechos ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
+.ingresos-hechos li {
+  display: flex;
+  align-items: flex-start;
+  gap: .45rem;
+  font-size: .81rem;
+  line-height: 1.45;
+  color: var(--tinta-2);
+}
+.ingresos-hechos li svg { flex: none; margin-block-start: .15rem; color: var(--ok); }
+
+
+/* ===========================================================================
+   DESPACHAR · la confirmación de la operación menos reversible del sistema
+   ===========================================================================
+   El panel enseña primero QUÉ sale y solo después deja pulsar. Un botón de
+   despachar sin esa foto delante es una invitación a sacar el contenedor
+   equivocado.
+   =========================================================================== */
+
+.despachar {
+  border: 1.5px solid var(--critico);
+  border-radius: 4px;
+  background: var(--superficie);
+  overflow: hidden;
+  max-width: 44rem;
+}
+
+.despachar-cab {
+  padding: .7rem .9rem;
+  background: var(--critico-suave);
+  border-block-end: 1px solid var(--linea);
+}
+.despachar-cab strong { display: block; font-size: .92rem; color: var(--critico); }
+.despachar-cab span { display: block; font-size: .79rem; color: var(--tinta-2); margin-block-start: .1rem; }
+
+.despachar-datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0;
+  margin: 0;
+  border-block-end: 1px solid var(--linea);
+}
+.despachar-datos > div {
+  padding: .55rem .7rem;
+  border-inline-end: 1px solid var(--linea);
+  border-block-end: 1px solid var(--linea);
+}
+.despachar-datos dt {
+  font-size: .64rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+  margin-block-end: .15rem;
+}
+.despachar-datos dd {
+  margin: 0;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--tinta);
+  font-variant-numeric: tabular-nums;
+}
+
+.despachar-bloqueo,
+.despachar-avisos {
+  padding: .65rem .9rem;
+  border-block-end: 1px solid var(--linea);
+}
+.despachar-bloqueo { background: var(--critico-suave); }
+.despachar-avisos { background: var(--atencion-suave); }
+
+.despachar-bloqueo strong,
+.despachar-avisos strong {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .82rem;
+  margin-block-end: .3rem;
+}
+.despachar-bloqueo strong { color: var(--critico); }
+.despachar-avisos strong { color: var(--atencion); }
+
+.despachar-bloqueo ul,
+.despachar-avisos ul {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+  font-size: .8rem;
+  line-height: 1.5;
+  color: var(--tinta-2);
+}
+.despachar-bloqueo li,
+.despachar-avisos li { margin-block-end: .2rem; }
+
+.despachar-confirma { padding: .75rem .9rem; background: var(--superficie-2); }
+.despachar-confirma label {
+  display: block;
+  font-size: .82rem;
+  color: var(--tinta-2);
+  margin-block-end: .35rem;
+}
+.despachar-confirma input { max-width: 16rem; margin-block-end: .7rem; }

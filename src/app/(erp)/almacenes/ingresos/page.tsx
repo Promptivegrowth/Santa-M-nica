@@ -11,6 +11,7 @@ import type { Metadata } from 'next';
 import { obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Etiqueta } from '@/components/ui/Pagina';
 import { Listado } from '@/components/ui/Listado';
+import { Icono } from '@/components/estructura/Icono';
 import { tm, num, fechaHora } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 
@@ -21,13 +22,21 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
   const q = await props.searchParams;
   const usuario = await obtenerUsuarioActual();
   const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
+  const puedeRegistrar = ['gerencia', 'operaciones', 'almacen'].includes(usuario?.rol ?? '');
 
   return (
     <>
       <CabeceraPagina
         titulo="Ingresos a cámara"
         descripcion="Cada ingreso da de alta un lote y abre su Kardex. Es el punto de partida de toda la trazabilidad."
-      />
+      >
+        {puedeRegistrar && (
+          <Link href="/almacenes/ingresos/nuevo" className="btn btn-primario">
+            <Icono nombre="mas" tamano={15} />
+            Registrar ingreso
+          </Link>
+        )}
+      </CabeceraPagina>
       <Listado
         vista="v_kardex"
         ficha={{ base: '/almacenes/lotes', clave: 'lote_id', titulo: 'Ver el lote que ingresó' }}

@@ -29,7 +29,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import {
-  crearReserva, lotesParaLinea,
+  crearReserva, lotesParaLinea, apartarTodoDisponible,
   type LoteCandidato, type OpcionesDeLinea,
 } from '@/app/(erp)/almacenes/reservas/acciones';
 
@@ -86,6 +86,27 @@ export function FilaCobertura({
     const propuesto = Math.min(opciones?.faltaKg ?? 0, lote.disponible_kg);
     setKilos(Math.round(propuesto * 10) / 10);
     setAviso(null);
+  }
+
+  /**
+   * Aparta de todos los pallets de una vez, del más antiguo al más nuevo.
+   *
+   * Es el mismo criterio que aplicaría alguien haciéndolo a mano cuatro veces
+   * seguidas, así que hacerlo a mano solo añade clics y ocasiones de saltarse
+   * uno.
+   */
+  function apartarTodo() {
+    setAviso(null);
+    iniciarGuardado(async () => {
+      const r = await apartarTodoDisponible(pedidoLineaId);
+      setAviso({
+        tipo: r.apartados > 0 ? 'ok' : 'mal',
+        texto: r.fallos.length ? `${r.mensaje} No se pudo con: ${r.fallos.join(' · ')}` : r.mensaje,
+      });
+      setElegido(null);
+      router.refresh();
+      setOpciones(await lotesParaLinea(pedidoLineaId));
+    });
   }
 
   function apartar() {
@@ -173,10 +194,24 @@ export function FilaCobertura({
                   </p>
                 ) : (
                   <>
-                    <p className="reservar-pista">
-                      Los lotes salen ordenados del <b>más antiguo al más nuevo</b>: lo que lleva
-                      más tiempo en cámara es lo que conviene sacar primero.
-                    </p>
+                    <div className="reservar-atajo">
+                      <p className="reservar-pista">
+                        Los lotes salen ordenados del <b>más antiguo al más nuevo</b>: lo que lleva
+                        más tiempo en cámara es lo que conviene sacar primero.{' '}
+                        {opciones.candidatos.length > 1 && (
+                          <>Una línea casi nunca se cubre con un solo pallet: se va tomando de varios.</>
+                        )}
+                      </p>
+                      {opciones.candidatos.length > 1 && (
+                        <button type="button" className="btn btn-primario btn-chico"
+                                onClick={apartarTodo} disabled={guardando}>
+                          <Icono nombre="reservas" tamano={14} />
+                          {guardando
+                            ? 'Apartando…'
+                            : `Apartar de los ${opciones.candidatos.length} pallets`}
+                        </button>
+                      )}
+                    </div>
 
                     <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
                       <table className="datos">

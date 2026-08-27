@@ -24,11 +24,12 @@
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { EsqueletoKpi, EsqueletoTabla } from '@/components/ui/Esqueleto';
 import { Historial } from '@/components/ui/Historial';
 import { tm, num, fecha } from '@/lib/formato';
+import { BotonDespachar } from './Despachar';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,13 +58,21 @@ export default async function PaginaPlano(props: PageProps<'/logistica/packing/[
   const packingId = Number(id);
   const supabase = await crearClienteServidor();
 
-  const { data: pk } = await supabase
-    .from('packing_lists')
-    .select('*, embarques(numero, booking, naviera, fecha_programada, almacenes(nombre), destinos(puerto, pais)), usuarios!packing_lists_supervisor_id_fkey(nombre)')
-    .eq('id', packingId)
-    .single();
+  const [{ data: pk }, usuarioActual] = await Promise.all([
+    supabase
+      .from('packing_lists')
+      .select('*, embarques(numero, booking, naviera, fecha_programada, almacenes(nombre), destinos(puerto, pais)), usuarios!packing_lists_supervisor_id_fkey(nombre)')
+      .eq('id', packingId)
+      .single(),
+    obtenerUsuarioActual(),
+  ]);
 
   if (!pk) notFound();
+
+  // Solo se ofrece despachar lo que todavía no salió.
+  const puedeDespachar =
+    ['gerencia', 'operaciones', 'almacen', 'comex'].includes(usuarioActual?.rol ?? '') &&
+    pk.estado !== 'cerrado' && pk.estado !== 'anulado';
 
   const embCab = Array.isArray(pk.embarques) ? pk.embarques[0] : pk.embarques;
   const almCab = embCab ? (Array.isArray(embCab.almacenes) ? embCab.almacenes[0] : embCab.almacenes) : null;
@@ -80,6 +89,7 @@ export default async function PaginaPlano(props: PageProps<'/logistica/packing/[
           texto={String(pk.estado).replace('_', ' ')}
           tono={pk.estado === 'cerrado' ? 'ok' : 'atencion'}
         />
+        <BotonDespachar packingListId={packingId} puede={puedeDespachar} />
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>

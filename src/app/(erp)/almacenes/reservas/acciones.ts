@@ -413,3 +413,97 @@ export async function lotesParaLinea(pedidoLineaId: number): Promise<OpcionesDeL
 
   return { candidatos, faltaKg, pedidoKg, producto, aviso };
 }
+
+/* ==========================================================================
+   APARTAR TODO LO DISPONIBLE, DE UNA VEZ
+   --------------------------------------------------------------------------
+   Una línea casi nunca se cubre con un solo pallet: hay que ir tomando de
+   varios hasta juntar las toneladas. Hacerlo de a uno son cuatro o cinco
+   clics idénticos, y el resultado es siempre el mismo, porque el criterio no
+   cambia: se toma del más antiguo hacia el más nuevo hasta cubrir lo que
+   falta o hasta que se acabe el stock.
+
+   Esta función hace ese recorrido de una vez. El botón de elegir uno a uno
+   sigue existiendo, porque hay veces que se quiere sacar de una bodega
+   concreta —la que está al lado del contenedor— y no del pallet más viejo.
+
+   NO ES UNA TRANSACCIÓN ÚNICA, Y ESTÁ BIEN QUE NO LO SEA
+   Cada pallet se aparta por separado y con sus propias validaciones. Si uno
+   falla —lo bloqueó calidad hace un minuto, otro usuario se lo llevó—, los
+   anteriores quedan apartados igual y el resultado dice cuántos entraron y
+   cuál falló. Deshacer los buenos porque uno salió mal obligaría a repetir
+   todo el trabajo por un pallet.
+   ========================================================================== */
+
+export type ResultadoLote = {
+  apartados: number;
+  kgApartados: number;
+  faltaKg: number;
+  mensaje: string;
+  fallos: string[];
+};
+
+export async function apartarTodoDisponible(pedidoLineaId: number): Promise<ResultadoLote> {
+  const opciones = await lotesParaLinea(pedidoLineaId);
+
+  if (opciones.faltaKg <= 0) {
+    return {
+      apartados: 0, kgApartados: 0, faltaKg: 0,
+      mensaje: 'Esta línea ya está cubierta por completo.',
+      fallos: [],
+    };
+  }
+  if (opciones.candidatos.length === 0) {
+    return {
+      apartados: 0, kgApartados: 0, faltaKg: opciones.faltaKg,
+      mensaje: 'No hay ni un kilo disponible de este producto para apartar.',
+      fallos: [],
+    };
+  }
+
+  let porCubrir = opciones.faltaKg;
+  let apartados = 0;
+  let kgApartados = 0;
+  const fallos: string[] = [];
+
+  for (const lote of opciones.candidatos) {
+    if (porCubrir <= 0.001) break;
+
+    // Del pallet se toma lo que falte, o todo lo que tenga si es menos.
+    const kilos = Math.round(Math.min(porCubrir, lote.disponible_kg) * 10) / 10;
+    if (kilos <= 0) continue;
+
+    const r = await crearReserva({
+      pedido_linea_id: pedidoLineaId,
+      lote_id: lote.lote_id,
+      almacen_id: lote.almacen_id,
+      bultos: Math.max(1, Math.ceil(kilos / lote.kg_por_bulto)),
+      peso_neto_kg: kilos,
+    });
+
+    if (r.ok) {
+      apartados += 1;
+      kgApartados += kilos;
+      porCubrir -= kilos;
+    } else {
+      fallos.push(`${lote.codigo_pallet}: ${r.mensaje}`);
+    }
+  }
+
+  const restante = Math.max(0, porCubrir);
+  const kgTexto = kgApartados.toLocaleString('es-PE', { maximumFractionDigits: 1 });
+
+  let mensaje: string;
+  if (apartados === 0) {
+    mensaje = 'No se pudo apartar de ningún pallet.';
+  } else if (restante <= 0.001) {
+    mensaje = `Línea cubierta al 100 %: se apartaron ${kgTexto} kg de ${apartados} pallet${apartados === 1 ? '' : 's'}.`;
+  } else {
+    mensaje =
+      `Se apartaron ${kgTexto} kg de ${apartados} pallet${apartados === 1 ? '' : 's'}: ` +
+      `es todo lo que había. Faltan ${restante.toLocaleString('es-PE', { maximumFractionDigits: 0 })} kg, ` +
+      'que solo se cubren con producción nueva o liberando reservas vencidas.';
+  }
+
+  return { apartados, kgApartados, faltaKg: restante, mensaje, fallos };
+}
