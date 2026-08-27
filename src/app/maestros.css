@@ -661,3 +661,36 @@ tr.facturar-total th {
   border-block-end: 1px solid var(--linea);
 }
 .facturar .acciones-fila { padding: .75rem .9rem; background: var(--superficie-2); }
+
+
+/* --- Cargar pallets en el contenedor ------------------------------------- */
+.cargar { display: flex; flex-direction: column; gap: .6rem; }
+.cargar-barra {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .7rem; flex-wrap: wrap; padding: .1rem .2rem;
+}
+.cargar-cifras { font-size: .82rem; color: var(--tinta-2); }
+.cargar-cifras b {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  color: var(--tinta); font-size: .9rem;
+}
+.cargar-vacio, .cargar-pista {
+  margin: 0; padding: .6rem .3rem;
+  font-size: .8rem; line-height: 1.5; color: var(--tinta-3);
+}
+.cargar-panel {
+  border: 1px solid var(--acento);
+  border-radius: 4px;
+  background: var(--superficie-2);
+  padding: .2rem .6rem .6rem;
+}
+.cargar-panel table.datos tr[data-elegido="si"] { background: var(--acento-suave); }
+.cargar-confirma {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: .8rem;
+  padding-block-start: .7rem; margin-block-start: .5rem;
+  border-block-start: 1px solid var(--linea);
+}
+
+/* La tabla de pedidos del embarque marca el elegido igual que el resto. */
+.form-bloque table.datos tr[data-elegido="si"] { background: var(--acento-suave); }
+.form-bloque table.datos tr[data-elegido="si"] td { font-weight: 600; }

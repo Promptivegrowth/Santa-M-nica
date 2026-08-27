@@ -24,6 +24,7 @@ import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
+import { NuevoPacking } from './NuevoPacking';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,15 +73,22 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
   const embId = Number(id);
 
   const supabase = await crearClienteServidor();
-  const { data: e } = await supabase
-    .from('embarques')
-    .select('*, almacenes(id, nombre), destinos(puerto, pais), transportistas(razon_social), vehiculos(placa), conductores(nombre)')
-    .eq('id', embId)
-    .single();
+  const [{ data: e }, usuarioCab, { data: supervisores }] = await Promise.all([
+    supabase
+      .from('embarques')
+      .select('*, almacenes(id, nombre), destinos(puerto, pais), transportistas(razon_social), vehiculos(placa), conductores(nombre)')
+      .eq('id', embId)
+      .single(),
+    obtenerUsuarioActual(),
+    supabase.from('usuarios').select('id, nombre').eq('activo', true).order('nombre'),
+  ]);
 
   if (!e) notFound();
 
   const estadoCab = e.estado as string;
+  const puedeArmar =
+    ['gerencia', 'operaciones', 'comex', 'almacen'].includes(usuarioCab?.rol ?? '') &&
+    estadoCab !== 'despachado' && estadoCab !== 'cancelado';
 
   return (
     <>
@@ -94,6 +102,13 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
           <Icono nombre="planificador" tamano={15} />
           Ver en el calendario
         </Link>
+        <NuevoPacking
+          embarqueId={embId}
+          supervisores={(supervisores ?? []).map((u) => ({
+            id: String(u.id), nombre: u.nombre as string,
+          }))}
+          puede={puedeArmar}
+        />
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>

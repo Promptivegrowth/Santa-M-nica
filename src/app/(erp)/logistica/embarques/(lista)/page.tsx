@@ -1,3 +1,4 @@
+import Link from 'next/link';
 /**
  * ============================================================================
  *  EMBARQUES · la programación de salidas
@@ -10,7 +11,9 @@
 import type { Metadata } from 'next';
 import { CabeceraPagina, Etiqueta } from '@/components/ui/Pagina';
 import { Listado } from '@/components/ui/Listado';
+import { Icono } from '@/components/estructura/Icono';
 import { fecha, etiquetaEstado } from '@/lib/formato';
+import { obtenerUsuarioActual } from '@/lib/supabase/servidor';
 
 export const metadata: Metadata = { title: 'Embarques' };
 export const dynamic = 'force-dynamic';
@@ -22,12 +25,23 @@ const TONO: Record<string, 'ok' | 'atencion' | 'info' | 'neutro' | 'critico'> = 
 
 export default async function PaginaEmbarques(props: PageProps<'/logistica/embarques'>) {
   const q = await props.searchParams;
+  const usuario = await obtenerUsuarioActual();
+  const puedeProgramar = ['gerencia', 'operaciones', 'comex', 'almacen']
+    .includes(usuario?.rol ?? '');
+
   return (
     <>
       <CabeceraPagina
         titulo="Embarques"
         descripcion="Cada embarque agrupa los pedidos que salen juntos. Un pedido grande puede repartirse en varios; varios pequeños pueden consolidarse en uno."
-      />
+      >
+        {puedeProgramar && (
+          <Link href="/logistica/embarques/nuevo" className="btn btn-primario">
+            <Icono nombre="mas" tamano={15} />
+            Programar embarque
+          </Link>
+        )}
+      </CabeceraPagina>
       <Listado
         vista="embarques"
         ficha={{ base: '/logistica/embarques', titulo: 'Ver el embarque' }}

@@ -31,6 +31,7 @@ import { Historial } from '@/components/ui/Historial';
 import { tm, num, fecha } from '@/lib/formato';
 import { BotonDespachar } from './Despachar';
 import { PlanoEditable } from './PlanoEditable';
+import { CargarLotes } from './CargarLotes';
 
 export const dynamic = 'force-dynamic';
 
@@ -212,6 +213,21 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
       </Panel>
 
       {/* ══════ EL PLANO ══════ */}
+      <Panel titulo="Pallets cargados" className="mb-espacio">
+        {/* Primero qué sale, después dónde va dentro del contenedor. */}
+        <CargarLotes
+          packingId={packingId}
+          cargados={lotes.map((l) => ({
+            lote_id: l.loteId,
+            pallet: l.pallet,
+            producto: `${l.especie} · ${l.corte} · ${l.presentacion}`,
+            bultos: l.bultos,
+            peso: l.peso,
+          }))}
+          puede={puedeDespachar}
+        />
+      </Panel>
+
       <Panel titulo={`Plano de estiba · ${filasContenedor} filas de ${sacosPorFila} sacos`}>
         {/*
           El plano es editable: el sistema lo propone con criterio FIFO, pero

@@ -245,6 +245,8 @@ export type LoteCargable = {
   meses: number;
   bultos_disponibles: number;
   kg_disponibles: number;
+  /** Para convertir bultos a kilos en la pantalla sin volver a preguntar. */
+  kg_por_bulto: number;
   reservado_para: string | null;
 };
 
@@ -314,6 +316,7 @@ export async function lotesCargables(packingId: number): Promise<LoteCargable[]>
         // físico: parte del pallet puede estar apartada para otro pedido.
         bultos_disponibles: Math.floor(kg / (info?.kgBulto ?? 1)),
         kg_disponibles: kg,
+        kg_por_bulto: info?.kgBulto ?? 1,
         reservado_para: null,
       };
     })
