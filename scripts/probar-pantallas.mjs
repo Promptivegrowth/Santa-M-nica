@@ -54,6 +54,7 @@ const PANTALLAS = [
   ['/logistica/embarques',       'Embarques'],
   ['/logistica/packing',         'estiba'],
   ['/logistica/despachos',       'Despachos'],
+  ['/logistica/flota',           'Flota'],
   ['/finanzas/facturas',         'Facturación'],
   ['/finanzas/cobrar',           'cobrar'],
   ['/finanzas/rentabilidad',     'Rentabilidad'],

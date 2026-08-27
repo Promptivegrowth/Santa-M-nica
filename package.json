@@ -12,7 +12,8 @@
     "test": "node scripts/pruebas.mjs",
     "test:excel": "node scripts/probar-excel.mjs",
     "test:pantallas": "node scripts/probar-pantallas.mjs",
-    "test:reservas": "node scripts/probar-reservas.mjs"
+    "test:reservas": "node scripts/probar-reservas.mjs",
+    "test:navegador": "node scripts/navegar.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

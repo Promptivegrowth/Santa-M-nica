@@ -80,7 +80,10 @@ export function enlaceEntidad(entidad: Entidad, id: number | string | null): str
 
     case 'vehiculo':
     case 'vehiculos':
-      return `/configuracion?t=maestros`;
+      // Antes esto llevaba al catálogo de Configuración, donde solo había
+      // contadores: la alerta de «SOAT por vencer» avisaba del problema y no
+      // enseñaba dónde estaba. Ahora abre la flota con ese vehículo resaltado.
+      return `/logistica/flota?id=${id}`;
 
     case 'dictamenes_calidad':
       return `/almacenes/calidad`;

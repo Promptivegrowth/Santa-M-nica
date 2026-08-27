@@ -60,6 +60,8 @@ const TRAZOS: Record<string, React.ReactNode> = {
   // Embarques: barco de carga
   embarques: <><path d="M3 17.5c1.8 0 1.8 1.5 3.6 1.5s1.8-1.5 3.6-1.5 1.8 1.5 3.6 1.5 1.8-1.5 3.6-1.5 1.8 1.5 3.6 1.5" /><path d="M4.5 14.5 6 9.5h12l1.5 5" /><path d="M9 9.5V6h6v3.5" /><path d="M12 3v3" /></>,
   // Packing: contenedor con estrías
+  // Flota: cabina y remolque, con las ruedas a la vista
+  flota: <><rect x="2.5" y="7.5" width="10.5" height="9" rx="1" /><path d="M13 10.5h3.4l2.6 2.8v3.2H13z" /><circle cx="6.5" cy="18.5" r="1.9" /><circle cx="16.5" cy="18.5" r="1.9" /><path d="M8.4 18.5h6.2" /></>,
   packing: <><rect x="2.5" y="6.5" width="19" height="11" rx="1.2" /><path d="M7 6.5v11M12 6.5v11M17 6.5v11" /></>,
   // Despachos: camión
   despachos: <><path d="M1.5 6.5h12v9h-12z" /><path d="M13.5 10h4l3 3v2.5h-7z" /><circle cx="6" cy="18" r="1.9" /><circle cx="17" cy="18" r="1.9" /></>,

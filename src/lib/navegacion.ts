@@ -75,6 +75,7 @@ export const NAVEGACION: Grupo[] = [
       { titulo: 'Embarques',        ruta: '/logistica/embarques',    icono: 'embarques',    ayuda: 'Programación de salidas', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Packing y estiba', ruta: '/logistica/packing',      icono: 'packing',      ayuda: 'La carga del contenedor', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Despachos',        ruta: '/logistica/despachos',    icono: 'despachos',    ayuda: 'Lo que ya salió', roles: TODOS },
+      { titulo: 'Flota',            ruta: '/logistica/flota',        icono: 'flota',        ayuda: 'Vehículos, conductores y sus documentos', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
     ],
   },
   {

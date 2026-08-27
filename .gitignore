@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Reportes generados durante las pruebas
 reportes-prueba/
+
+# Capturas de las pruebas de navegador
+capturas/

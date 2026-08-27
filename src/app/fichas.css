@@ -402,3 +402,38 @@
   padding: 0.1rem 0.35rem;
   font-size: 0.74rem;
 }
+
+/* ---------------------------------------------------------------------------
+   FILA RESALTADA
+   ---------------------------------------------------------------------------
+   Cuando se llega a una tabla desde una alerta, hay que poder encontrar el
+   registro concreto sin leerla entera. Se marca con un borde lateral y un
+   fondo tenue: se distingue, pero no grita.
+   --------------------------------------------------------------------------- */
+table.datos tr[data-resaltada="si"] > td {
+  background: var(--acento-suave);
+}
+table.datos tr[data-resaltada="si"] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--acento);
+}
+
+/* ---------------------------------------------------------------------------
+   CATÁLOGOS DE CONFIGURACIÓN
+   ---------------------------------------------------------------------------
+   Las tarjetas de Maestros ya no son adornos con un número: cada una abre su
+   catálogo. La que está abierta se marca para que se sepa qué se está viendo.
+   --------------------------------------------------------------------------- */
+.tarjeta-maestro[data-activa="si"] {
+  border-color: var(--acento);
+  background: var(--acento-suave);
+}
+.tarjeta-maestro[data-activa="si"] .tarjeta-maestro-cifra { color: var(--acento); }
+.tarjeta-maestro-pie {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--acento);
+}
