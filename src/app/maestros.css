@@ -198,8 +198,17 @@
 
 .btn-chico { padding: .25rem .55rem; font-size: .76rem; }
 
+/*
+   La fila del panel ocupa el ancho entero de la tabla. Antes el panel iba
+   dentro de la última celda: estiraba esa columna y empujaba todas las demás,
+   así que la tabla dejaba de leerse justo cuando más falta hacía.
+*/
+tr.fila-panel > td { padding: 0 .6rem .7rem; background: var(--superficie-2); }
+tr[data-abierta="si"] > td { background: var(--superficie-2); }
+tr[data-abierta="si"] > td:first-child { box-shadow: inset 3px 0 0 var(--acento); }
+
 .reservar {
-  margin-block-start: .6rem;
+  margin-block-start: .2rem;
   border: 1px solid var(--acento);
   border-radius: 4px;
   background: var(--superficie);
@@ -212,6 +221,7 @@
   border-block-end: 1px solid var(--linea);
 }
 .reservar-cab strong { display: block; font-size: .88rem; color: var(--tinta); }
+.reservar-cab { display: block; }
 .reservar-cab span { display: block; font-size: .78rem; color: var(--tinta-2); margin-block-start: .12rem; }
 .reservar-cab .falta { color: var(--atencion); }
 .reservar-cab .cubierta { color: var(--ok); }

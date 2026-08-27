@@ -27,7 +27,7 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
-import { BotonReservar } from './Reservar';
+import { FilaCobertura } from './Reservar';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, Semaforo, Barra, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
 import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
@@ -458,8 +458,14 @@ async function CuerpoPedido({
                   const cubierto = Math.min(100, (reservadoKg / (pedidoKg || 1)) * 100);
                   const falta = Math.max(0, pedidoKg - reservadoKg) / 1000;
                   if (pestana === 'faltantes' && falta <= 0) return null;
-                  return (
-                    <tr key={l.id as number}>
+                  /*
+                   * Las celdas se arman aquí, en el servidor, y se le pasan a
+                   * la fila. La fila es un componente de navegador porque tiene
+                   * que abrir y cerrar el panel; los datos, en cambio, no
+                   * necesitan viajar al navegador para pintarse.
+                   */
+                  const celdas = (
+                    <>
                       <td className="mono">{campo(sku, 'codigo')}</td>
                       <td>{campo(sku?.especies, 'nombre')} · {campo(sku, 'corte')}</td>
                       <td className="num">{num(l.cantidad_tm, 1)} TM</td>
@@ -470,16 +476,18 @@ async function CuerpoPedido({
                       <td className="num" style={{ minWidth: '5rem' }}>
                         <Barra porcentaje={cubierto} tono={cubierto >= 100 ? 'ok' : 'atencion'} />
                       </td>
-                      <td>
-                        {falta > 0 && (
-                          <BotonReservar
-                            pedidoLineaId={l.id as number}
-                            producto={`${campo(sku, 'codigo')} · ${campo(sku, 'corte')}`}
-                            puede={puedeReservar}
-                          />
-                        )}
-                      </td>
-                    </tr>
+                    </>
+                  );
+
+                  return (
+                    <FilaCobertura
+                      key={l.id as number}
+                      pedidoLineaId={l.id as number}
+                      producto={`${campo(sku, 'codigo')} · ${campo(sku, 'corte')}`}
+                      puede={puedeReservar && falta > 0}
+                      columnas={7}
+                      celdas={celdas}
+                    />
                   );
                 })}
               </tbody>
