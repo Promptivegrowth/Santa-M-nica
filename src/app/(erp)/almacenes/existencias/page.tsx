@@ -103,7 +103,7 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
                 <tbody>
                   {(filas ?? []).map((f) => (
                     <tr key={`${f.lote_id}-${f.almacen_id}`}>
-                      <td>
+                      <td className="mono">
                         <Link href={`/almacenes/lotes/${f.lote_id}`} className="enlace-ficha">
                           {f.codigo_pallet as string}
                         </Link>

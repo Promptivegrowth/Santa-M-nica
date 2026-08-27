@@ -63,13 +63,13 @@ export function AccionesLista({
     <div className="acciones-fila">
       {ver ? (
         <Link href={ver} className="accion-btn" title={verTitulo} aria-label={verTitulo}>
-          <Icono nombre="buscar" tamano={14} />
+          <Icono nombre="ver" tamano={15} />
         </Link>
       ) : (
         // Se deja el hueco ocupado para que la columna no baile de ancho entre
         // filas que tienen ficha y filas que no.
         <span className="accion-btn" aria-hidden style={{ opacity: 0.25 }}>
-          <Icono nombre="buscar" tamano={14} />
+          <Icono nombre="ver" tamano={15} />
         </span>
       )}
 

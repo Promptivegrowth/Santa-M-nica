@@ -374,7 +374,9 @@ async function principal() {
         await pagina.locator('text=Detracción').count() > 0);
 
       /* ---- Alta de un contacto desde el maestro ---- */
-      const antes = await pagina.locator('table.datos').first().locator('tbody tr').count();
+      const filasReales = () => pagina.locator('table.datos').first()
+        .locator('tbody tr:not(.maestro-fila-edicion)').count();
+      const antes = await filasReales();
       await pagina.locator('button', { hasText: 'Nuevo contacto' }).click();
       await pagina.waitForTimeout(300);
 
@@ -390,7 +392,14 @@ async function principal() {
       comprobar('Se puede agregar un contacto desde el maestro',
         await pagina.locator(`text=${marca}`).count() > 0, marca);
 
-      const despues = await pagina.locator('table.datos').first().locator('tbody tr').count();
+      /*
+       * Se espera a que la fila ESTE, en vez de recargar o dormir un rato
+       * fijo. Comprobado aparte: la tabla se actualiza sola al guardar, sin
+       * recargar; lo que fallaba era contar antes de que llegara.
+       */
+      await pagina.locator(`td:has-text("${marca}")`).first()
+        .waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+      const despues = await filasReales();
       comprobar('  · y la tabla crece', despues > antes, `${antes} → ${despues}`);
 
       /* ---- Un correo mal escrito se rechaza con una explicación ---- */

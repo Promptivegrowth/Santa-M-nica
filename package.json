@@ -14,7 +14,8 @@
     "test:pantallas": "node scripts/probar-pantallas.mjs",
     "test:reservas": "node scripts/probar-reservas.mjs",
     "test:navegador": "node scripts/navegar.mjs",
-    "test:documentos": "node scripts/probar-documentos.mjs"
+    "test:documentos": "node scripts/probar-documentos.mjs",
+    "ver": "node scripts/ver-pantalla.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",

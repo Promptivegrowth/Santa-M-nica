@@ -242,7 +242,7 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
                           <div className="acciones-fila">
                             {lote?.id ? (
                               <Link href={`/almacenes/lotes/${lote.id}`} className="accion-btn" title="Ver el lote">
-                                <Icono nombre="buscar" tamano={14} />
+                                <Icono nombre="ver" tamano={15} />
                               </Link>
                             ) : null}
                             {activa && (

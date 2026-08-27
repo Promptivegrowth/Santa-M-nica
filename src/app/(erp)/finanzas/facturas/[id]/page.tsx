@@ -331,7 +331,7 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
                     <td className="mono" style={{ fontSize: '.73rem' }}>{(o.contenedor as string) ?? '—'}</td>
                     <td>
                       <Link href={`/almacenes/lotes/${o.lote_id}`} className="accion-btn" title="Ver el lote">
-                        <Icono nombre="buscar" tamano={14} />
+                        <Icono nombre="ver" tamano={15} />
                       </Link>
                     </td>
                   </tr>

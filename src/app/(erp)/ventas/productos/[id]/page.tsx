@@ -317,7 +317,7 @@ async function CuerpoProducto({
                       <td className="num">{peso > 0 ? tm(peso) : '—'}</td>
                       <td>
                         <Link href={`/almacenes/lotes/${l.id}`} className="accion-btn" title="Ver el lote">
-                          <Icono nombre="buscar" tamano={14} />
+                          <Icono nombre="ver" tamano={15} />
                         </Link>
                       </td>
                     </tr>
@@ -380,7 +380,7 @@ async function CuerpoProducto({
                       <td>
                         {ped?.id ? (
                           <Link href={`/ventas/pedidos/${ped.id}`} className="accion-btn" title="Ver el pedido">
-                            <Icono nombre="buscar" tamano={14} />
+                            <Icono nombre="ver" tamano={15} />
                           </Link>
                         ) : null}
                       </td>

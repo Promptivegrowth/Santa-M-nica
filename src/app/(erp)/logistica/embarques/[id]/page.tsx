@@ -306,7 +306,7 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
                       </td>
                       <td>
                         <Link href={`/ventas/pedidos/${p.id}`} className="accion-btn" title="Ver el pedido">
-                          <Icono nombre="buscar" tamano={14} />
+                          <Icono nombre="ver" tamano={15} />
                         </Link>
                       </td>
                     </tr>

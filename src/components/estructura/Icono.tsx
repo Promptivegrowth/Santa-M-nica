@@ -93,6 +93,10 @@ const TRAZOS: Record<string, React.ReactNode> = {
   expandir: <><path d="m10 6 6 6-6 6" /></>,
   menu: <><path d="M3 6h18M3 12h18M3 18h18" /></>,
   cerrar: <><path d="m6 6 12 12M18 6 6 18" /></>,
+  // Ver detalle: un ojo. Antes se usaba la lupa, que es la misma forma que el
+  // icono de trazabilidad; en una fila con los dos botones seguidos parecian
+  // el mismo boton repetido dos veces.
+  ver: <><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" /><circle cx="12" cy="12" r="2.8" /></>,
   buscar: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
   descargar: <><path d="M12 3.5v11" /><path d="m7.5 10 4.5 4.5 4.5-4.5" /><path d="M4 19h16" /></>,
   filtro: <><path d="M3.5 5.5h17l-6.5 7.5V19l-4 2v-8z" /></>,

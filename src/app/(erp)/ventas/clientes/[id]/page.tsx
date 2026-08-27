@@ -303,7 +303,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
                       <td style={{ fontSize: '.75rem' }}>{etiquetaEstado(p.situacion as string)}</td>
                       <td>
                         <Link href={`/ventas/pedidos/${p.id}`} className="accion-btn" title="Ver el pedido">
-                          <Icono nombre="buscar" tamano={14} />
+                          <Icono nombre="ver" tamano={15} />
                         </Link>
                       </td>
                     </tr>
@@ -356,7 +356,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
                       </td>
                       <td>
                         <Link href={`/ventas/cotizaciones/${q.id}`} className="accion-btn" title="Ver la cotización">
-                          <Icono nombre="buscar" tamano={14} />
+                          <Icono nombre="ver" tamano={15} />
                         </Link>
                       </td>
                     </tr>
@@ -408,7 +408,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
                         <td><Etiqueta texto={etiquetaEstado(f.estado as string)} tono={f.estado === 'anulada' ? 'critico' : 'neutro'} /></td>
                         <td>
                           <Link href={`/finanzas/facturas/${f.id}`} className="accion-btn" title="Ver la factura">
-                            <Icono nombre="buscar" tamano={14} />
+                            <Icono nombre="ver" tamano={15} />
                           </Link>
                         </td>
                       </tr>

@@ -7,12 +7,12 @@
  *
  *  Las tres tipografías y su papel:
  *   · Archivo       → títulos y cifras grandes. Industrial, aguanta números.
- *   · Source Sans 3 → texto de interfaz. Humanista, cómoda de leer en tablas.
+ *   · Inter         → texto de interfaz. Diseñada para pantallas densas.
  *   · JetBrains Mono→ códigos, lotes, contenedores y toda columna numérica.
  * ============================================================================
  */
 import type { Metadata, Viewport } from 'next';
-import { Archivo, Source_Sans_3, JetBrains_Mono } from 'next/font/google';
+import { Archivo, Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 
 const fuenteTitulo = Archivo({
@@ -22,7 +22,16 @@ const fuenteTitulo = Archivo({
   display: 'swap',
 });
 
-const fuenteTexto = Source_Sans_3({
+/*
+ * Inter en lugar de Source Sans 3.
+ *
+ * El motivo es concreto: Source Sans tiene la altura de la x baja y trazos
+ * finos, y en una tabla de doce puntos sobre fondo claro cuesta leerla. Inter
+ * se diseño justo para eso —interfaces densas, tamaños pequenos— y tiene la
+ * x mucho mas alta, asi que a igual tamano se lee bastante mejor sin perder
+ * formalidad: es una grotesca neutra, no una fuente con caracter.
+ */
+const fuenteTexto = Inter({
   variable: '--fuente-texto',
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],

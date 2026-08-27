@@ -28,14 +28,33 @@
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--linea);
 }
+/*
+ * LA LUPA TAPABA EL TEXTO
+ *
+ * Medido en el navegador: el texto empezaba en el pixel 299,4 y la lupa
+ * terminaba en el 313,6. Catorce pixeles de solape, justo encima de la primera
+ * letra de «Elija primero el cliente».
+ *
+ * El apartado estaba escrito, pero no se aplicaba: `.form-buscador-input` y
+ * `.campo` tienen la misma especificidad, y como globals.css importa este
+ * archivo ARRIBA del todo, las reglas de globals van despues en la cascada y
+ * ganan. El relleno que llegaba era el de `.campo`, 10,4 px, no los 2,1rem de
+ * aqui.
+ *
+ * Se sube la especificidad nombrando el elemento y las dos clases, para que no
+ * dependa del orden de los archivos.
+ */
 .form-buscador-lupa {
   position: absolute;
-  inset-inline-start: 1.6rem;
-  top: 1.35rem;
+  inset-inline-start: 1.65rem;
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--tinta-3);
   pointer-events: none;
 }
-.form-buscador-input { padding-inline-start: 2.1rem; }
+.form-buscador input.campo.form-buscador-input {
+  padding-inline-start: 2.9rem;
+}
 
 .form-resultados {
   position: absolute;
@@ -90,39 +109,107 @@
 .form-quitar { padding: 0.25rem; color: var(--tinta-3); }
 .form-quitar:hover { color: var(--critico); }
 
-/* --- Barra de totales, fija abajo --- */
+/* ---------------------------------------------------------------------------
+   BARRA DE TOTALES
+   ---------------------------------------------------------------------------
+   Es la cifra que el vendedor va a decirle al cliente por telefono, y estaba
+   puesta como una mas de la fila: mismo tamano de etiqueta, misma separacion,
+   apenas cuatro puntos mas de cuerpo. Con cuatro numeros seguidos en el mismo
+   peso visual, el ojo no sabe cual es el importante.
+
+   Ahora hay jerarquia de verdad:
+
+     · los tres primeros —toneladas, subtotal, IGV— son el desglose, en un
+       tamano discreto y agrupados;
+     · una linea vertical los separa del total, que es otra cosa;
+     · el TOTAL va en un bloque propio, con fondo de marca, al doble de cuerpo.
+
+   La barra queda pegada abajo mientras se editan las lineas, asi que el total
+   esta siempre a la vista: es la comprobacion que uno hace sin darse cuenta
+   cada vez que cambia una cantidad.
+   --------------------------------------------------------------------------- */
 .form-totales {
   position: sticky;
   bottom: 0;
   z-index: 15;
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
-  align-items: center;
+  gap: 0.9rem;
+  align-items: stretch;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background: color-mix(in srgb, var(--superficie) 94%, transparent);
-  backdrop-filter: blur(8px);
+  padding: 0.55rem 0.6rem 0.55rem 1rem;
+  background: color-mix(in srgb, var(--superficie) 96%, transparent);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--linea-2);
   border-radius: var(--radio);
-  box-shadow: var(--sombra);
+  box-shadow: 0 -2px 10px rgba(16, 26, 44, .07), var(--sombra);
 }
-.form-totales-cifras { display: flex; flex-wrap: wrap; gap: 1.5rem; }
-.form-totales-cifras > div { display: flex; flex-direction: column; }
+
+.form-totales-cifras {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 1.35rem;
+}
+.form-totales-cifras > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.1rem;
+}
 .form-totales-cifras span {
   font-family: var(--font-mono);
-  font-size: 0.58rem;
-  letter-spacing: 0.1em;
+  font-size: 0.66rem;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--tinta-3);
 }
 .form-totales-cifras strong {
   font-family: var(--font-titulo);
-  font-size: 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  color: var(--tinta-2);
 }
-.form-totales-cifras .destacado strong { font-size: 1.25rem; color: var(--acento); }
+
+/* El total: bloque propio, no una columna mas de la fila. */
+.form-totales-cifras .destacado {
+  position: relative;
+  padding: 0.4rem 0.95rem;
+  margin-inline-start: 0.5rem;
+  border-radius: 4px;
+  background: var(--acento);
+}
+/* La linea que separa el desglose del total. */
+.form-totales-cifras .destacado::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: -0.95rem;
+  top: 0.15rem;
+  bottom: 0.15rem;
+  width: 1px;
+  background: var(--linea-2);
+}
+.form-totales-cifras .destacado span { color: rgba(255, 255, 255, .78); }
+.form-totales-cifras .destacado strong {
+  font-size: 1.65rem;
+  line-height: 1.15;
+  color: #fff;
+  letter-spacing: -0.015em;
+}
+
 .form-totales-acciones { display: flex; gap: 0.45rem; align-items: center; }
+
+/* En pantalla estrecha el total pasa a ocupar su propia linea, entero. */
+@media (max-width: 700px) {
+  .form-totales-cifras { gap: 0.9rem; width: 100%; }
+  .form-totales-cifras .destacado {
+    flex: 1 0 100%;
+    margin-inline-start: 0;
+    text-align: right;
+  }
+  .form-totales-cifras .destacado::before { display: none; }
+}
 
 /* --- Mensajes de resultado --- */
 .form-mensaje {

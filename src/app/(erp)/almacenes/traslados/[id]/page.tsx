@@ -266,7 +266,7 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
                       <td>
                         {lote?.id ? (
                           <Link href={`/almacenes/lotes/${lote.id}`} className="accion-btn" title="Ver el lote">
-                            <Icono nombre="buscar" tamano={14} />
+                            <Icono nombre="ver" tamano={15} />
                           </Link>
                         ) : null}
                       </td>

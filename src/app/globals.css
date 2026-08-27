@@ -49,12 +49,25 @@
   --superficie-3: #d8e2ee;
   --tinta:        #101a2c;
   --tinta-2:      #41506a;
-  --tinta-3:      #6f7d95;
+  /*
+   * Se oscurecio de #6f7d95 a #556278. El anterior daba 4,16 de contraste
+   * sobre blanco y 3,18 sobre las superficies grises: por debajo del minimo
+   * de 4,5 que pide la norma para texto normal, y se usa justo para el texto
+   * pequeno —notas, unidades, fechas al pie de una celda—. Ahora da 6,17
+   * sobre blanco y 4,71 sobre el gris mas oscuro.
+   */
+  --tinta-3:      #556278;
   --linea:        #c9d4e4;
   --linea-2:      #a3b4cb;
 
   --acento:       #304f8c;
-  --acento-2:     #5095bf;
+  /*
+   * El azul medio de la marca (#5095bf) da 3,29 sobre blanco: vale como
+   * relleno de un grafico, no como texto ni como borde de foco. Se usa aqui
+   * una version mas profunda del mismo tono, con 5,87. El color de marca
+   * original sigue intacto en la paleta de graficos.
+   */
+  --acento-2:     #2f6a8f;
   --acento-suave: #dfeaf4;
 
   /* Semánticos — deliberadamente fuera de la paleta de marca */
@@ -79,7 +92,9 @@
     --superficie-3: #24314d;
     --tinta:        #e8edf6;
     --tinta-2:      #a9b6cd;
-    --tinta-3:      #7b89a3;
+    /* Mismo motivo que en el tema claro: 4,33 sobre la superficie intermedia
+       se quedaba corto. Ahora 5,86. */
+    --tinta-3:      #93a1bb;
     --linea:        #27334c;
     --linea-2:      #3d4d6e;
 
@@ -137,8 +152,13 @@ body {
   background: var(--fondo);
   color: var(--tinta);
   font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.55;
+  /*
+   * 16px y no 15. El sistema se usa toda la jornada y en pantallas de oficina
+   * a un brazo de distancia; un punto mas no estorba y se agradece. Todo lo
+   * demas esta en rem, asi que sube proporcionalmente con este numero.
+   */
+  font-size: 16px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -190,7 +210,7 @@ h1, h2, h3, h4, h5 {
 }
 .panel-titulo {
   font-family: var(--font-mono);
-  font-size: .68rem; font-weight: 600;
+  font-size: .74rem; font-weight: 600;
   letter-spacing: .11em; text-transform: uppercase;
   color: var(--tinta-2);
 }
@@ -199,7 +219,7 @@ h1, h2, h3, h4, h5 {
 .pill {
   display: inline-flex; align-items: center; gap: .3em;
   font-family: var(--font-mono);
-  font-size: .64rem; font-weight: 600;
+  font-size: .72rem; font-weight: 600;
   letter-spacing: .05em; text-transform: uppercase;
   padding: .18em .5em; border-radius: 2px;
   white-space: nowrap; border: 1px solid transparent;
@@ -225,17 +245,17 @@ h1, h2, h3, h4, h5 {
   border: 1px solid var(--linea);
   border-radius: var(--radio);
 }
-table.datos { border-collapse: collapse; width: 100%; font-size: .82rem; }
+table.datos { border-collapse: collapse; width: 100%; font-size: .875rem; }
 table.datos caption {
   text-align: left; padding: .7rem 1rem;
-  font-family: var(--font-mono); font-size: .66rem;
+  font-family: var(--font-mono); font-size: .72rem;
   letter-spacing: .11em; text-transform: uppercase; color: var(--tinta-3);
   border-bottom: 1px solid var(--linea); background: var(--superficie-2);
 }
 table.datos thead th {
   position: sticky; top: 0; z-index: 1;
   background: var(--superficie-2);
-  font-family: var(--font-mono); font-size: .62rem; font-weight: 600;
+  font-family: var(--font-mono); font-size: .7rem; font-weight: 600;
   letter-spacing: .08em; text-transform: uppercase; color: var(--tinta-2);
   text-align: left; padding: .5rem .75rem; white-space: nowrap;
   border-bottom: 1px solid var(--linea);
@@ -247,8 +267,28 @@ table.datos tbody td {
 }
 table.datos tbody tr:last-child td { border-bottom: none; }
 table.datos tbody tr:hover { background: var(--superficie-2); }
-table.datos td.num, table.datos th.num { text-align: right; font-family: var(--font-mono); font-size: .78rem; }
-table.datos td.mono { font-family: var(--font-mono); font-size: .76rem; }
+table.datos td.num, table.datos th.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: .83rem;
+  /*
+   * Una cifra tampoco se parte. «US$ 110,602» caia en dos lineas y dejaba de
+   * leerse como un importe; peor aun, dos filas seguidas con distinta altura
+   * hacen que la columna deje de alinearse a ojo, que es justo para lo que
+   * sirve una columna de numeros.
+   */
+  white-space: nowrap;
+}
+table.datos td.mono {
+  font-family: var(--font-mono);
+  font-size: .81rem;
+  /*
+   * Un codigo de pallet no se parte. Al subir el cuerpo de la fuente,
+   * «TR 26 10 0860» empezo a caer en dos lineas y dejaba de leerse como un
+   * codigo. Si no cabe, la tabla ya tiene su propio desplazamiento lateral.
+   */
+  white-space: nowrap;
+}
 
 /* --- Botones --- */
 .btn {
@@ -274,15 +314,15 @@ table.datos td.mono { font-family: var(--font-mono); font-size: .76rem; }
   background: var(--superficie);
   border: 1px solid var(--linea-2);
   border-radius: var(--radio);
-  padding: .45rem .65rem;
-  font-size: .85rem; color: var(--tinta);
+  padding: .5rem .7rem;
+  font-size: .88rem; color: var(--tinta);
   font-family: var(--font-sans);
 }
 .campo:focus { border-color: var(--acento-2); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento-2) 18%, transparent); }
 .campo[aria-invalid="true"] { border-color: var(--critico); }
 .etiqueta {
   display: block; font-family: var(--font-mono);
-  font-size: .62rem; font-weight: 600; letter-spacing: .1em;
+  font-size: .7rem; font-weight: 600; letter-spacing: .08em;
   text-transform: uppercase; color: var(--tinta-3); margin-bottom: .3rem;
 }
 .error-campo { color: var(--critico); font-size: .75rem; margin-top: .25rem; }

@@ -108,7 +108,7 @@ export function AccionesFila({
           title={`Ver el detalle de ${numero}`}
           aria-label={`Ver ${numero}`}
         >
-          <Icono nombre="buscar" tamano={14} />
+          <Icono nombre="ver" tamano={15} />
         </Link>
 
         {puedeOperar && (editable ? (
