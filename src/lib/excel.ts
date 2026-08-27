@@ -20,7 +20,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /* --- Colores de marca en el formato que entiende Excel (ARGB) --- */
-const MARCA = {
+export const MARCA = {
   azulProfundo: 'FF304F8C',
   azulMedio: 'FF5095BF',
   verdeAzulado: 'FF53A6A6',

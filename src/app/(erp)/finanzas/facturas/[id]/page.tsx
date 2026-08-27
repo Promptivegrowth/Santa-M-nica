@@ -18,6 +18,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
+import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
@@ -82,6 +83,12 @@ export default async function FichaFactura(props: PageProps<'/finanzas/facturas/
         <Etiqueta
           texto={etiquetaEstado(f.estado as string)}
           tono={anuladaCab ? 'critico' : saldoCab <= 0.01 ? 'ok' : vencidaCab ? 'critico' : 'info'}
+        />
+        {/* El tipo decide el título del documento: factura o boleta de venta. */}
+        <BotonesDocumento
+          tipo={f.tipo_comprobante === 'boleta' ? 'boleta' : 'factura'}
+          id={facId}
+          numero={f.numero as string}
         />
       </CabeceraPagina>
 

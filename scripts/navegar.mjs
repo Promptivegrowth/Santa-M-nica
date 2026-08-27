@@ -67,7 +67,10 @@ async function principal() {
   fs.mkdirSync(CAPTURAS, { recursive: true });
 
   const navegador = await chromium.launch({ channel: 'chrome', headless: !VISIBLE });
-  const contexto = await navegador.newContext({ viewport: { width: 1440, height: 900 } });
+  const contexto = await navegador.newContext({
+    viewport: { width: 1440, height: 900 },
+    acceptDownloads: true,
+  });
   const pagina = await contexto.newPage();
 
   /* ---- Todo lo que el navegador se queje, se guarda ---- */
@@ -408,6 +411,59 @@ async function principal() {
       const aviso = await pagina.locator('.ficha-aviso').first().innerText().catch(() => '');
       comprobar('Y se explica arriba de qué vehículo se trata',
         aviso.toLowerCase().includes('soat'), aviso.slice(0, 80));
+    },
+
+
+    /* ════════════════════════════════════════════════════════════════════
+       DESCARGA DE DOCUMENTOS · desde la propia ficha, con el ratón
+       ════════════════════════════════════════════════════════════════════
+       Las pruebas de scripts/probar-documentos.mjs llaman a la API. Esto
+       comprueba lo otro: que el boton exista en la ficha y que al pulsarlo el
+       navegador reciba de verdad un archivo.
+       ════════════════════════════════════════════════════════════════════ */
+    async documentos() {
+      titulo('Descargar el documento desde su ficha');
+
+      const admin = (await import('@supabase/supabase-js')).createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        { auth: { persistSession: false } }
+      );
+
+      const FICHAS = [
+        ['cotización', '/ventas/cotizaciones', 'cotizaciones'],
+        ['proforma', '/ventas/pedidos', 'pedidos'],
+        ['comprobante', '/finanzas/facturas', 'facturas'],
+      ];
+
+      for (const [nombre, ruta, tabla] of FICHAS) {
+        const { data } = await admin.from(tabla).select('id').limit(1).single();
+        if (!data) { comprobar(`Hay ${nombre} de prueba`, false); continue; }
+
+        await pagina.goto(`${BASE}${ruta}/${data.id}`, { waitUntil: 'networkidle' });
+
+        const botonPdf = pagina.locator('button', { hasText: /^PDF$/ }).first();
+        comprobar(`La ficha de ${nombre} ofrece descargar en PDF`,
+          await botonPdf.count() > 0);
+        comprobar(`La ficha de ${nombre} ofrece descargar en Excel`,
+          await pagina.locator('button', { hasText: /^Excel$/ }).count() > 0);
+
+        if (!(await botonPdf.count())) continue;
+
+        const descarga = pagina.waitForEvent('download', { timeout: 25000 }).catch(() => null);
+        await botonPdf.click();
+        const archivo = await descarga;
+
+        comprobar(`Al pulsar PDF en ${nombre}, el navegador recibe el archivo`,
+          !!archivo, archivo ? archivo.suggestedFilename() : 'no llego ninguna descarga');
+
+        if (archivo) {
+          comprobar(`  · y se llama como el documento`,
+            /\.pdf$/i.test(archivo.suggestedFilename()), archivo.suggestedFilename());
+        }
+      }
+
+      await captura('documento-botones');
     },
 
     /* ════════════════════════════════════════════════════════════════════

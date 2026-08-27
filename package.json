@@ -13,7 +13,8 @@
     "test:excel": "node scripts/probar-excel.mjs",
     "test:pantallas": "node scripts/probar-pantallas.mjs",
     "test:reservas": "node scripts/probar-reservas.mjs",
-    "test:navegador": "node scripts/navegar.mjs"
+    "test:navegador": "node scripts/navegar.mjs",
+    "test:documentos": "node scripts/probar-documentos.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
@@ -21,6 +22,7 @@
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
     "next": "16.3.3",
+    "pdfkit": "^0.20.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.6.0",
@@ -29,6 +31,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pdfkit": "^0.17.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

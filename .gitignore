@@ -45,3 +45,6 @@ reportes-prueba/
 
 # Capturas de las pruebas de navegador
 capturas/
+
+# Documentos generados por las pruebas
+documentos-prueba/

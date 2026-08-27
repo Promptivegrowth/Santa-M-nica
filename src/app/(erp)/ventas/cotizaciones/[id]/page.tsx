@@ -20,6 +20,7 @@ import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
 import { EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { AccionesFicha } from './AccionesFicha';
+import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, pct, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
@@ -94,6 +95,7 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
         volver={{ href: '/ventas/cotizaciones', texto: 'Volver a cotizaciones' }}
       >
         <Etiqueta texto={etiquetaEstado(estado)} tono={TONO[estado] ?? 'neutro'} />
+        <BotonesDocumento tipo="cotizacion" id={cotId} numero={cot.numero as string} />
         {puedeOperar && (
           <AccionesFicha
             cotizacionId={cotId}

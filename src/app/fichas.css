@@ -437,3 +437,30 @@ table.datos tr[data-resaltada="si"] > td:first-child {
   font-weight: 600;
   color: var(--acento);
 }
+
+/* ---------------------------------------------------------------------------
+   MENSAJES DE LA DESCARGA DE DOCUMENTOS
+   ---------------------------------------------------------------------------
+   Salen dentro de la cabecera de la ficha, donde están los botones. Se les da
+   el ancho completo porque un error de cuadre puede ocupar varias líneas y en
+   una franja estrecha quedaría ilegible.
+   --------------------------------------------------------------------------- */
+.documento-mensaje {
+  flex-basis: 100%;
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+  text-align: left;
+}
+.documento-detalles {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.79rem;
+  line-height: 1.5;
+}
+.documento-detalles li { margin-bottom: 0.15rem; }
+.documento-mensaje small {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.74rem;
+  color: var(--tinta-3);
+}

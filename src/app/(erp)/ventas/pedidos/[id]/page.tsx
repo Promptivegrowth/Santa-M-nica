@@ -29,6 +29,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, Semaforo, Barra, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
+import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { EsqueletoKpi, EsqueletoPestanas, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { tm, num, fecha, dinero, pct, etiquetaEstado } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
@@ -100,6 +101,11 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
         volver={{ href: '/ventas/pedidos', texto: 'Volver a pedidos' }}
       >
         <Semaforo estado={pedido.semaforo as never} />
+        <BotonesDocumento
+          tipo="proforma"
+          id={pedidoId}
+          numero={String(pedido.numero_proforma)}
+        />
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>
