@@ -1,0 +1,383 @@
+/* ===========================================================================
+   CALENDARIO DE EMBARQUES
+   ===========================================================================
+   La cuadrícula tiene que resolver dos lecturas a la vez:
+
+     1. De un vistazo, sin leer: qué días están cargados y cuáles vacíos.
+        Eso lo dan las fichas de color dentro de cada celda.
+     2. Con detalle, al posarse en un día: qué sale exactamente.
+        Eso lo da el panel de la derecha.
+
+   Todo el color sale de los tokens del tema, así el calendario funciona igual
+   en claro y en oscuro sin una sola regla duplicada.
+   =========================================================================== */
+
+.cal {
+  display: flex;
+  flex-direction: column;
+  gap: .85rem;
+}
+
+/* --- Barra superior: mes, navegación y leyenda ------------------------- */
+.cal-barra {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.cal-mes {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+}
+.cal-mes strong {
+  font-family: var(--font-titulo);
+  font-size: 1.25rem;
+  color: var(--tinta);
+  letter-spacing: -.01em;
+}
+.cal-mes .mono { color: var(--tinta-3); font-size: .95rem; }
+
+.cal-navegacion { display: flex; gap: .3rem; }
+
+.cal-leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .1rem .85rem;
+  margin-inline-start: auto;
+  font-size: .72rem;
+  color: var(--tinta-2);
+}
+.cal-leyenda-item { display: inline-flex; align-items: center; gap: .32rem; }
+.cal-leyenda-item i {
+  width: .62rem; height: .62rem; border-radius: 2px; display: block; flex: none;
+  border: 1px solid transparent;
+}
+
+/* Un solo juego de colores para fichas, leyenda, estados y borde de tarjeta:
+   si mañana cambia el color de «confirmado», cambia en los cuatro sitios. */
+[data-tono="ok"]       { --cal-tinta: var(--ok);       --cal-fondo: var(--ok-suave); }
+[data-tono="atencion"] { --cal-tinta: var(--atencion); --cal-fondo: var(--atencion-suave); }
+[data-tono="critico"]  { --cal-tinta: var(--critico);  --cal-fondo: var(--critico-suave); }
+[data-tono="info"]     { --cal-tinta: var(--acento);   --cal-fondo: var(--acento-suave); }
+[data-tono="neutro"]   { --cal-tinta: var(--tinta-2);  --cal-fondo: var(--superficie-2); }
+
+.cal-leyenda-item i {
+  background: var(--cal-tinta);
+  border-color: var(--cal-tinta);
+}
+
+/* --- Reparto: cuadrícula + panel de detalle ---------------------------- */
+.cal-cuerpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  gap: .85rem;
+  align-items: start;
+}
+
+/* --- La cuadrícula ----------------------------------------------------- */
+.cal-rejilla {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 3px;
+  table-layout: fixed;   /* siete columnas iguales pase lo que pase */
+}
+.cal-rejilla th {
+  font-family: var(--font-sans);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+  text-align: start;
+  padding: 0 0 .2rem .3rem;
+}
+.cal-rejilla th[data-domingo="si"] { color: var(--atencion); }
+.cal-rejilla th abbr { text-decoration: none; border: 0; }
+.cal-rejilla td { padding: 0; vertical-align: top; }
+
+/* --- La celda de un día ------------------------------------------------ */
+.cal-dia {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: .28rem;
+  width: 100%;
+  min-height: 6.2rem;
+  padding: .35rem .35rem .4rem;
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-radius: 4px;
+  transition: border-color .12s, background .12s, box-shadow .12s;
+}
+.cal-dia:hover { border-color: var(--linea-2); background: var(--superficie-2); }
+.cal-dia:focus-visible {
+  outline: 2px solid var(--acento-2);
+  outline-offset: 1px;
+}
+
+/* Días de relleno del mes anterior o siguiente: presentes pero apagados. */
+.cal-dia[data-fuera="si"] { background: transparent; border-style: dashed; opacity: .55; }
+
+/* El domingo se distingue porque despachar en domingo cuesta más dinero. */
+.cal-dia[data-domingo="si"] { background: var(--atencion-suave); }
+.cal-dia[data-domingo="si"][data-fuera="si"] { background: transparent; }
+
+/* El día elegido: relleno de marca, no solo un borde. */
+.cal-dia[data-elegido="si"] {
+  border-color: var(--acento);
+  box-shadow: inset 0 0 0 1px var(--acento);
+  background: var(--superficie);
+}
+
+/* Hoy: una barra superior, que se lee incluso con el día elegido encima. */
+.cal-dia[data-hoy="si"]::before {
+  content: "";
+  position: absolute;
+  inset-inline: -1px;
+  top: -1px;
+  height: 3px;
+  border-radius: 4px 4px 0 0;
+  background: var(--acento-2);
+}
+
+/* Día por encima del tope de bodegas simultáneas: el problema del mes. */
+.cal-dia[data-sobrecarga="si"] { border-color: var(--critico); }
+
+.cal-numero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .25rem;
+  font-family: var(--font-mono);
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--tinta-2);
+  line-height: 1;
+}
+.cal-dia[data-hoy="si"] .cal-numero { color: var(--acento); font-weight: 700; }
+
+.cal-recargo {
+  font-style: normal;
+  font-size: .6rem;
+  font-weight: 700;
+  color: var(--atencion);
+  letter-spacing: .02em;
+}
+
+/* --- Fichas de embarque dentro de la celda ----------------------------- */
+.cal-fichas { display: flex; flex-direction: column; gap: 2px; }
+
+.cal-ficha {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .3rem;
+  padding: .12rem .28rem;
+  border-radius: 2px;
+  font-size: .66rem;
+  line-height: 1.25;
+  color: var(--cal-tinta);
+  background: var(--cal-fondo);
+  border-inline-start: 2px solid var(--cal-tinta);
+}
+.cal-ficha-destino {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.cal-ficha-tm {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+  opacity: .8;
+}
+
+/* El asterisco de «carga prevista, todavía sin packing». */
+.cal-previsto {
+  font-style: normal;
+  color: var(--atencion);
+  font-weight: 700;
+  margin-inline-start: 1px;
+}
+
+.cal-resumen-nota {
+  font-size: .68rem;
+  color: var(--tinta-3);
+  flex-basis: 100%;
+}
+
+.cal-tarjeta-nota {
+  margin: .3rem 0 0;
+  font-size: .68rem;
+  line-height: 1.4;
+  color: var(--atencion);
+}
+
+.cal-mas {
+  font-size: .62rem;
+  color: var(--tinta-3);
+  padding-inline-start: .28rem;
+}
+
+.cal-alerta {
+  position: absolute;
+  inset-block-start: .3rem;
+  inset-inline-end: .3rem;
+  display: inline-flex;
+  align-items: center;
+  gap: .1rem;
+  font-size: .6rem;
+  font-weight: 700;
+  color: var(--critico);
+}
+
+/* --- Panel del día elegido --------------------------------------------- */
+.cal-detalle {
+  position: sticky;
+  top: .6rem;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  padding: .8rem;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-radius: 4px;
+}
+
+.cal-detalle-cabecera {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .5rem;
+  padding-block-end: .55rem;
+  border-block-end: 1px solid var(--linea);
+}
+.cal-detalle-cabecera strong {
+  display: block;
+  font-family: var(--font-titulo);
+  font-size: 1rem;
+  color: var(--tinta);
+}
+.cal-detalle-cabecera .mono { font-size: .78rem; color: var(--tinta-3); }
+
+.cal-etiqueta-hoy {
+  font-size: .64rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--acento); background: var(--acento-suave);
+  padding: .16em .45em; border-radius: 2px; flex: none;
+}
+
+.cal-nota {
+  margin: 0;
+  padding: .45rem .55rem;
+  border-radius: 3px;
+  font-size: .76rem;
+  line-height: 1.45;
+  border-inline-start: 3px solid;
+}
+.cal-nota-atencion { color: var(--atencion); background: var(--atencion-suave); border-color: var(--atencion); }
+.cal-nota-critica  { color: var(--critico);  background: var(--critico-suave);  border-color: var(--critico); }
+
+.cal-vacio { margin: 0; font-size: .8rem; color: var(--tinta-3); line-height: 1.5; }
+
+.cal-resumen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .2rem .95rem;
+  font-size: .76rem;
+  color: var(--tinta-2);
+}
+.cal-resumen b {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--tinta);
+  font-size: .88rem;
+}
+
+.cal-tarjetas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+
+.cal-tarjeta {
+  padding: .55rem .6rem;
+  border: 1px solid var(--linea);
+  border-inline-start: 3px solid var(--cal-tinta);
+  border-radius: 3px;
+  background: var(--superficie-2);
+}
+.cal-tarjeta-alta {
+  display: flex; align-items: center; justify-content: space-between; gap: .4rem;
+}
+.cal-tarjeta-alta .mono { font-size: .78rem; font-weight: 600; }
+
+.cal-estado {
+  font-size: .62rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--cal-tinta); background: var(--cal-fondo);
+  padding: .14em .42em; border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--cal-tinta) 30%, transparent);
+  flex: none;
+}
+
+.cal-tarjeta-ruta { margin-block-start: .28rem; font-size: .78rem; color: var(--tinta); line-height: 1.4; }
+.cal-tarjeta-cliente { font-size: .73rem; color: var(--tinta-3); }
+
+/*
+   Una sola columna, no dos.
+   Con dos columnas en un panel de 20 rem, una etiqueta como «Carga prevista»
+   se partía en dos renglones y su valor caía debajo, separado de su rótulo; y
+   el valor de una columna quedaba pegado al rótulo de la siguiente. En una
+   columna, cada dato ocupa un renglón entero: rótulo a la izquierda, cifra a
+   la derecha, sin ambigüedad posible.
+*/
+.cal-tarjeta-datos {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: .12rem .6rem;
+  margin: .45rem 0 0;
+}
+.cal-tarjeta-datos > div {
+  display: contents;   /* los dt/dd caen directos en la rejilla del padre */
+}
+.cal-tarjeta-datos dt {
+  font-size: .68rem;
+  color: var(--tinta-3);
+  white-space: nowrap;
+}
+.cal-tarjeta-datos dd {
+  margin: 0;
+  text-align: end;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: .7rem;
+  color: var(--tinta);
+  overflow-wrap: anywhere;   /* un booking largo parte, no desborda */
+}
+
+/* ---------------------------------------------------------------------------
+   PANTALLAS ESTRECHAS
+   El panel pasa debajo, y por debajo de 640 px la cuadrícula deja de tener
+   sentido: siete columnas en un móvil dan celdas de 45 px donde no cabe ni el
+   nombre del puerto. Ahí los días se apilan en una sola columna y se ocultan
+   los de relleno de los meses vecinos, que solo servían para cuadrar la
+   retícula. En un móvil se consulta qué sale, no cómo está repartido el mes.
+   --------------------------------------------------------------------------- */
+@media (max-width: 1040px) {
+  .cal-cuerpo { grid-template-columns: minmax(0, 1fr); }
+  .cal-detalle { position: static; }
+  .cal-leyenda { margin-inline-start: 0; width: 100%; }
+}
+
+@media (max-width: 640px) {
+  .cal-rejilla, .cal-rejilla tbody, .cal-rejilla tr, .cal-rejilla td { display: block; width: 100%; }
+  .cal-rejilla thead { display: none; }
+  .cal-rejilla { border-spacing: 0; }
+  .cal-rejilla td { margin-block-end: 4px; }
+  .cal-dia { min-height: 0; flex-direction: row; align-items: center; gap: .6rem; }
+  .cal-dia[data-fuera="si"] { display: none; }
+  .cal-numero { flex: none; width: 2.2rem; justify-content: flex-start; }
+  .cal-fichas { flex: 1; }
+  .cal-alerta { position: static; }
+}

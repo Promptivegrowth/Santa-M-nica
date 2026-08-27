@@ -40,6 +40,22 @@ export type ColumnaExcel = {
   formato?: string;
   /** Alineación; por defecto, izquierda para texto y derecha para números. */
   alineacion?: 'left' | 'center' | 'right';
+  /*
+   * Ajustes solo para la versión en PDF. La columna se declara UNA vez y las
+   * dos salidas la comparten, pero el PDF va apaisado y con letra de 6,6 pt:
+   * un rótulo que en Excel cabe de sobra, ahí se monta encima del siguiente.
+   * Estos dos campos permiten acortar el rótulo y precisar el tipo de dato sin
+   * duplicar la definición entera.
+   */
+  tituloPdf?: string;
+  tipoPdf?: 'texto' | 'numero' | 'entero' | 'dinero' | 'fecha' | 'fechaHora';
+  /*
+   * Traducción de valores en bruto a algo legible. Las vistas devuelven los
+   * enumerados de la base tal cual —«salida_despacho»—, y eso es lo correcto
+   * para la base pero no para un reporte que va a leer una persona. Con este
+   * mapa, la misma columna sale «Salida por despacho» en Excel y en PDF.
+   */
+  mapa?: Record<string, string>;
 };
 
 export type OpcionesReporte = {
@@ -154,7 +170,8 @@ export async function generarReporte(op: OpcionesReporte): Promise<Buffer> {
     const nFila = filaEnc + 1 + idx;
     op.columnas.forEach((c, i) => {
       const celda = hoja.getCell(nFila, i + 1);
-      const valor = fila[c.clave];
+      const bruto = fila[c.clave];
+      const valor = c.mapa && typeof bruto === 'string' ? (c.mapa[bruto] ?? bruto) : bruto;
 
       celda.value = (valor === null || valor === undefined) ? '' : (valor as ExcelJS.CellValue);
       if (c.formato) celda.numFmt = c.formato;

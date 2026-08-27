@@ -61,6 +61,7 @@ export const NAVEGACION: Grupo[] = [
     entradas: [
       { titulo: 'Existencias',           ruta: '/almacenes/existencias',   icono: 'existencias',   ayuda: 'Físico, reservado y disponible', roles: TODOS },
       { titulo: 'Reservas',              ruta: '/almacenes/reservas',      icono: 'reservas',       ayuda: 'Qué stock está apartado y por qué', roles: TODOS },
+      { titulo: 'Movimientos del día',   ruta: '/almacenes/movimientos',   icono: 'movimientos',   ayuda: 'El parte diario: qué entró y qué salió', roles: TODOS },
       { titulo: 'Kardex',                ruta: '/almacenes/kardex',        icono: 'kardex',        ayuda: 'El diario del almacén', roles: TODOS },
       { titulo: 'Ingresos',              ruta: '/almacenes/ingresos',      icono: 'ingresos',      ayuda: 'Lo que entró a cámara', roles: ['gerencia', 'operaciones', 'almacen', 'consulta'] },
       { titulo: 'Traslados',             ruta: '/almacenes/traslados',     icono: 'traslados',     ayuda: 'Movimientos entre bodegas', roles: ['gerencia', 'operaciones', 'almacen', 'comex', 'consulta'] },

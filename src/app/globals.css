@@ -2,6 +2,7 @@
 @import "./estructura.css";
 @import "./formularios.css";
 @import "./fichas.css";
+@import "./calendario.css";
 
 /* ============================================================================
    SISTEMA DE DISEÑO · SANTA MÓNICA FISHING
@@ -869,4 +870,29 @@ tr.plano-saldo td[data-saldo='resto'] { color: var(--atencion); font-weight: 600
 /* Quien pidió menos movimiento ve el esqueleto quieto */
 @media (prefers-reduced-motion: reduce) {
   .esq-bloque, .esq-barra { animation: none; background: var(--superficie-2); }
+}
+
+
+/* ---------------------------------------------------------------------------
+   BARRA PROPORCIONAL EN CELDA
+   Una columna de porcentajes se lee mucho más rápido con una barra al lado:
+   el ojo compara longitudes sin tener que leer y restar cifras. Va dentro de
+   la celda, alineada a la derecha como el número al que acompaña.
+   --------------------------------------------------------------------------- */
+.barra-mini {
+  display: block;
+  width: 100%;
+  max-width: 7rem;
+  height: 6px;
+  margin-inline-start: auto;
+  margin-block-end: .18rem;
+  border-radius: 3px;
+  background: var(--linea);
+  overflow: hidden;
+}
+.barra-mini > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--acento);
 }

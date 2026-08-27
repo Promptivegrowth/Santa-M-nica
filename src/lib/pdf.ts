@@ -27,22 +27,11 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Documento } from './documentos';
 import { importeEnLetras } from './importeEnLetras';
+import { MARCA_PDF as MARCA, limpiarDocumento, cifra } from './textoPdf';
 
 /* --------------------------------------------------------------------------
    La marca. Los mismos valores que usa la aplicación y los reportes Excel.
    -------------------------------------------------------------------------- */
-const MARCA = {
-  azulProfundo: '#304F8C',
-  azulMedio: '#5095BF',
-  verdeAzulado: '#53A6A6',
-  tinta: '#1F2937',
-  tintaSuave: '#6B7280',
-  linea: '#D9DFE8',
-  grisSuave: '#F3F5F9',
-  critico: '#B3261E',
-  atencion: '#8A5A00',
-  blanco: '#FFFFFF',
-};
 
 /* Márgenes y geometría de la hoja */
 const MARGEN = 42;
@@ -69,13 +58,6 @@ const COLUMNAS = [
 
 const simboloMoneda = (m: string) => (m === 'PEN' ? 'S/' : 'US$');
 
-/** Cifra con separador de miles y dos decimales. */
-function cifra(n: number, decimales = 2): string {
-  return n.toLocaleString('es-PE', {
-    minimumFractionDigits: decimales,
-    maximumFractionDigits: decimales,
-  });
-}
 
 /* --------------------------------------------------------------------------
    TEXTO QUE LAS FUENTES DEL PDF SABEN DIBUJAR
@@ -94,66 +76,6 @@ function cifra(n: number, decimales = 2): string {
    de caracteres raros escapados es justo la clase de cosa que se rompe al
    copiarla de un sitio a otro.
    -------------------------------------------------------------------------- */
-
-/** Lo que se cambia por un equivalente que si se puede dibujar. */
-const EQUIVALENTES = new Map<number, string>([
-  [0x2212, '-'],    // signo menos matematico
-  [0x2192, '->'],   // flecha derecha
-  [0x2190, '<-'],   // flecha izquierda
-  [0x2248, '~'],    // aproximadamente
-  [0x2264, '<='],
-  [0x2265, '>='],
-  [0x00a0, ' '],    // espacio duro
-]);
-
-/**
- * Los caracteres de WinAnsi que en Unicode viven fuera del rango 0x20-0xFF.
- * Son los que ocupan las posiciones 0x80-0x9F de la codificacion: comillas
- * tipograficas, rayas, puntos suspensivos y el simbolo del euro.
- */
-const EXTRA_WINANSI = new Set([
-  0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030,
-  0x0160, 0x2039, 0x0152, 0x017d, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022,
-  0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x017e, 0x0178,
-]);
-
-/** Deja el texto en caracteres que la fuente pueda dibujar. */
-function seguro(texto: string): string {
-  let salida = '';
-  for (const caracter of texto) {
-    const codigo = caracter.codePointAt(0) ?? 0;
-
-    const sustituto = EQUIVALENTES.get(codigo);
-    if (sustituto !== undefined) {
-      salida += sustituto;
-      continue;
-    }
-
-    if ((codigo >= 0x20 && codigo <= 0xff) || EXTRA_WINANSI.has(codigo)) {
-      salida += caracter;
-    }
-    // Lo demas se descarta: mejor un hueco que un simbolo equivocado en un
-    // comprobante que sale de la empresa.
-  }
-  return salida;
-}
-
-/**
- * Recorre el documento entero limpiando cada texto.
- *
- * Se hace UNA vez al empezar a dibujar y no en cada llamada a `.text()`: asi
- * no hay forma de olvidarse de un campo nuevo.
- */
-function limpiarDocumento<T>(valor: T): T {
-  if (typeof valor === 'string') return seguro(valor) as unknown as T;
-  if (Array.isArray(valor)) return valor.map(limpiarDocumento) as unknown as T;
-  if (valor && typeof valor === 'object') {
-    const salida: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(valor)) salida[k] = limpiarDocumento(v);
-    return salida as T;
-  }
-  return valor;
-}
 
 /* ==========================================================================
    PIEZAS DEL DIBUJO
