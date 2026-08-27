@@ -27,6 +27,7 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { BotonReservar } from './Reservar';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, Semaforo, Barra, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
 import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
@@ -142,6 +143,7 @@ async function CuerpoPedido({
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
+  const puedeReservar = ['gerencia', 'operaciones', 'comercial', 'almacen'].includes(usuario?.rol ?? '');
 
   const moneda = pedido.moneda as 'USD' | 'PEN';
 
@@ -191,7 +193,7 @@ async function CuerpoPedido({
       .eq('pedido_id', pedidoId).order('orden'),
     supabase
       .from('reservas')
-      .select('id, bultos, peso_neto_kg, estado, vence_el, creado_en, motivo_liberacion, lotes(codigo_pallet, fecha_produccion), almacenes(nombre), pedido_lineas!inner(pedido_id)')
+      .select('id, pedido_linea_id, bultos, peso_neto_kg, estado, vence_el, creado_en, motivo_liberacion, lotes(codigo_pallet, fecha_produccion), almacenes(nombre), pedido_lineas!inner(pedido_id)')
       .eq('pedido_lineas.pedido_id', pedidoId).order('creado_en', { ascending: false }),
     supabase
       .from('embarque_pedidos')
@@ -436,13 +438,20 @@ async function CuerpoPedido({
                   <th>SKU</th><th>Producto</th>
                   <th className="num">Pedido</th><th className="num">Reservado</th><th className="num">Falta</th>
                   <th className="num">Cobertura</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {(lineas ?? []).map((l) => {
                   const sp = uno(l.sku_presentaciones);
                   const sku = uno(sp?.skus);
+                  /*
+                   * Solo las reservas DE ESTA LÍNEA. Antes se sumaban todas las
+                   * del pedido en cada fila, así que un pedido de tres líneas
+                   * mostraba las tres cubiertas en cuanto se apartaba una.
+                   */
                   const reservadoKg = (reservas ?? [])
+                    .filter((r) => Number(r.pedido_linea_id) === Number(l.id))
                     .filter((r) => ['activa', 'en_preparacion', 'consumida'].includes(r.estado as string))
                     .reduce((s, r) => s + Number(r.peso_neto_kg ?? 0), 0);
                   const pedidoKg = Number(l.cantidad_tm) * 1000;
@@ -460,6 +469,15 @@ async function CuerpoPedido({
                       </td>
                       <td className="num" style={{ minWidth: '5rem' }}>
                         <Barra porcentaje={cubierto} tono={cubierto >= 100 ? 'ok' : 'atencion'} />
+                      </td>
+                      <td>
+                        {falta > 0 && (
+                          <BotonReservar
+                            pedidoLineaId={l.id as number}
+                            producto={`${campo(sku, 'codigo')} · ${campo(sku, 'corte')}`}
+                            puede={puedeReservar}
+                          />
+                        )}
                       </td>
                     </tr>
                   );
