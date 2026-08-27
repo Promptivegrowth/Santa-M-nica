@@ -23,6 +23,7 @@
  * ============================================================================
  */
 import { revalidatePath } from 'next/cache';
+import { columnasContacto, type ContactoDocumento } from '@/lib/contactoDocumento';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { puedeVender, type Rol } from '@/lib/navegacion';
 
@@ -46,6 +47,10 @@ export type DatosPedido = {
   fecha_solicitada: string;
   fecha_comprometida: string;
   observaciones: string | null;
+  /** Opcional: el pedido se registra igual sin contacto. */
+  contacto?: ContactoDocumento;
+  /** Opcional: cuentas de cobro que se imprimirán en la proforma. */
+  cuentas?: number[];
   lineas: LineaPedido[];
 };
 
@@ -134,8 +139,19 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
 
   /* ---- Número de proforma ---- */
   const anio = String(new Date().getFullYear()).slice(2);
-  const { count } = await supabase.from('pedidos').select('id', { count: 'exact', head: true });
-  const numeroProforma = `SM${anio}-${(count ?? 0) + 1}`;
+  /*
+   * El número lo da la base, no una cuenta de filas: contar fallaba en cuanto
+   * había huecos en la numeración, y dos personas guardando a la vez obtenían
+   * el mismo número.
+   */
+  const { data: correlativo, error: errNum } = await supabase.rpc('siguiente_correlativo', {
+    p_serie: 'SM',
+    p_anio: new Date().getFullYear(),
+  });
+  if (errNum || correlativo === null) {
+    return { ok: false, mensaje: 'No se pudo reservar el número de proforma. Vuelva a intentarlo.' };
+  }
+  const numeroProforma = `SM${anio}-${Number(correlativo)}`;
 
   /* ---- Cabecera ----
      cotizacion_id queda en NULL a propósito: es lo que distingue un pedido
@@ -164,6 +180,7 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
       cobertura: 'pendiente_stock',
       situacion: 'sin_facturar',
       observaciones: datos.observaciones,
+      ...columnasContacto(datos.contacto),
       creado_por: usuario.id,
     })
     .select('id, numero_proforma')
@@ -197,6 +214,17 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
     // Una cabecera sin líneas no sirve de nada: se deshace
     await supabase.from('pedidos').delete().eq('id', pedido.id);
     return { ok: false, mensaje: `No se pudieron guardar las líneas: ${errLin.message}` };
+  }
+
+  /*
+   * Las cuentas de cobro que se imprimirán en la proforma. Se guardan aparte
+   * porque son muchas a muchas: una proforma puede llevar la cuenta en
+   * dólares y la de detracción a la vez.
+   */
+  if (datos.cuentas?.length) {
+    await supabase
+      .from('pedido_cuentas')
+      .insert(datos.cuentas.map((cuenta_id) => ({ pedido_id: pedido.id, cuenta_id })));
   }
 
   revalidatePath('/ventas/pedidos');

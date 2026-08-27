@@ -145,6 +145,38 @@ async function CuerpoPedido({
 
   const moneda = pedido.moneda as 'USD' | 'PEN';
 
+  /*
+   * El contacto y las cuentas se piden aparte porque el tablero es una VISTA
+   * y no los incluye. Son dos consultas diminutas por clave.
+   */
+  const [{ data: cabecera }, { data: filasCuentas }] = await Promise.all([
+    supabase
+      .from('pedidos')
+      .select('contacto_nombre, contacto_cargo, contacto_telefono, contacto_email')
+      .eq('id', pedidoId)
+      .single(),
+    supabase
+      .from('pedido_cuentas')
+      .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift)')
+      .eq('pedido_id', pedidoId),
+  ]);
+
+  // `?? {}` deja el tipo en objeto vacío y TypeScript no encuentra los campos;
+  // se declara lo que de verdad llega.
+  const contacto = (cabecera ?? {}) as Record<string, string | null>;
+  const cuentasDoc = (filasCuentas ?? [])
+    .map((f) => uno<Record<string, unknown>>(f.cuentas_bancarias))
+    .filter(Boolean)
+    .map((c) => ({
+      banco: String(c!.banco ?? ''),
+      tipo: String(c!.tipo ?? ''),
+      moneda: String(c!.moneda ?? ''),
+      numero: String(c!.numero ?? ''),
+      cci: String(c!.cci ?? ''),
+      swift: String(c!.swift ?? ''),
+    }))
+    .sort((a, b) => Number(a.tipo === 'detraccion') - Number(b.tipo === 'detraccion'));
+
   /* ---- Datos de la pestaña activa (solo se pide lo que se va a mostrar) ---- */
   const [
     { data: lineas },
@@ -242,6 +274,57 @@ async function CuerpoPedido({
                 </dd>
               </div>
             </dl>
+          </Panel>
+
+          {/* ---- Lo que sale impreso en la proforma ---- */}
+          <Panel titulo="Dirigido a">
+            {!contacto.contacto_nombre ? (
+              <Vacio
+                titulo="Sin contacto"
+                mensaje="Esta proforma no indica a qué persona del cliente va dirigida. No es obligatorio, pero quien la reciba no sabrá para quién es."
+              />
+            ) : (
+              <dl className="ficha">
+                <div><dt>Nombre</dt><dd>{contacto.contacto_nombre as string}</dd></div>
+                <div><dt>Cargo</dt><dd>{(contacto.contacto_cargo as string) ?? '—'}</dd></div>
+                <div><dt>Teléfono</dt><dd className="mono">{(contacto.contacto_telefono as string) ?? '—'}</dd></div>
+                <div><dt>Correo</dt><dd className="mono">{(contacto.contacto_email as string) ?? '—'}</dd></div>
+              </dl>
+            )}
+          </Panel>
+
+          <Panel titulo={`Cuentas de cobro · ${cuentasDoc.length}`}>
+            {cuentasDoc.length === 0 ? (
+              <Vacio
+                titulo="Sin cuentas"
+                mensaje="La proforma saldrá sin datos de pago: el cliente tendrá que llamar para preguntar dónde deposita."
+              />
+            ) : (
+              <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+                <table className="datos">
+                  <thead>
+                    <tr><th>Banco</th><th>Tipo</th><th>Número</th><th>CCI / SWIFT</th></tr>
+                  </thead>
+                  <tbody>
+                    {cuentasDoc.map((c, i) => (
+                      <tr key={i}>
+                        <td>{c.banco}</td>
+                        <td>
+                          <Etiqueta
+                            texto={c.tipo === 'detraccion' ? 'Detracción' : c.moneda}
+                            tono={c.tipo === 'detraccion' ? 'atencion' : 'neutro'}
+                          />
+                        </td>
+                        <td className="mono" style={{ fontSize: '.78rem' }}>{c.numero}</td>
+                        <td className="mono" style={{ fontSize: '.7rem', color: 'var(--tinta-3)' }}>
+                          {[c.cci, c.swift].filter(Boolean).join(' · ') || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Panel>
         </div>
       )}

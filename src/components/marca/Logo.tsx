@@ -19,9 +19,17 @@ import Image from 'next/image';
 export function Logotipo({
   alto = 34,
   className = '',
+  prioritario = false,
 }: {
   alto?: number;
   className?: string;
+  /**
+   * Precarga la imagen. Solo tiene sentido donde el logotipo ES la pantalla
+   * —el login—; en la barra lateral produce una precarga que el navegador
+   * avisa de no haber usado, porque la barra se dibuja despues de hidratar y
+   * puede estar colapsada, en cuyo caso ni siquiera aparece.
+   */
+  prioritario?: boolean;
 }) {
   return (
     <Image
@@ -29,7 +37,7 @@ export function Logotipo({
       alt="Santa Mónica Fishing"
       width={Math.round(alto * 3.86)} /* proporción real del archivo */
       height={alto}
-      priority
+      priority={prioritario}
       className={className}
       style={{ height: alto, width: 'auto' }}
     />

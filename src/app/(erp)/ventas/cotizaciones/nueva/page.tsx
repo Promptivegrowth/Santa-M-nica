@@ -58,6 +58,8 @@ export default async function PaginaNuevaCotizacion() {
         destinos={cat.destinos}
         listas={cat.listas}
         unidades={cat.unidades}
+        contactos={cat.contactos}
+        cuentas={cat.cuentas}
         igv={cat.igv}
         validezDefecto={cat.validezDefecto}
         tipoCambioDefecto={cat.tipoCambioDefecto}

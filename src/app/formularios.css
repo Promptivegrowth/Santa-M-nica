@@ -244,3 +244,86 @@
   color: var(--tinta-2);
   line-height: 1.5;
 }
+
+/* ---------------------------------------------------------------------------
+   SECCIONES OPCIONALES DEL FORMULARIO
+   ---------------------------------------------------------------------------
+   El contacto y las cuentas de cobro no bloquean nada. Se marca con una
+   etiqueta en el título en lugar de con un asterisco al revés: quien llega a
+   la sección tiene que saber, antes de leerla, que puede saltársela.
+   --------------------------------------------------------------------------- */
+.form-etiqueta-opcional {
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  background: var(--superficie-2);
+  border: 1px solid var(--linea);
+  color: var(--tinta-3);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.form-pie-seccion {
+  margin: 0;
+  padding: 0.6rem 1rem 0.9rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--tinta-3);
+}
+
+/* ---------------------------------------------------------------------------
+   CUENTAS DE COBRO
+   ---------------------------------------------------------------------------
+   Tarjetas y no una lista de casillas: el número de cuenta es lo que hay que
+   leer con cuidado antes de mandarlo, y en una casilla suelta se pierde.
+   --------------------------------------------------------------------------- */
+.cuentas-rejilla {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 780px) {
+  .cuentas-rejilla { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.cuenta-tarjeta {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--linea);
+  border-radius: 6px;
+  background: var(--superficie);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.cuenta-tarjeta:hover { border-color: var(--acento-2); }
+.cuenta-tarjeta[data-elegida="si"] {
+  border-color: var(--acento);
+  background: var(--acento-suave);
+}
+.cuenta-tarjeta input { margin-top: 0.2rem; flex-shrink: 0; }
+
+.cuenta-cuerpo { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
+.cuenta-titulo {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.84rem;
+}
+.cuenta-numero {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--tinta);
+  letter-spacing: 0.01em;
+}
+.cuenta-dato {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--tinta-3);
+}

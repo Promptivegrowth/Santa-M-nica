@@ -115,8 +115,21 @@ export async function generarDocumentoExcel(d: Documento): Promise<Buffer> {
     `${d.receptor.etiquetaIdentificacion}: ${d.receptor.identificacion}   ·   ${d.receptor.pais}`,
     { tamano: 8, hasta: 4 }
   );
-  const contacto = [d.receptor.contacto, d.receptor.email].filter(Boolean).join('  ·  ');
-  if (contacto) escribir(f + 3, 1, contacto, { tamano: 8, hasta: 4 });
+  const contactoCliente = [d.receptor.contacto, d.receptor.email].filter(Boolean).join('  ·  ');
+  if (contactoCliente) escribir(f + 3, 1, contactoCliente, { tamano: 8, hasta: 4 });
+
+  // A quién va dirigido dentro de esa empresa. Puede faltar: la sección es
+  // opcional y el documento sale igual sin ella.
+  if (d.contacto) {
+    escribir(f + 4, 1, 'ATENCIÓN A', { negrita: true, tamano: 7, color: MARCA.azulProfundo });
+    escribir(
+      f + 5, 1,
+      d.contacto.nombre + (d.contacto.cargo ? `  ·  ${d.contacto.cargo}` : ''),
+      { negrita: true, tamano: 9, hasta: 4 }
+    );
+    const via = [d.contacto.telefono, d.contacto.email].filter(Boolean).join('  ·  ');
+    if (via) escribir(f + 6, 1, via, { tamano: 8, hasta: 4 });
+  }
 
   escribir(filaBloque, 6, 'CONDICIONES', { negrita: true, tamano: 7, color: MARCA.azulProfundo });
   d.datos.forEach((dato, i) => {
@@ -124,7 +137,7 @@ export async function generarDocumentoExcel(d: Documento): Promise<Buffer> {
     escribir(filaBloque + 1 + i, 7, dato.valor, { tamano: 8, negrita: true, hasta: COLS });
   });
 
-  f = Math.max(filaBloque + 5, filaBloque + 2 + d.datos.length);
+  f = Math.max(filaBloque + (d.contacto ? 8 : 5), filaBloque + 2 + d.datos.length);
 
   /* ═════════ TABLA DE PRODUCTOS ═════════ */
   const ENCABEZADOS = [
@@ -208,6 +221,49 @@ export async function generarDocumentoExcel(d: Documento): Promise<Buffer> {
   escribir(f, 1, 'SON', { negrita: true, tamano: 7, color: 'FF6F7D95' });
   escribir(f, 2, importeEnLetras(d.totales.total, d.moneda), { negrita: true, tamano: 9, hasta: COLS });
   f += 2;
+
+  /* ═════════ DATOS PARA EL PAGO ═════════ */
+  if (d.cuentas.length) {
+    escribir(f, 1, 'DATOS PARA EL PAGO', { negrita: true, tamano: 7, color: MARCA.azulProfundo, hasta: COLS });
+    f++;
+
+    const CAB = ['Banco', 'Tipo', 'Moneda', 'Número de cuenta', 'CCI', 'SWIFT'];
+    CAB.forEach((t, i) => {
+      const c = hoja.getCell(f, i + 1);
+      c.value = t;
+      c.font = { name: 'Calibri', size: 8, bold: true, color: { argb: MARCA.blanco } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: MARCA.azulProfundo } };
+    });
+    // Las dos últimas columnas quedan libres: el SWIFT se extiende sobre ellas.
+    hoja.mergeCells(f, 6, f, COLS);
+    f++;
+
+    for (const cu of d.cuentas) {
+      const esDetraccion = cu.tipo === 'detraccion';
+      const valores = [
+        cu.banco,
+        esDetraccion ? 'Detracción' : cu.tipo === 'ahorros' ? 'Ahorros' : 'Corriente',
+        cu.moneda,
+        cu.numero,
+        cu.cci || '—',
+        cu.swift || '—',
+      ];
+      valores.forEach((v, i) => {
+        const c = hoja.getCell(f, i + 1);
+        c.value = v;
+        c.font = {
+          name: i >= 3 ? 'Consolas' : 'Calibri',
+          size: 8.5,
+          bold: esDetraccion && i <= 1,
+          color: { argb: esDetraccion ? MARCA.atencion : MARCA.tinta },
+        };
+        c.border = { bottom: { style: 'hair', color: { argb: MARCA.grisLinea } } };
+      });
+      hoja.mergeCells(f, 6, f, COLS);
+      f++;
+    }
+    f++;
+  }
 
   /* ═════════ OBSERVACIONES DE LA VERIFICACIÓN ═════════ */
   if (d.avisos.length) {

@@ -40,6 +40,7 @@ import { crearPedidoDirecto } from '@/app/(erp)/ventas/pedidos/acciones';
 import { detalleProductos, type DetalleProducto } from '@/app/(erp)/ventas/productos/acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, tm } from '@/lib/formato';
+import type { ContactoDocumento } from '@/lib/contactoDocumento';
 
 export type Modo = 'cotizacion' | 'pedido';
 
@@ -55,6 +56,29 @@ type Unidad = {
 };
 
 type Opcion = { id: number; nombre: string; extra?: string };
+
+/** Una persona del cliente. Todos sus campos menos el nombre son opcionales. */
+type Contacto = {
+  id: number;
+  cliente_id: number;
+  nombre: string;
+  cargo: string;
+  telefono: string;
+  email: string;
+  principal: boolean;
+};
+
+/** Una cuenta de cobro de la empresa. */
+type Cuenta = {
+  id: number;
+  banco: string;
+  tipo: 'corriente' | 'ahorros' | 'detraccion';
+  moneda: 'USD' | 'PEN';
+  numero: string;
+  cci: string;
+  swift: string;
+  principal: boolean;
+};
 
 /** Una línea en pantalla: lo que se guarda más lo que ayuda a decidir. */
 type LineaUI = {
@@ -87,6 +111,9 @@ export type DatosEdicion = {
   incoterm: 'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP';
   validez_dias: number;
   observaciones: string | null;
+  /** Lo que tenía guardado; se respeta tal cual al reabrir el documento. */
+  contacto?: ContactoDocumento;
+  cuentas?: number[];
   lineas: {
     sku_presentacion_id: number;
     cantidad_tm: number;
@@ -128,6 +155,8 @@ export function FormularioVenta({
   destinos,
   listas,
   unidades,
+  contactos,
+  cuentas,
   igv,
   validezDefecto,
   tipoCambioDefecto,
@@ -141,6 +170,8 @@ export function FormularioVenta({
   destinos: (Opcion & { pais: string })[];
   listas: (Opcion & { moneda: string; incoterm: string })[];
   unidades: Unidad[];
+  contactos: Contacto[];
+  cuentas: Cuenta[];
   igv: number;
   validezDefecto: number;
   tipoCambioDefecto: number;
@@ -170,6 +201,17 @@ export function FormularioVenta({
     edicion?.incoterm ?? 'FOB'
   );
   const [observaciones, setObservaciones] = useState(edicion?.observaciones ?? '');
+
+  /* ----------------------------------------------------------------------
+     CONTACTO Y CUENTAS · las dos secciones opcionales
+     ----------------------------------------------------------------------
+     Se pidió expresamente que no bloqueen: una oferta se guarda igual sin
+     contacto y sin cuentas. Por eso no aparecen en ninguna validación.
+     ---------------------------------------------------------------------- */
+  const [contacto, setContacto] = useState<ContactoDocumento>(
+    edicion?.contacto ?? { id: null, nombre: '', cargo: '', telefono: '', email: '' }
+  );
+  const [cuentasElegidas, setCuentasElegidas] = useState<number[]>(edicion?.cuentas ?? []);
 
   /* ---- Solo cotización ---- */
   const [validez, setValidez] = useState(edicion?.validez_dias ?? validezDefecto);
@@ -229,6 +271,60 @@ export function FormularioVenta({
     enVivo.cliente === Number(clienteId) ? enVivo.mapa.get(id) : undefined;
 
   const cliente = clientes.find((c) => c.id === clienteId);
+
+  /** Los contactos que tiene este cliente concreto. */
+  const contactosDelCliente = useMemo(
+    () => contactos.filter((c) => c.cliente_id === Number(clienteId)),
+    [contactos, clienteId]
+  );
+
+  /**
+   * Al cambiar de cliente se propone su contacto principal y las cuentas que
+   * corresponden. Es una PROPUESTA: se puede cambiar o vaciar entera.
+   *
+   * Solo ocurre al crear. Editando una cotización se respeta lo que ya tenía,
+   * porque cambiarlo por debajo sería alterar un documento que quizá ya se
+   * envió.
+   */
+  function proponerParaCliente(id: number) {
+    if (esEdicion) return;
+
+    const principal = contactos.find((c) => c.cliente_id === id && c.principal);
+    setContacto(
+      principal
+        ? {
+            id: principal.id,
+            nombre: principal.nombre,
+            cargo: principal.cargo,
+            telefono: principal.telefono,
+            email: principal.email,
+          }
+        : { id: null, nombre: '', cargo: '', telefono: '', email: '' }
+    );
+
+    /*
+     * Las cuentas que se proponen: la principal en la moneda del documento, y
+     * la de detracción solo si el cliente es peruano —a un importador de
+     * China la detracción no le dice nada—.
+     */
+    const esPeruano = clientes.find((c) => c.id === id)?.pais === 'Perú';
+    setCuentasElegidas(
+      cuentas
+        .filter((c) =>
+          c.tipo === 'detraccion'
+            ? esPeruano
+            : c.principal && c.moneda === moneda
+        )
+        .map((c) => c.id)
+    );
+  }
+
+  /** Marca o desmarca una cuenta de la lista que irá impresa. */
+  function alternarCuenta(id: number) {
+    setCuentasElegidas((ids) =>
+      ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]
+    );
+  }
 
   /* ---- Buscador de productos: filtra en el navegador, sin esperas ---- */
   const resultados = useMemo(() => {
@@ -436,6 +532,8 @@ export function FormularioVenta({
             incoterm,
             validez_dias: validez,
             observaciones: observaciones.trim() || null,
+            contacto,
+            cuentas: cuentasElegidas,
             lineas: lineasLimpias,
           })
         : esPedido
@@ -451,6 +549,8 @@ export function FormularioVenta({
             fecha_solicitada: fechaSolicitada,
             fecha_comprometida: fechaComprometida,
             observaciones: observaciones.trim() || null,
+            contacto,
+            cuentas: cuentasElegidas,
             lineas: lineasLimpias,
           })
         : await crearCotizacion({
@@ -463,6 +563,8 @@ export function FormularioVenta({
             incoterm,
             validez_dias: validez,
             observaciones: observaciones.trim() || null,
+            contacto,
+            cuentas: cuentasElegidas,
             lineas: lineasLimpias,
           });
 
@@ -509,6 +611,7 @@ export function FormularioVenta({
               value={clienteId}
               onChange={(e) => {
                 const id = e.target.value ? Number(e.target.value) : '';
+                if (id) proponerParaCliente(id);
                 setClienteId(id);
                 const c = clientes.find((x) => x.id === id);
                 if (c) {
@@ -679,6 +782,173 @@ export function FormularioVenta({
             />
           </label>
         </div>
+      </section>
+
+      {/* ══════ CONTACTO ══════
+        Opcional a propósito. Se pidió que no bloquee, y es lo correcto: una
+        oferta que se cierra por teléfono no debería quedarse sin registrar
+        porque falte el correo de alguien.
+
+        Dos caminos, como se pidió: elegir uno de los que ya están dados de
+        alta para ese cliente, o escribirlo aquí mismo sin tocar el maestro.
+      */}
+      <section className="panel mb-espacio">
+        <div className="panel-cabecera">
+          <span className="panel-titulo">
+            Contacto
+            <span className="form-etiqueta-opcional">opcional</span>
+          </span>
+          <span className="form-nota-cab">
+            Se imprime en la cotización y viaja al pedido
+          </span>
+        </div>
+
+        <div className="form-rejilla">
+          <label className="form-campo form-ancho">
+            <span className="etiqueta">Elegir de la agenda del cliente</span>
+            <select
+              className="campo"
+              disabled={!clienteId}
+              value={contacto.id ?? ''}
+              onChange={(e) => {
+                const id = e.target.value ? Number(e.target.value) : null;
+                if (id === null) {
+                  // «Escribir uno nuevo»: se conserva lo tecleado y se suelta
+                  // la referencia al maestro.
+                  setContacto((c) => ({ ...c, id: null }));
+                  return;
+                }
+                const elegido = contactos.find((c) => c.id === id);
+                if (elegido) {
+                  setContacto({
+                    id: elegido.id,
+                    nombre: elegido.nombre,
+                    cargo: elegido.cargo,
+                    telefono: elegido.telefono,
+                    email: elegido.email,
+                  });
+                }
+              }}
+            >
+              <option value="">
+                {clienteId
+                  ? contactosDelCliente.length
+                    ? '— Escribir uno nuevo —'
+                    : 'Este cliente no tiene contactos: escríbalo abajo'
+                  : 'Elija primero el cliente'}
+              </option>
+              {contactosDelCliente.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}{c.cargo ? ` · ${c.cargo}` : ''}{c.principal ? '  (principal)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="form-campo">
+            <span className="etiqueta">Nombre</span>
+            <input
+              className="campo"
+              placeholder="Nombre y apellido"
+              value={contacto.nombre}
+              onChange={(e) => setContacto({ ...contacto, nombre: e.target.value, id: null })}
+            />
+          </label>
+
+          <label className="form-campo">
+            <span className="etiqueta">Cargo</span>
+            <input
+              className="campo"
+              placeholder="Jefe de Compras"
+              value={contacto.cargo}
+              onChange={(e) => setContacto({ ...contacto, cargo: e.target.value, id: null })}
+            />
+          </label>
+
+          <label className="form-campo">
+            <span className="etiqueta">Teléfono</span>
+            <input
+              className="campo"
+              placeholder="+51 999 999 999"
+              value={contacto.telefono}
+              onChange={(e) => setContacto({ ...contacto, telefono: e.target.value, id: null })}
+            />
+          </label>
+
+          <label className="form-campo">
+            <span className="etiqueta">Correo</span>
+            <input
+              className="campo"
+              type="email"
+              placeholder="nombre@empresa.com"
+              value={contacto.email}
+              onChange={(e) => setContacto({ ...contacto, email: e.target.value, id: null })}
+            />
+          </label>
+        </div>
+
+        <p className="form-pie-seccion">
+          {contacto.id
+            ? 'Tomado de la agenda del cliente. Si lo modifica aquí, el cambio queda solo en este documento y el maestro no se toca.'
+            : 'Escrito solo para este documento. Para reutilizarlo, agréguelo en Configuración → Contactos y cuentas.'}
+        </p>
+      </section>
+
+      {/* ══════ CUENTAS DE COBRO ══════
+        Son las de Santa Mónica: donde se le dice al cliente que pague. La de
+        detracción solo tiene sentido para el cliente nacional, así que se
+        propone sola en ese caso.
+      */}
+      <section className="panel mb-espacio">
+        <div className="panel-cabecera">
+          <span className="panel-titulo">
+            Cuentas de cobro
+            <span className="form-etiqueta-opcional">opcional</span>
+          </span>
+          <span className="form-nota-cab">
+            {cuentasElegidas.length === 0
+              ? 'Ninguna elegida: el documento saldrá sin datos de pago'
+              : `${cuentasElegidas.length} se imprimirán en el documento`}
+          </span>
+        </div>
+
+        {cuentas.length === 0 ? (
+          <p className="form-pie-seccion">
+            No hay cuentas dadas de alta. Se agregan en Configuración → Contactos y cuentas.
+          </p>
+        ) : (
+          <div className="cuentas-rejilla">
+            {cuentas.map((c) => {
+              const elegida = cuentasElegidas.includes(c.id);
+              return (
+                <label key={c.id} className="cuenta-tarjeta" data-elegida={elegida ? 'si' : undefined}>
+                  <input
+                    type="checkbox"
+                    checked={elegida}
+                    onChange={() => alternarCuenta(c.id)}
+                  />
+                  <span className="cuenta-cuerpo">
+                    <span className="cuenta-titulo">
+                      <strong>{c.banco}</strong>
+                      <span className={`pill ${c.tipo === 'detraccion' ? 'pill-atencion' : 'pill-neutro'}`}>
+                        {c.tipo === 'detraccion' ? 'Detracción' : c.moneda}
+                      </span>
+                    </span>
+                    <span className="cuenta-numero">{c.numero}</span>
+                    {c.cci && <span className="cuenta-dato">CCI {c.cci}</span>}
+                    {c.swift && <span className="cuenta-dato">SWIFT {c.swift}</span>}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="form-pie-seccion">
+          La cuenta de <strong>detracción</strong> solo hace falta para la venta nacional: es donde
+          el comprador peruano deposita el porcentaje que le retiene a la operación. A un cliente
+          del extranjero no le sirve de nada, así que no se le propone.
+        </p>
       </section>
 
       {/* ══════ PRODUCTOS ══════ */}

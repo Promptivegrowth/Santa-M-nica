@@ -16,6 +16,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { columnasContacto, type ContactoDocumento } from '@/lib/contactoDocumento';
 import { puedeVender, type Rol } from '@/lib/navegacion';
 
 export type LineaCotizacion = {
@@ -25,6 +26,7 @@ export type LineaCotizacion = {
   precio_tm: number;
   descuento_pct: number;
 };
+
 
 export type DatosCotizacion = {
   cliente_id: number;
@@ -36,12 +38,64 @@ export type DatosCotizacion = {
   incoterm: 'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP';
   validez_dias: number;
   observaciones: string | null;
+  /** Opcional: la cotización se guarda igual sin contacto. */
+  contacto?: ContactoDocumento;
+  /** Opcional: identificadores de las cuentas de cobro que se imprimirán. */
+  cuentas?: number[];
   lineas: LineaCotizacion[];
 };
 
 export type Resultado =
   | { ok: true; id: number; numero: string; mensaje: string }
   | { ok: false; mensaje: string; campo?: string };
+
+/**
+ * Reemplaza la lista de cuentas de un documento.
+ *
+ * Se borran todas y se vuelven a insertar en vez de calcular la diferencia:
+ * son dos o tres filas sin datos propios, y el código que calcula diferencias
+ * es donde se cuelan los errores.
+ *
+ * Si falla, NO se aborta el guardado. Las cuentas son un dato de presentación
+ * —dónde pagar— y perder la cotización entera por eso sería desproporcionado.
+ */
+async function guardarCuentas(
+  supabase: Awaited<ReturnType<typeof crearClienteServidor>>,
+  tabla: 'cotizacion_cuentas' | 'pedido_cuentas',
+  columna: 'cotizacion_id' | 'pedido_id',
+  id: number,
+  cuentas?: number[]
+) {
+  await supabase.from(tabla).delete().eq(columna, id);
+  if (!cuentas?.length) return;
+
+  await supabase
+    .from(tabla)
+    .insert(cuentas.map((cuenta_id) => ({ [columna]: id, cuenta_id })));
+}
+
+
+/**
+ * Pide a la base el siguiente número de una serie.
+ *
+ * Antes esto se calculaba contando las filas de la tabla y sumando uno. Fallaba
+ * de dos maneras: si había huecos en la numeración el número calculado ya
+ * existía —y la conversión reventaba con un error de clave duplicada delante
+ * del usuario—, y dos personas guardando a la vez obtenían el mismo.
+ *
+ * La función de la base lo resuelve de forma atómica.
+ */
+async function siguienteNumero(
+  supabase: Awaited<ReturnType<typeof crearClienteServidor>>,
+  serie: string
+): Promise<number | null> {
+  const { data, error } = await supabase.rpc('siguiente_correlativo', {
+    p_serie: serie,
+    p_anio: new Date().getFullYear(),
+  });
+  if (error || data === null || data === undefined) return null;
+  return Number(data);
+}
 
 /* ==========================================================================
    CREAR COTIZACIÓN
@@ -116,9 +170,11 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
 
   /* ---- Número correlativo ---- */
   const anio = new Date().getFullYear();
-  const { count } = await supabase
-    .from('cotizaciones').select('id', { count: 'exact', head: true });
-  const numero = `COT-${anio}-${String((count ?? 0) + 1).padStart(4, '0')}`;
+  const correlativo = await siguienteNumero(supabase, 'COT');
+  if (correlativo === null) {
+    return { ok: false, mensaje: 'No se pudo reservar el número de cotización. Vuelva a intentarlo.' };
+  }
+  const numero = `COT-${anio}-${String(correlativo).padStart(4, '0')}`;
 
   /* ---- Cabecera ---- */
   const { data: cot, error: errCab } = await supabase
@@ -136,6 +192,7 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
       observaciones: datos.observaciones,
       estado: 'borrador',
       creado_por: usuario.id,
+      ...columnasContacto(datos.contacto),
     })
     .select('id, numero')
     .single();
@@ -169,6 +226,8 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
     await supabase.from('cotizaciones').delete().eq('id', cot.id);
     return { ok: false, mensaje: `No se pudieron guardar las líneas: ${errLin.message}` };
   }
+
+  await guardarCuentas(supabase, 'cotizacion_cuentas', 'cotizacion_id', cot.id as number, datos.cuentas);
 
   revalidatePath('/ventas/cotizaciones');
   return {
@@ -249,8 +308,11 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
 
   /* ---- Número de proforma ---- */
   const anio = String(new Date().getFullYear()).slice(2);
-  const { count } = await supabase.from('pedidos').select('id', { count: 'exact', head: true });
-  const numeroProforma = `SM${anio}-${(count ?? 0) + 1}`;
+  const correlativo = await siguienteNumero(supabase, 'SM');
+  if (correlativo === null) {
+    return { ok: false, mensaje: 'No se pudo reservar el número de proforma. Vuelva a intentarlo.' };
+  }
+  const numeroProforma = `SM${anio}-${correlativo}`;
 
   const hoy = new Date();
   const comprometida = new Date(hoy.getTime() + 21 * 86400000).toISOString().slice(0, 10);
@@ -276,6 +338,17 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
       ciclo: 'pendiente_validacion',
       cobertura: 'pendiente_stock',
       situacion: 'sin_facturar',
+      /*
+       * El contacto y las cuentas viajan de la cotización al pedido tal como
+       * estaban. Es lo que se pidió, y además es lo correcto: la proforma es
+       * la continuación de esa oferta, y volver a preguntar a quién iba
+       * dirigida sería teclear dos veces lo mismo.
+       */
+      contacto_id: cot.contacto_id,
+      contacto_nombre: cot.contacto_nombre,
+      contacto_cargo: cot.contacto_cargo,
+      contacto_telefono: cot.contacto_telefono,
+      contacto_email: cot.contacto_email,
       observaciones: `Generado desde la cotización ${cot.numero}`,
       creado_por: usuario.id,
     })
@@ -305,6 +378,20 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
     await supabase.from('pedidos').delete().eq('id', pedido.id);
     return { ok: false, mensaje: `No se pudieron copiar las líneas: ${errLin.message}` };
   }
+
+  /* ---- Las cuentas de cobro también pasan al pedido ---- */
+  const { data: cuentasCot } = await supabase
+    .from('cotizacion_cuentas')
+    .select('cuenta_id')
+    .eq('cotizacion_id', cotizacionId);
+
+  await guardarCuentas(
+    supabase,
+    'pedido_cuentas',
+    'pedido_id',
+    pedido.id as number,
+    (cuentasCot ?? []).map((c) => Number(c.cuenta_id))
+  );
 
   // La cotización queda marcada como aceptada
   await supabase.from('cotizaciones').update({ estado: 'aceptada' }).eq('id', cotizacionId);
@@ -457,6 +544,7 @@ export async function actualizarCotizacion(
       incoterm: datos.incoterm,
       validez_dias: datos.validez_dias,
       observaciones: datos.observaciones,
+      ...columnasContacto(datos.contacto),
     })
     .eq('id', id);
 
@@ -475,6 +563,8 @@ export async function actualizarCotizacion(
     }))
   );
   if (errLin) return { ok: false, mensaje: `No se pudieron guardar las líneas: ${errLin.message}` };
+
+  await guardarCuentas(supabase, 'cotizacion_cuentas', 'cotizacion_id', id, datos.cuentas);
 
   revalidatePath('/ventas/cotizaciones');
   revalidatePath(`/ventas/cotizaciones/${id}`);

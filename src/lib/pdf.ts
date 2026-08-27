@@ -77,6 +77,84 @@ function cifra(n: number, decimales = 2): string {
   });
 }
 
+/* --------------------------------------------------------------------------
+   TEXTO QUE LAS FUENTES DEL PDF SABEN DIBUJAR
+   --------------------------------------------------------------------------
+   Las catorce fuentes que trae todo lector de PDF -Helvetica, Courier- usan
+   la codificacion WinAnsi. Cubre el castellano entero, pero no el resto de
+   Unicode: un caracter que no este ahi no se dibuja, sale otro en su lugar.
+
+   Ya paso una vez y se descubrio mirando el PDF, no leyendo el codigo: el
+   signo menos matematico salia como una comilla, tanto en el descuento como
+   en la nota de "conservar a -18 grados". Como las observaciones las escribe
+   el usuario y puede pegar cualquier cosa, se limpia el documento ENTERO de
+   una vez antes de dibujarlo, en lugar de ir corrigiendo caso por caso.
+
+   Se compara por codigo de caracter y no con una expresion regular: la lista
+   de caracteres raros escapados es justo la clase de cosa que se rompe al
+   copiarla de un sitio a otro.
+   -------------------------------------------------------------------------- */
+
+/** Lo que se cambia por un equivalente que si se puede dibujar. */
+const EQUIVALENTES = new Map<number, string>([
+  [0x2212, '-'],    // signo menos matematico
+  [0x2192, '->'],   // flecha derecha
+  [0x2190, '<-'],   // flecha izquierda
+  [0x2248, '~'],    // aproximadamente
+  [0x2264, '<='],
+  [0x2265, '>='],
+  [0x00a0, ' '],    // espacio duro
+]);
+
+/**
+ * Los caracteres de WinAnsi que en Unicode viven fuera del rango 0x20-0xFF.
+ * Son los que ocupan las posiciones 0x80-0x9F de la codificacion: comillas
+ * tipograficas, rayas, puntos suspensivos y el simbolo del euro.
+ */
+const EXTRA_WINANSI = new Set([
+  0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030,
+  0x0160, 0x2039, 0x0152, 0x017d, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022,
+  0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x017e, 0x0178,
+]);
+
+/** Deja el texto en caracteres que la fuente pueda dibujar. */
+function seguro(texto: string): string {
+  let salida = '';
+  for (const caracter of texto) {
+    const codigo = caracter.codePointAt(0) ?? 0;
+
+    const sustituto = EQUIVALENTES.get(codigo);
+    if (sustituto !== undefined) {
+      salida += sustituto;
+      continue;
+    }
+
+    if ((codigo >= 0x20 && codigo <= 0xff) || EXTRA_WINANSI.has(codigo)) {
+      salida += caracter;
+    }
+    // Lo demas se descarta: mejor un hueco que un simbolo equivocado en un
+    // comprobante que sale de la empresa.
+  }
+  return salida;
+}
+
+/**
+ * Recorre el documento entero limpiando cada texto.
+ *
+ * Se hace UNA vez al empezar a dibujar y no en cada llamada a `.text()`: asi
+ * no hay forma de olvidarse de un campo nuevo.
+ */
+function limpiarDocumento<T>(valor: T): T {
+  if (typeof valor === 'string') return seguro(valor) as unknown as T;
+  if (Array.isArray(valor)) return valor.map(limpiarDocumento) as unknown as T;
+  if (valor && typeof valor === 'object') {
+    const salida: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(valor)) salida[k] = limpiarDocumento(v);
+    return salida as T;
+  }
+  return valor;
+}
+
 /* ==========================================================================
    PIEZAS DEL DIBUJO
    ========================================================================== */
@@ -142,8 +220,9 @@ function bloqueDatos(doc: Lienzo, d: Documento, y: number): number {
   const anchoDer = ANCHO_UTIL - anchoIzq - 10;
   const xDer = MARGEN + anchoIzq + 10;
 
+  // El recuadro tiene que dar de si cuando hay contacto: tres lineas mas.
   const filas = Math.max(3, Math.ceil(d.datos.length / 2));
-  const alto = 20 + filas * 11 + 8;
+  const alto = 20 + filas * 11 + 8 + (d.contacto ? 34 : 0);
 
   doc.roundedRect(MARGEN, y, anchoIzq, alto, 3).fill(MARCA.grisSuave);
   doc.roundedRect(xDer, y, anchoDer, alto, 3).fill(MARCA.grisSuave);
@@ -159,6 +238,26 @@ function bloqueDatos(doc: Lienzo, d: Documento, y: number): number {
   if (d.receptor.contacto || d.receptor.email) {
     doc.text([d.receptor.contacto, d.receptor.email].filter(Boolean).join('  ·  '),
       MARGEN + 8, doc.y + 1, { width: anchoIzq - 16 });
+  }
+
+  /*
+   * A quien va dirigido dentro de esa empresa. Va debajo del cliente y no en
+   * un bloque aparte porque responde a la misma pregunta: quien recibe esto.
+   * Si no hay contacto, el hueco simplemente no existe.
+   */
+  if (d.contacto) {
+    doc.fillColor(MARCA.azulProfundo).font('Helvetica-Bold').fontSize(6.5)
+      .text('ATENCIÓN A', MARGEN + 8, doc.y + 4);
+    doc.fillColor(MARCA.tinta).font('Helvetica-Bold').fontSize(8)
+      .text(
+        d.contacto.nombre + (d.contacto.cargo ? `  ·  ${d.contacto.cargo}` : ''),
+        MARGEN + 8, doc.y + 1, { width: anchoIzq - 16 }
+      );
+    const via = [d.contacto.telefono, d.contacto.email].filter(Boolean).join('  ·  ');
+    if (via) {
+      doc.fillColor(MARCA.tintaSuave).font('Helvetica').fontSize(7)
+        .text(via, MARGEN + 8, doc.y + 1, { width: anchoIzq - 16 });
+    }
   }
 
   /* ---- Condiciones, dos por línea ---- */
@@ -243,7 +342,7 @@ function totales(doc: Lienzo, d: Documento, y: number): number {
     ['Subtotal', `${sm} ${cifra(d.totales.subtotal)}`, false],
   ];
   if (d.totales.descuento > 0) {
-    filas.push(['Descuento aplicado', `− ${sm} ${cifra(d.totales.descuento)}`, false]);
+    filas.push(['Descuento aplicado', `- ${sm} ${cifra(d.totales.descuento)}`, false]);
   }
   filas.push([
     d.totales.igvPct > 0 ? `IGV (${cifra(d.totales.igvPct, 0)} %)` : 'IGV (exportación, inafecto)',
@@ -302,6 +401,57 @@ function avisos(doc: Lienzo, d: Documento, y: number): number {
   return y + alto + 8;
 }
 
+/**
+ * Donde pagar.
+ *
+ * Va justo despues de los totales porque es lo que el cliente busca cuando
+ * termina de mirar cuanto debe. Se pinta en dos columnas para que quepan
+ * cuatro cuentas sin empujar el pie a otra pagina.
+ *
+ * Si el documento no lleva ninguna cuenta, el bloque no existe: la seccion es
+ * opcional y un recuadro vacio solo ocuparia sitio.
+ */
+function cuentas(doc: Lienzo, d: Documento, y: number): number {
+  if (!d.cuentas.length) return y;
+
+  const columnas = 2;
+  const anchoCol = ANCHO_UTIL / columnas;
+  const filas = Math.ceil(d.cuentas.length / columnas);
+  const alto = 16 + filas * 30;
+
+  doc.roundedRect(MARGEN, y, ANCHO_UTIL, alto, 3).fill(MARCA.grisSuave);
+  doc.fillColor(MARCA.azulProfundo).font('Helvetica-Bold').fontSize(6.5)
+    .text('DATOS PARA EL PAGO', MARGEN + 8, y + 5);
+
+  d.cuentas.forEach((c, i) => {
+    const col = i % columnas;
+    const fila = Math.floor(i / columnas);
+    const x = MARGEN + 8 + col * anchoCol;
+    const yy = y + 16 + fila * 30;
+    const esDetraccion = c.tipo === 'detraccion';
+
+    doc.fillColor(esDetraccion ? MARCA.atencion : MARCA.tinta)
+      .font('Helvetica-Bold').fontSize(7.5)
+      .text(
+        `${c.banco}  ·  ${esDetraccion ? 'DETRACCIÓN' : c.moneda}`,
+        x, yy, { width: anchoCol - 16, lineBreak: false }
+      );
+
+    doc.fillColor(MARCA.tinta).font('Courier').fontSize(8)
+      .text(`Cta. ${c.numero}`, x, yy + 9, { width: anchoCol - 16, lineBreak: false });
+
+    const extra = [c.cci ? `CCI ${c.cci}` : '', c.swift ? `SWIFT ${c.swift}` : '']
+      .filter(Boolean)
+      .join('   ');
+    if (extra) {
+      doc.fillColor(MARCA.tintaSuave).font('Courier').fontSize(6.5)
+        .text(extra, x, yy + 19, { width: anchoCol - 16, lineBreak: false });
+    }
+  });
+
+  return y + alto + 8;
+}
+
 /** Notas legales, observaciones y firma. */
 function pie(doc: Lienzo, d: Documento, y: number) {
   if (d.observaciones) {
@@ -351,7 +501,9 @@ function sello(doc: Lienzo, texto: string) {
  * comprobante cuyos totales no cuadran no debe existir como archivo, porque
  * en cuanto existe alguien lo manda.
  */
-export async function generarPdf(d: Documento): Promise<Buffer> {
+export async function generarPdf(documento: Documento): Promise<Buffer> {
+  const d = limpiarDocumento(documento);
+
   if (d.errores.length) {
     throw new Error(
       `El documento no se puede emitir porque sus datos no cuadran:\n· ${d.errores.join('\n· ')}`
@@ -380,6 +532,7 @@ export async function generarPdf(d: Documento): Promise<Buffer> {
   y = bloqueDatos(doc, d, y);
   y = tabla(doc, d, y);
   y = totales(doc, d, y);
+  y = cuentas(doc, d, y);
   y = avisos(doc, d, y);
   pie(doc, d, y);
 

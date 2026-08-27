@@ -354,6 +354,203 @@ async function principal() {
         await pagina.locator('.form-res-vacio').count() === 1);
     },
 
+
+    /* ════════════════════════════════════════════════════════════════════
+       CONTACTOS Y CUENTAS · el maestro y su uso en la cotización
+       ════════════════════════════════════════════════════════════════════
+       Lo que hay que demostrar es que las dos secciones no bloquean nada y
+       que se pueden usar por los dos caminos: eligiendo del maestro o
+       escribiendo en la propia cotización.
+       ════════════════════════════════════════════════════════════════════ */
+    async contactos() {
+      titulo('El maestro de contactos y cuentas');
+      await pagina.goto(`${BASE}/configuracion?t=contactos`, { waitUntil: 'networkidle' });
+
+      comprobar('La pestaña de contactos y cuentas existe',
+        await pagina.locator('text=Contactos de clientes').count() > 0);
+      comprobar('Y lista las cuentas de cobro de la empresa',
+        await pagina.locator('text=Cuentas de cobro').count() > 0);
+      comprobar('Con la cuenta de detracción entre ellas',
+        await pagina.locator('text=Detracción').count() > 0);
+
+      /* ---- Alta de un contacto desde el maestro ---- */
+      const antes = await pagina.locator('table.datos').first().locator('tbody tr').count();
+      await pagina.locator('button', { hasText: 'Nuevo contacto' }).click();
+      await pagina.waitForTimeout(300);
+
+      const marca = `Prueba automatica ${Date.now().toString().slice(-6)}`;
+      const fila = pagina.locator('tr.maestro-fila-edicion').first();
+      await fila.locator('input').nth(0).fill(marca);
+      await fila.locator('input').nth(1).fill('Gerente de Prueba');
+      await fila.locator('input').nth(2).fill('+51 900000000');
+      await fila.locator('input').nth(3).fill('prueba@ejemplo.com');
+      await fila.locator('button', { hasText: 'Guardar' }).click();
+      await pagina.waitForTimeout(1800);
+
+      comprobar('Se puede agregar un contacto desde el maestro',
+        await pagina.locator(`text=${marca}`).count() > 0, marca);
+
+      const despues = await pagina.locator('table.datos').first().locator('tbody tr').count();
+      comprobar('  · y la tabla crece', despues > antes, `${antes} → ${despues}`);
+
+      /* ---- Un correo mal escrito se rechaza con una explicación ---- */
+      await pagina.locator('button', { hasText: 'Nuevo contacto' }).click();
+      await pagina.waitForTimeout(300);
+      const fila2 = pagina.locator('tr.maestro-fila-edicion').first();
+      await fila2.locator('input').nth(0).fill('Correo malo');
+      await fila2.locator('input').nth(3).fill('esto-no-es-un-correo');
+      await fila2.locator('button', { hasText: 'Guardar' }).click();
+      await pagina.waitForTimeout(1500);
+
+      const avisoCorreo = await pagina.locator('.ficha-aviso-critico').first()
+        .innerText().catch(() => '');
+      comprobar('Un correo inválido se rechaza explicando por qué',
+        avisoCorreo.toLowerCase().includes('correo'), avisoCorreo.slice(0, 80));
+
+      await captura('maestro-contactos');
+    },
+
+    /* ════════════════════════════════════════════════════════════════════
+       LAS DOS SECCIONES EN LA COTIZACIÓN
+       ════════════════════════════════════════════════════════════════════ */
+    async cotizacionContacto() {
+      titulo('Contacto y cuentas dentro de la cotización');
+      await pagina.goto(`${BASE}/ventas/cotizaciones/nueva`, { waitUntil: 'networkidle' });
+
+      comprobar('La cotización tiene sección de contacto',
+        await pagina.locator('text=Dirigido a').count() > 0 ||
+        await pagina.locator('.panel-titulo', { hasText: 'Contacto' }).count() > 0);
+      comprobar('Y sección de cuentas de cobro',
+        await pagina.locator('.panel-titulo', { hasText: 'Cuentas de cobro' }).count() > 0);
+      comprobar('Las dos se marcan como opcionales',
+        await pagina.locator('.form-etiqueta-opcional').count() >= 2,
+        `${await pagina.locator('.form-etiqueta-opcional').count()} etiquetas`);
+
+      /* Al elegir cliente se propone su contacto principal */
+      const selectorCliente = pagina.locator('select.campo').first();
+      await selectorCliente.selectOption({ index: 1 });
+      await pagina.waitForTimeout(600);
+
+      const nombreContacto = await pagina
+        .locator('input[placeholder="Nombre y apellido"]').inputValue().catch(() => '');
+      comprobar('Al elegir cliente se propone su contacto principal',
+        nombreContacto.length > 0, `«${nombreContacto}»`);
+
+      const marcadas = await pagina.locator('.cuenta-tarjeta[data-elegida="si"]').count();
+      comprobar('Y se proponen las cuentas que corresponden', marcadas > 0,
+        `${marcadas} cuentas marcadas`);
+
+      /* Se puede escribir un contacto suelto sin tocar el maestro */
+      await pagina.locator('input[placeholder="Nombre y apellido"]').fill('Contacto escrito a mano');
+      await pagina.waitForTimeout(200);
+      const pieContacto = await pagina.locator('.form-pie-seccion').first().innerText();
+      comprobar('Se puede escribir un contacto suelto, sin darlo de alta',
+        pieContacto.toLowerCase().includes('solo para este documento'),
+        pieContacto.slice(0, 70));
+
+      /* Y se puede quitar todo: no bloquea */
+      await pagina.locator('input[placeholder="Nombre y apellido"]').fill('');
+      for (let i = 0; i < marcadas; i++) {
+        await pagina.locator('.cuenta-tarjeta[data-elegida="si"] input').first().click();
+        await pagina.waitForTimeout(120);
+      }
+      comprobar('Se pueden dejar las dos secciones vacías sin que nada proteste',
+        await pagina.locator('.cuenta-tarjeta[data-elegida="si"]').count() === 0);
+
+      await captura('cotizacion-contacto');
+    },
+
+
+    /* ════════════════════════════════════════════════════════════════════
+       DE LA COTIZACIÓN A LA PROFORMA
+       ════════════════════════════════════════════════════════════════════
+       Se pidió que las dos secciones «pasen a la proforma». Esto lo comprueba
+       de verdad: convierte una cotización con el ratón y mira si el pedido
+       resultante trae lo mismo. Comparar los textos, no solo que existan los
+       paneles, es lo que detecta que se hayan copiado mal.
+       ════════════════════════════════════════════════════════════════════ */
+    async conversion() {
+      titulo('El contacto y las cuentas viajan al pedido');
+
+      const admin = (await import('@supabase/supabase-js')).createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        { auth: { persistSession: false } }
+      );
+
+      /* Una cotización que todavía se pueda convertir y tenga contacto. */
+      const { data: convertidas } = await admin
+        .from('pedidos').select('cotizacion_id').not('cotizacion_id', 'is', null);
+      const yaUsadas = new Set((convertidas ?? []).map((x) => Number(x.cotizacion_id)));
+
+      const { data: candidatas } = await admin
+        .from('cotizaciones')
+        .select('id, numero, contacto_nombre')
+        .in('estado', ['borrador', 'enviada'])
+        .not('contacto_nombre', 'is', null)
+        .limit(60);
+
+      const cot = (candidatas ?? []).find((c) => !yaUsadas.has(Number(c.id)));
+      if (!cot) {
+        comprobar('Hay una cotización convertible con contacto', false);
+        return;
+      }
+
+      const { data: cuentasCot } = await admin
+        .from('cotizacion_cuentas').select('cuenta_id').eq('cotizacion_id', cot.id);
+      const cuantasCuentas = (cuentasCot ?? []).length;
+
+      await pagina.goto(`${BASE}/ventas/cotizaciones/${cot.id}`, { waitUntil: 'networkidle' });
+
+      const dirigidaA = await pagina.locator('text=Dirigido a').count();
+      comprobar(`La cotización ${cot.numero} muestra a quién va dirigida`, dirigidaA > 0);
+
+      /* Convertir, con el ratón */
+      await pagina.locator('button', { hasText: 'Convertir en pedido' }).click();
+      const llego = await pagina
+        .waitForURL(/\/ventas\/pedidos\/\d+/, { timeout: 25000 })
+        .then(() => true)
+        .catch(() => false);
+      // Si no navega, el motivo esta en pantalla: se lee para poder decirlo.
+      const motivo = llego
+        ? ''
+        : (await pagina.locator('.accion-error, .ficha-aviso-critico').first()
+            .innerText().catch(() => '')).slice(0, 120);
+      comprobar('Se convierte en pedido con un clic', llego,
+        llego ? '' : `${pagina.url().replace(BASE, '')} · ${motivo}`);
+      if (!llego) { await captura('conversion-fallida'); return; }
+
+      /*
+       * La ficha del pedido llega en dos partes: la cabecera primero y el
+       * cuerpo despues, dentro de un <Suspense>. Hay que esperar al panel
+       * concreto; 'networkidle' vuelve antes de que el cuerpo haya llegado y
+       * la comprobacion se hacia sobre una pagina a medio pintar.
+       */
+      await pagina.locator('.panel-titulo', { hasText: 'Dirigido a' })
+        .first().waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
+      const cuerpo = await pagina.locator('body').innerText();
+
+      comprobar('El pedido conserva el contacto de la cotización',
+        cuerpo.includes(cot.contacto_nombre), `esperado «${cot.contacto_nombre}»`);
+
+      const filasCuentas = await pagina
+        .locator('.panel', { hasText: 'Cuentas de cobro' })
+        .locator('table.datos tbody tr')
+        .count();
+      comprobar('Y conserva sus cuentas de cobro',
+        filasCuentas === cuantasCuentas,
+        `cotización ${cuantasCuentas} · pedido ${filasCuentas}`);
+
+      await captura('conversion-contacto');
+
+      /* Y el documento de la proforma también las lleva */
+      const idPedido = pagina.url().split('/').pop();
+      const r = await pagina.request.get(
+        `${BASE}/api/documentos/proforma/${idPedido}?formato=excel`
+      );
+      comprobar('La proforma se puede descargar tras convertir', r.ok(), `HTTP ${r.status()}`);
+    },
+
     /* ════════════════════════════════════════════════════════════════════
        CONFIGURACIÓN · las tarjetas de Maestros no pueden ser adornos
        ════════════════════════════════════════════════════════════════════

@@ -18,6 +18,29 @@
  */
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 
+/** Una persona de contacto del cliente, para dirigirle la cotización. */
+export type ContactoCliente = {
+  id: number;
+  cliente_id: number;
+  nombre: string;
+  cargo: string;
+  telefono: string;
+  email: string;
+  principal: boolean;
+};
+
+/** Una cuenta de cobro de Santa Mónica, para imprimirla en el documento. */
+export type CuentaCobro = {
+  id: number;
+  banco: string;
+  tipo: 'corriente' | 'ahorros' | 'detraccion';
+  moneda: 'USD' | 'PEN';
+  numero: string;
+  cci: string;
+  swift: string;
+  principal: boolean;
+};
+
 export type UnidadVendible = {
   id: number;
   sku: string;
@@ -46,6 +69,8 @@ export async function cargarCatalogoVenta() {
     { data: unidades },
     { data: parametros },
     { data: disponibles },
+    { data: contactos },
+    { data: cuentas },
   ] = await Promise.all([
     supabase
       .from('clientes')
@@ -75,6 +100,23 @@ export async function cargarCatalogoVenta() {
       ]),
     // La disponibilidad en una sola consulta agregada, no 360 individuales
     supabase.from('v_disponibilidad').select('sku_presentacion_id, disponible_kg'),
+    /*
+     * Los contactos de TODOS los clientes viajan enteros al navegador, igual
+     * que el catálogo de productos: son unos doscientos registros pequeños, y
+     * así al cambiar de cliente su contacto aparece sin esperar a nada.
+     */
+    supabase
+      .from('contactos')
+      .select('id, cliente_id, nombre, cargo, telefono, email, principal')
+      .eq('activo', true)
+      .order('principal', { ascending: false })
+      .order('nombre'),
+    supabase
+      .from('cuentas_bancarias')
+      .select('id, banco, tipo, moneda, numero, cci, swift, principal')
+      .eq('activo', true)
+      .order('principal', { ascending: false })
+      .order('banco'),
   ]);
 
   const stockPorUnidad = new Map<number, number>();
@@ -129,6 +171,25 @@ export async function cargarCatalogoVenta() {
       incoterm: l.incoterm as string,
     })),
     unidades: catalogo,
+    contactos: (contactos ?? []).map((c) => ({
+      id: c.id as number,
+      cliente_id: c.cliente_id as number,
+      nombre: c.nombre as string,
+      cargo: (c.cargo as string) ?? '',
+      telefono: (c.telefono as string) ?? '',
+      email: (c.email as string) ?? '',
+      principal: Boolean(c.principal),
+    })) satisfies ContactoCliente[],
+    cuentas: (cuentas ?? []).map((c) => ({
+      id: c.id as number,
+      banco: c.banco as string,
+      tipo: c.tipo as CuentaCobro['tipo'],
+      moneda: c.moneda as 'USD' | 'PEN',
+      numero: c.numero as string,
+      cci: (c.cci as string) ?? '',
+      swift: (c.swift as string) ?? '',
+      principal: Boolean(c.principal),
+    })) satisfies CuentaCobro[],
     igv: valor('igv_porcentaje', 18),
     validezDefecto: valor('cotizacion_validez_dias', 15),
     tipoCambioDefecto: valor('tipo_cambio_referencial', 3.75),

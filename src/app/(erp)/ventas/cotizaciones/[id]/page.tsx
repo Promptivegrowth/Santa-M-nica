@@ -28,6 +28,39 @@ import { uno, campo } from '@/lib/relaciones';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Las cuentas de cobro que este documento imprime.
+ *
+ * Se leen a través de la tabla puente y no del maestro: si una cuenta se dio
+ * de baja después, el documento la sigue mostrando, que es lo correcto —decía
+ * esa cuenta el día que salió—.
+ */
+async function cuentasDelDocumento(
+  supabase: Awaited<ReturnType<typeof crearClienteServidor>>,
+  tabla: 'cotizacion_cuentas' | 'pedido_cuentas',
+  columna: 'cotizacion_id' | 'pedido_id',
+  id: number
+) {
+  const { data } = await supabase
+    .from(tabla)
+    .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift)')
+    .eq(columna, id);
+
+  return (data ?? [])
+    .map((f) => uno<Record<string, unknown>>(f.cuentas_bancarias))
+    .filter(Boolean)
+    .map((c) => ({
+      banco: String(c!.banco ?? ''),
+      tipo: String(c!.tipo ?? ''),
+      moneda: String(c!.moneda ?? ''),
+      numero: String(c!.numero ?? ''),
+      cci: String(c!.cci ?? ''),
+      swift: String(c!.swift ?? ''),
+    }))
+    .sort((a, b) => Number(a.tipo === 'detraccion') - Number(b.tipo === 'detraccion'));
+}
+
+
 export async function generateMetadata(
   props: PageProps<'/ventas/cotizaciones/[id]'>
 ): Promise<Metadata> {
@@ -141,6 +174,8 @@ async function CuerpoCotizacion({
   const usuario = await obtenerUsuarioActual();
   const puedeVerImportes = veCostos((usuario?.rol ?? 'consulta') as Rol);
 
+  const cuentasDoc = await cuentasDelDocumento(supabase, 'cotizacion_cuentas', 'cotizacion_id', cotId);
+
   const { data: lineas } = await supabase
     .from('cotizacion_lineas')
     .select('id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct, orden, sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
@@ -248,6 +283,60 @@ async function CuerpoCotizacion({
           </Link>
         </div>
       </Panel>
+
+
+      {/* ---- Contacto y cuentas: lo que sale impreso en el documento ---- */}
+      <div className="rejilla-2 mb-espacio">
+        <Panel titulo="Dirigido a">
+          {!cot.contacto_nombre ? (
+            <Vacio
+              titulo="Sin contacto"
+              mensaje="Este documento no indica a qué persona del cliente va dirigido. No es obligatorio, pero quien lo reciba no sabrá para quién es."
+            />
+          ) : (
+            <dl className="ficha">
+              <div><dt>Nombre</dt><dd>{cot.contacto_nombre as string}</dd></div>
+              <div><dt>Cargo</dt><dd>{(cot.contacto_cargo as string) ?? '—'}</dd></div>
+              <div><dt>Teléfono</dt><dd className="mono">{(cot.contacto_telefono as string) ?? '—'}</dd></div>
+              <div><dt>Correo</dt><dd className="mono">{(cot.contacto_email as string) ?? '—'}</dd></div>
+            </dl>
+          )}
+        </Panel>
+
+        <Panel titulo={`Cuentas de cobro · ${cuentasDoc.length}`}>
+          {cuentasDoc.length === 0 ? (
+            <Vacio
+              titulo="Sin cuentas"
+              mensaje="El documento saldrá sin datos de pago: el cliente tendrá que llamar para preguntar dónde deposita."
+            />
+          ) : (
+            <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+              <table className="datos">
+                <thead>
+                  <tr><th>Banco</th><th>Tipo</th><th>Número</th><th>CCI / SWIFT</th></tr>
+                </thead>
+                <tbody>
+                  {cuentasDoc.map((c, i) => (
+                    <tr key={i}>
+                      <td>{c.banco}</td>
+                      <td>
+                        <Etiqueta
+                          texto={c.tipo === 'detraccion' ? 'Detracción' : c.moneda}
+                          tono={c.tipo === 'detraccion' ? 'atencion' : 'neutro'}
+                        />
+                      </td>
+                      <td className="mono" style={{ fontSize: '.78rem' }}>{c.numero}</td>
+                      <td className="mono" style={{ fontSize: '.7rem', color: 'var(--tinta-3)' }}>
+                        {[c.cci, c.swift].filter(Boolean).join(' · ') || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
+      </div>
 
       {/* ---- Líneas ---- */}
       <Panel titulo={`Productos ofertados · ${filas.length}`} className="mb-espacio">

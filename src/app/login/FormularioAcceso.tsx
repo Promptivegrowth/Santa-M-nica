@@ -74,7 +74,7 @@ export function FormularioAcceso() {
       {/* ---------- Panel de marca ---------- */}
       <aside className="acceso-marca">
         <div className="acceso-marca-cabecera">
-          <Logotipo alto={40} className="logo-invertido" />
+          <Logotipo alto={40} className="logo-invertido" prioritario />
         </div>
 
         <div className="acceso-marca-cuerpo">

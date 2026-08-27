@@ -21,6 +21,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { EditorParametro } from './EditorParametro';
 import { InterruptorRegla } from './InterruptorRegla';
+import { ContactosYCuentas } from './ContactosYCuentas';
 import { Icono } from '@/components/estructura/Icono';
 import { num, fecha, fechaHora } from '@/lib/formato';
 import type { Rol } from '@/lib/navegacion';
@@ -33,6 +34,7 @@ const PESTANAS = [
   { clave: 'reglas',     titulo: 'Motor de reglas' },
   { clave: 'motivos',    titulo: 'Motivos tipificados' },
   { clave: 'maestros',   titulo: 'Maestros' },
+  { clave: 'contactos',  titulo: 'Contactos y cuentas' },
   { clave: 'usuarios',   titulo: 'Usuarios y roles' },
 ];
 
@@ -171,6 +173,31 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
         },
       })),
     ]);
+
+  /* ----------------------------------------------------------------------
+     Contactos y cuentas.
+
+     Solo se piden si se está en su pestaña: son 178 contactos y no tiene
+     sentido traerlos para cambiar un umbral de anticuamiento.
+     ---------------------------------------------------------------------- */
+  const [{ data: contactosBd }, { data: cuentasBd }, { data: clientesBd }] =
+    pestana === 'contactos'
+      ? await Promise.all([
+          supabase
+            .from('contactos')
+            .select('id, cliente_id, nombre, cargo, telefono, email, principal, activo, clientes(razon_social)')
+            .order('cliente_id')
+            .order('principal', { ascending: false })
+            .limit(500),
+          supabase
+            .from('cuentas_bancarias')
+            .select('*')
+            .order('activo', { ascending: false })
+            .order('principal', { ascending: false })
+            .order('banco'),
+          supabase.from('clientes').select('id, razon_social').eq('activo', true).order('razon_social'),
+        ])
+      : [{ data: null }, { data: null }, { data: null }];
 
   /* ----------------------------------------------------------------------
      Filas del catálogo abierto.
@@ -440,6 +467,45 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
             </Panel>
           )}
         </>
+      )}
+
+      {/* ══════ CONTACTOS Y CUENTAS ══════ */}
+      {pestana === 'contactos' && (
+        <ContactosYCuentas
+          contactos={(contactosBd ?? []).map((c) => {
+            const cli = Array.isArray(c.clientes) ? c.clientes[0] : c.clientes;
+            return {
+              id: c.id as number,
+              cliente_id: c.cliente_id as number,
+              nombre: c.nombre as string,
+              cargo: (c.cargo as string) ?? null,
+              telefono: (c.telefono as string) ?? null,
+              email: (c.email as string) ?? null,
+              principal: Boolean(c.principal),
+              activo: Boolean(c.activo),
+              cliente: String(cli?.razon_social ?? '—'),
+            };
+          })}
+          cuentas={(cuentasBd ?? []).map((c) => ({
+            id: c.id as number,
+            banco: c.banco as string,
+            tipo: c.tipo as 'corriente' | 'ahorros' | 'detraccion',
+            moneda: c.moneda as 'USD' | 'PEN',
+            numero: c.numero as string,
+            cci: (c.cci as string) ?? null,
+            swift: (c.swift as string) ?? null,
+            titular: (c.titular as string) ?? null,
+            principal: Boolean(c.principal),
+            activo: Boolean(c.activo),
+            observaciones: (c.observaciones as string) ?? null,
+          }))}
+          clientes={(clientesBd ?? []).map((c) => ({
+            id: c.id as number,
+            nombre: c.razon_social as string,
+          }))}
+          puedeContactos={['gerencia', 'operaciones', 'comercial', 'comex'].includes(rol)}
+          puedeCuentas={['gerencia', 'operaciones'].includes(rol)}
+        />
       )}
 
       {/* ══════ USUARIOS ══════ */}

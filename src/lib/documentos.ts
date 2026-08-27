@@ -17,7 +17,7 @@
  *  no tener documento: se manda al cliente, se cobra otra cifra, y cuando se
  *  descubre ya se firmó. Así que antes de imprimir se comprueba:
  *
- *    · que los importes de cada línea cuadren con cantidad × precio − descuento
+ *    · que los importes de cada línea cuadren con cantidad × precio - descuento
  *    · que la suma de las líneas cuadre con el subtotal guardado
  *    · que subtotal + IGV cuadre con el total guardado
  *    · que no falte nada obligatorio: RUC del emisor, datos del comprador,
@@ -47,6 +47,24 @@ export type LineaDocumento = {
   importe: number;
 };
 
+/** La persona del cliente a la que va dirigido el documento. */
+export type ContactoImpreso = {
+  nombre: string;
+  cargo: string;
+  telefono: string;
+  email: string;
+};
+
+/** Una cuenta de cobro tal como se imprime. */
+export type CuentaImpresa = {
+  banco: string;
+  tipo: 'corriente' | 'ahorros' | 'detraccion';
+  moneda: string;
+  numero: string;
+  cci: string;
+  swift: string;
+};
+
 export type Documento = {
   tipo: TipoDocumento;
   /** «FACTURA», «BOLETA DE VENTA», «COTIZACIÓN», «PROFORMA INVOICE». */
@@ -71,6 +89,20 @@ export type Documento = {
   lineas: LineaDocumento[];
   totales: { subtotal: number; descuento: number; igv: number; igvPct: number; total: number };
   moneda: 'USD' | 'PEN';
+
+  /**
+   * A quién va dirigido dentro de la empresa del cliente. Puede faltar: se
+   * pidió que esta sección no bloqueara nada, así que el documento sale igual
+   * sin ella.
+   */
+  contacto: ContactoImpreso | null;
+
+  /**
+   * Dónde pagar. También puede venir vacío; en ese caso el documento
+   * simplemente no lleva el bloque, y la verificación lo anota como
+   * observación para que alguien lo mire antes de enviarlo.
+   */
+  cuentas: CuentaImpresa[];
 
   /** Texto legal y condiciones que van al pie. */
   notas: string[];
@@ -131,6 +163,42 @@ function describirProducto(sp: Record<string, unknown> | undefined) {
     descripcion: [especie?.nombre, formato?.nombre, sku?.corte].filter(Boolean).join(' · '),
     presentacion: String(pres?.descripcion ?? '—'),
   };
+}
+
+/**
+ * Arma el contacto a partir de la copia que guarda el propio documento.
+ *
+ * Se usa la COPIA y no el maestro a propósito: si el jefe de compras cambió de
+ * cargo el mes pasado, la cotización que se le mandó en enero debe seguir
+ * diciendo el cargo que decía en enero.
+ */
+function contactoDe(fila: Record<string, unknown>): ContactoImpreso | null {
+  const nombre = String(fila.contacto_nombre ?? '').trim();
+  if (!nombre) return null;
+  return {
+    nombre,
+    cargo: String(fila.contacto_cargo ?? '').trim(),
+    telefono: String(fila.contacto_telefono ?? '').trim(),
+    email: String(fila.contacto_email ?? '').trim(),
+  };
+}
+
+/** Las cuentas elegidas para este documento, en el orden en que se imprimen. */
+function cuentasDe(filas: unknown): CuentaImpresa[] {
+  const lista = (filas ?? []) as { cuentas_bancarias?: unknown }[];
+  return lista
+    .map((f) => uno<Record<string, unknown>>(f.cuentas_bancarias))
+    .filter(Boolean)
+    .map((c) => ({
+      banco: String(c!.banco ?? ''),
+      tipo: String(c!.tipo ?? 'corriente') as CuentaImpresa['tipo'],
+      moneda: String(c!.moneda ?? ''),
+      numero: String(c!.numero ?? ''),
+      cci: String(c!.cci ?? ''),
+      swift: String(c!.swift ?? ''),
+    }))
+    // La de detracción va siempre al final: es la excepción, no la principal.
+    .sort((a, b) => Number(a.tipo === 'detraccion') - Number(b.tipo === 'detraccion'));
 }
 
 /* ==========================================================================
@@ -242,6 +310,36 @@ function verificar(
     );
   }
 
+  /*
+   * Ni el contacto ni las cuentas bloquean: se pidió así. Pero conviene
+   * decirlo, porque una cotización sin correo del destinatario se queda sin
+   * enviar y una sin cuenta obliga al cliente a llamar para preguntar dónde
+   * paga. Son avisos, no errores.
+   */
+  if (!doc.contacto) {
+    avisos.push(
+      'El documento no indica a qué persona del cliente va dirigido. No impide emitirlo, pero ' +
+        'quien lo reciba no sabrá para quién es.'
+    );
+  } else if (!doc.contacto.email && !doc.contacto.telefono) {
+    avisos.push(
+      `El contacto ${doc.contacto.nombre} no tiene ni correo ni teléfono registrados.`
+    );
+  }
+
+  if (doc.tipo !== 'boleta' && doc.cuentas.length === 0) {
+    avisos.push(
+      'El documento no lleva ninguna cuenta de cobro: el cliente no sabrá dónde pagar.'
+    );
+  }
+
+  if (doc.receptor.pais === 'Perú' && !doc.cuentas.some((c) => c.tipo === 'detraccion')) {
+    avisos.push(
+      'Operación nacional sin cuenta de detracción. Si la venta está sujeta al régimen SPOT, ' +
+        'el comprador necesita ese número para depositar la detracción.'
+    );
+  }
+
   if (doc.totales.descuento > 0 && doc.totales.subtotal > 0) {
     const pct = (doc.totales.descuento / (doc.totales.subtotal + doc.totales.descuento)) * 100;
     if (pct > 20) {
@@ -258,7 +356,8 @@ function verificar(
 
 async function cargarCotizacion(id: number): Promise<Documento> {
   const supabase = await crearClienteServidor();
-  const [emisor, { data: cot }, { data: lineas }, { data: parametros }] = await Promise.all([
+  const [emisor, { data: cot }, { data: lineas }, { data: parametros }, { data: cuentasCot }] =
+    await Promise.all([
     cargarEmisor(),
     supabase
       .from('cotizaciones')
@@ -271,6 +370,10 @@ async function cargarCotizacion(id: number): Promise<Documento> {
       .eq('cotizacion_id', id)
       .order('orden'),
     supabase.from('parametros').select('clave, valor').eq('clave', 'igv_porcentaje'),
+    supabase
+      .from('cotizacion_cuentas')
+      .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift)')
+      .eq('cotizacion_id', id),
   ]);
 
   if (!cot) throw new Error('La cotización no existe.');
@@ -333,6 +436,8 @@ async function cargarCotizacion(id: number): Promise<Documento> {
     lineas: filas,
     totales: { subtotal, descuento: redondear(bruto - subtotal), igv, igvPct: esExportacion ? 0 : igvPct, total: redondear(subtotal + igv) },
     moneda,
+    contacto: contactoDe(cot),
+    cuentas: cuentasDe(cuentasCot),
     notas: [
       `Esta cotización es una oferta y tiene una validez de ${validez} días desde su emisión.`,
       'Los precios están sujetos a disponibilidad al momento de confirmar el pedido.',
@@ -349,7 +454,8 @@ async function cargarCotizacion(id: number): Promise<Documento> {
 
 async function cargarProforma(id: number): Promise<Documento> {
   const supabase = await crearClienteServidor();
-  const [emisor, { data: ped }, { data: lineas }, { data: parametros }] = await Promise.all([
+  const [emisor, { data: ped }, { data: lineas }, { data: parametros }, { data: cuentasPed }] =
+    await Promise.all([
     cargarEmisor(),
     supabase
       .from('pedidos')
@@ -362,6 +468,10 @@ async function cargarProforma(id: number): Promise<Documento> {
       .eq('pedido_id', id)
       .order('orden'),
     supabase.from('parametros').select('clave, valor').eq('clave', 'igv_porcentaje'),
+    supabase
+      .from('pedido_cuentas')
+      .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift)')
+      .eq('pedido_id', id),
   ]);
 
   if (!ped) throw new Error('El pedido no existe.');
@@ -416,13 +526,15 @@ async function cargarProforma(id: number): Promise<Documento> {
     lineas: filas,
     totales: { subtotal, descuento: redondear(bruto - subtotal), igv, igvPct: esExportacion ? 0 : igvPct, total: redondear(subtotal + igv) },
     moneda,
+    contacto: contactoDe(ped),
+    cuentas: cuentasDe(cuentasPed),
     notas: [
       'Documento proforma emitido para trámites de importación y apertura de crédito documentario.',
       esExportacion
         ? 'Operación de exportación: no grava IGV según la legislación peruana.'
         : `Incluye IGV del ${igvPct} %.`,
       'La mercadería viaja bajo el incoterm indicado. Los pesos son netos.',
-      'Producto congelado. Conservar a −18 °C o menos.',
+      'Producto congelado. Conservar a -18 °C o menos.',
     ],
     observaciones: (ped.observaciones as string) ?? null,
   };
@@ -436,7 +548,7 @@ async function cargarComprobante(id: number): Promise<Documento> {
     cargarEmisor(),
     supabase
       .from('facturas')
-      .select('*, clientes(razon_social, ruc_tax_id, pais, contacto, email, dias_credito), pedidos(numero_proforma, incoterm, oc_cliente, destinos(puerto, pais))')
+      .select('*, clientes(razon_social, ruc_tax_id, pais, contacto, email, dias_credito), pedidos(id, numero_proforma, incoterm, oc_cliente, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, destinos(puerto, pais))')
       .eq('id', id)
       .single(),
     supabase
@@ -450,6 +562,19 @@ async function cargarComprobante(id: number): Promise<Documento> {
   const cliente = uno<Record<string, unknown>>(fac.clientes);
   const pedido = uno<Record<string, unknown>>(fac.pedidos);
   const moneda = fac.moneda as 'USD' | 'PEN';
+
+  /*
+   * El contacto y las cuentas del comprobante son los del pedido que lo
+   * originó: los mismos que viajaron de la cotización a la proforma. Una
+   * factura que no dice dónde pagar obliga al cliente a llamar para
+   * preguntarlo, y eso retrasa el cobro.
+   */
+  const { data: cuentasFac } = pedido?.id
+    ? await supabase
+        .from('pedido_cuentas')
+        .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift)')
+        .eq('pedido_id', pedido.id)
+    : { data: null };
   const esBoleta = fac.tipo_comprobante === 'boleta';
   const esExportacion = String(cliente?.pais ?? '') !== 'Perú';
 
@@ -510,6 +635,8 @@ async function cargarComprobante(id: number): Promise<Documento> {
       total: totalGuardado,
     },
     moneda,
+    contacto: pedido ? contactoDe(pedido) : null,
+    cuentas: cuentasDe(cuentasFac),
     notas: [
       esBoleta
         ? 'Representación impresa de la boleta de venta electrónica.'
@@ -517,7 +644,7 @@ async function cargarComprobante(id: number): Promise<Documento> {
       esExportacion
         ? 'Operación de exportación de bienes. Inafecta al IGV.'
         : `Operación gravada con IGV del ${igvPct.toFixed(0)} %.`,
-      'Producto congelado. Conservar a −18 °C o menos.',
+      'Producto congelado. Conservar a -18 °C o menos.',
       fac.estado === 'anulada'
         ? `Documento ANULADO el ${fechaCorta(fac.anulada_en as string)}. ${String(fac.motivo_anulacion ?? '')}`
         : 'Conserve este documento para cualquier reclamo.',

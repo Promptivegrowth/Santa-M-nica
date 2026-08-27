@@ -464,3 +464,47 @@ table.datos tr[data-resaltada="si"] > td:first-child {
   font-size: 0.74rem;
   color: var(--tinta-3);
 }
+
+/* ---------------------------------------------------------------------------
+   MAESTROS EDITABLES EN LA PROPIA FILA
+   ---------------------------------------------------------------------------
+   La fila en edición se distingue con un fondo tenue y un borde lateral: sin
+   eso, en una tabla de treinta filas se pierde de vista cuál se está tocando.
+   --------------------------------------------------------------------------- */
+tr.maestro-fila-edicion > td {
+  background: var(--acento-suave);
+  padding-block: 0.35rem;
+  vertical-align: middle;
+}
+tr.maestro-fila-edicion > td:first-child {
+  box-shadow: inset 3px 0 0 var(--acento);
+}
+tr.maestro-fila-edicion .campo {
+  width: 100%;
+  min-width: 6rem;
+  font-size: 0.78rem;
+  padding: 0.28rem 0.4rem;
+}
+
+/* Una fila desactivada se atenúa, no se oculta: sigue siendo consultable. */
+table.datos tr[data-inactiva="si"] > td { opacity: 0.5; }
+
+.maestro-filtro {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--linea);
+  color: var(--tinta-3);
+}
+.maestro-filtro .campo { flex: 1; max-width: 30rem; }
+
+.maestro-interruptor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--tinta-2);
+  white-space: nowrap;
+  cursor: pointer;
+}

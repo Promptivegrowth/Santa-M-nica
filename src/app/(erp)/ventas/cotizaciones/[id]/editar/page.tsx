@@ -43,10 +43,10 @@ export default async function PaginaEditarCotizacion(
 
   const supabase = await crearClienteServidor();
 
-  const [{ data: cot }, { data: lineas }, { data: pedido }] = await Promise.all([
+  const [{ data: cot }, { data: lineas }, { data: pedido }, { data: cuentas }] = await Promise.all([
     supabase
       .from('cotizaciones')
-      .select('id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, observaciones')
+      .select('id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, observaciones, contacto_id, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email')
       .eq('id', cotId)
       .single(),
     supabase
@@ -55,6 +55,7 @@ export default async function PaginaEditarCotizacion(
       .eq('cotizacion_id', cotId)
       .order('orden'),
     supabase.from('pedidos').select('id').eq('cotizacion_id', cotId).maybeSingle(),
+    supabase.from('cotizacion_cuentas').select('cuenta_id').eq('cotizacion_id', cotId),
   ]);
 
   if (!cot) notFound();
@@ -79,6 +80,16 @@ export default async function PaginaEditarCotizacion(
     incoterm: cot.incoterm as DatosEdicion['incoterm'],
     validez_dias: Number(cot.validez_dias ?? 15),
     observaciones: (cot.observaciones as string) ?? null,
+    // Se recupera tal cual estaba: al reabrir un documento no se le cambia el
+    // contacto por debajo, porque quizá ya se envió con ese.
+    contacto: {
+      id: (cot.contacto_id as number) ?? null,
+      nombre: (cot.contacto_nombre as string) ?? '',
+      cargo: (cot.contacto_cargo as string) ?? '',
+      telefono: (cot.contacto_telefono as string) ?? '',
+      email: (cot.contacto_email as string) ?? '',
+    },
+    cuentas: (cuentas ?? []).map((c) => Number(c.cuenta_id)),
     lineas: (lineas ?? []).map((l) => ({
       sku_presentacion_id: l.sku_presentacion_id as number,
       cantidad_tm: Number(l.cantidad_tm),
@@ -113,6 +124,8 @@ export default async function PaginaEditarCotizacion(
         destinos={cat.destinos}
         listas={cat.listas}
         unidades={cat.unidades}
+        contactos={cat.contactos}
+        cuentas={cat.cuentas}
         igv={cat.igv}
         validezDefecto={cat.validezDefecto}
         tipoCambioDefecto={cat.tipoCambioDefecto}
