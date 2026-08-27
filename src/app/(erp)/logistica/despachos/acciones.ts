@@ -159,13 +159,13 @@ export async function ejecutarDespacho(packingListId: number): Promise<Resultado
      mismo. */
   const anio = new Date().getFullYear();
   const { data: correlativo, error: errorNum } = await supabase
-    .rpc('siguiente_correlativo', { p_serie: 'DES', p_anio: anio });
+    .rpc('siguiente_correlativo', { p_serie: 'DESP', p_anio: anio });
 
   if (errorNum) {
     return { ok: false, mensaje: `No se pudo reservar el número de despacho: ${errorNum.message}` };
   }
 
-  const numero = `DES-${anio}-${String(correlativo).padStart(4, '0')}`;
+  const numero = `DESP-${anio}-${String(correlativo).padStart(4, '0')}`;
 
   const { data: despachoId, error } = await supabase
     .rpc('ejecutar_despacho', { p_packing_list_id: packingListId, p_numero: numero });

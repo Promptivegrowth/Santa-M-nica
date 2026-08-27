@@ -35,6 +35,7 @@ import { EsqueletoKpi, EsqueletoPestanas, EsqueletoFicha } from '@/components/ui
 import { tm, num, fecha, dinero, pct, etiquetaEstado } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
+import { BotonFacturar } from './Facturar';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,9 +91,13 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
   const pestana = (q.t as string) ?? 'general';
 
   const supabase = await crearClienteServidor();
-  const { data: pedido } = await supabase
-    .from('v_pedidos_tablero').select('*').eq('id', pedidoId).single();
+  const [{ data: pedido }, usuarioCab] = await Promise.all([
+    supabase.from('v_pedidos_tablero').select('*').eq('id', pedidoId).single(),
+    obtenerUsuarioActual(),
+  ]);
   if (!pedido) notFound();
+
+  const puedeFacturar = ['gerencia', 'operaciones', 'comercial'].includes(usuarioCab?.rol ?? '');
 
   return (
     <>
@@ -107,6 +112,7 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
           id={pedidoId}
           numero={String(pedido.numero_proforma)}
         />
+        <BotonFacturar pedidoId={pedidoId} puede={puedeFacturar} />
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>

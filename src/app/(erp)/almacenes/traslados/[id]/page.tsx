@@ -20,13 +20,14 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
 import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, tm, etiquetaEstado } from '@/lib/formato';
 import { uno, campo } from '@/lib/relaciones';
+import { AccionesTraslado, type LineaRecibo } from './Acciones';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,15 +66,38 @@ export default async function FichaTraslado(props: PageProps<'/almacenes/traslad
   const trasId = Number(id);
 
   const supabase = await crearClienteServidor();
-  const { data: t } = await supabase
-    .from('traslados')
-    .select('*, origen:almacenes!traslados_almacen_origen_id_fkey(id, nombre, tipo), destino:almacenes!traslados_almacen_destino_id_fkey(id, nombre, tipo), transportistas(razon_social), vehiculos(placa), conductores(nombre, licencia), autorizador:usuarios!traslados_autorizado_por_fkey(nombre), despachador:usuarios!traslados_despachado_por_fkey(nombre), aceptador:usuarios!traslados_aceptado_por_fkey(nombre)')
-    .eq('id', trasId)
-    .single();
+  const [{ data: t }, usuarioActual, { data: lineasCab }] = await Promise.all([
+    supabase
+      .from('traslados')
+      .select('*, origen:almacenes!traslados_almacen_origen_id_fkey(id, nombre, tipo), destino:almacenes!traslados_almacen_destino_id_fkey(id, nombre, tipo), transportistas(razon_social), vehiculos(placa), conductores(nombre, licencia), autorizador:usuarios!traslados_autorizado_por_fkey(nombre), despachador:usuarios!traslados_despachado_por_fkey(nombre), aceptador:usuarios!traslados_aceptado_por_fkey(nombre)')
+      .eq('id', trasId)
+      .single(),
+    obtenerUsuarioActual(),
+    supabase
+      .from('traslado_lineas')
+      .select('id, bultos_enviados, peso_enviado_kg, lotes(codigo_pallet, sku_presentaciones(skus(codigo, corte, especies(nombre))))')
+      .eq('traslado_id', trasId),
+  ]);
 
   if (!t) notFound();
 
   const estadoCab = t.estado as string;
+
+  /* Las líneas se piden aquí y no en el cuerpo porque las necesita la
+     botonera, que va en la cabecera: al recibir hay que anotar qué llegó de
+     cada pallet. */
+  const lineasRecibo: LineaRecibo[] = (lineasCab ?? []).map((l: Record<string, unknown>) => {
+    const lote = uno<Record<string, unknown>>(l.lotes);
+    const sp = uno<Record<string, unknown>>(lote?.sku_presentaciones);
+    const sku = uno<Record<string, unknown>>(sp?.skus);
+    return {
+      linea_id: l.id as number,
+      pallet: String(lote?.codigo_pallet ?? '—'),
+      producto: `${campo(sku?.especies, 'nombre')} · ${campo(sku, 'corte')}`,
+      bultos_enviados: Number(l.bultos_enviados ?? 0),
+      peso_enviado: Number(l.peso_enviado_kg ?? 0),
+    };
+  });
 
   return (
     <>
@@ -83,6 +107,12 @@ export default async function FichaTraslado(props: PageProps<'/almacenes/traslad
         volver={{ href: '/almacenes/traslados', texto: 'Volver a traslados' }}
       >
         <Etiqueta texto={etiquetaEstado(estadoCab)} tono={TONO[estadoCab] ?? 'neutro'} />
+        <AccionesTraslado
+          trasladoId={trasId}
+          estado={estadoCab}
+          lineas={lineasRecibo}
+          rol={usuarioActual?.rol ?? 'consulta'}
+        />
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>

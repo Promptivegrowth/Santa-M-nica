@@ -434,3 +434,230 @@ tr[data-abierta="si"] > td:first-child { box-shadow: inset 3px 0 0 var(--acento)
   margin-block-end: .35rem;
 }
 .despachar-confirma input { max-width: 16rem; margin-block-end: .7rem; }
+
+
+/* ===========================================================================
+   PLANO DE ESTIBA EDITABLE
+   ===========================================================================
+   La cuadrícula puede tener 22 columnas. Se apoya en tres decisiones:
+
+   · La columna del lote va FIJA a la izquierda: al desplazarse a la fila 18
+     hay que seguir viendo de qué pallet se está hablando.
+   · Los errores se pintan en la columna y en la fila enteras, no solo en la
+     casilla: lo que está mal es «la fila 7 se pasó», no una celda suelta.
+   · Las casillas vacías se dejan visualmente calladas para que el plano se
+     lea como un mapa, no como una hoja de cálculo llena de ceros.
+   =========================================================================== */
+
+.plano { display: flex; flex-direction: column; gap: .7rem; }
+
+.plano-barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .7rem;
+  padding: .1rem .2rem;
+}
+.plano-cifras { display: flex; flex-wrap: wrap; gap: .2rem 1.2rem; font-size: .82rem; color: var(--tinta-2); }
+.plano-cifras b {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--tinta);
+  font-size: .92rem;
+}
+.plano-acciones { display: flex; gap: .4rem; }
+
+.plano-problemas {
+  padding: .6rem .8rem;
+  border-inline-start: 3px solid var(--atencion);
+  background: var(--atencion-suave);
+  border-radius: 3px;
+}
+.plano-problemas strong {
+  display: flex; align-items: center; gap: .35rem;
+  font-size: .84rem; color: var(--atencion); margin-block-end: .3rem;
+}
+.plano-problemas ul { margin: 0; padding-inline-start: 1.1rem; font-size: .8rem; line-height: 1.55; color: var(--tinta-2); }
+
+.plano-cierra {
+  display: flex; align-items: center; gap: .4rem;
+  margin: 0; padding: .55rem .8rem;
+  font-size: .82rem; color: var(--ok);
+  background: var(--ok-suave);
+  border-inline-start: 3px solid var(--ok);
+  border-radius: 3px;
+}
+
+.plano-vacio { margin: 0; padding: 1.2rem; font-size: .85rem; color: var(--tinta-3); line-height: 1.55; }
+
+.plano-envoltorio { border: 1px solid var(--linea); border-radius: 4px; }
+
+table.plano-rejilla { min-width: max-content; }
+table.plano-rejilla th,
+table.plano-rejilla td { padding: .3rem .35rem; }
+
+/* La identidad del lote no se pierde al desplazarse a la derecha. */
+.plano-col-lote {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 2;
+  background: var(--superficie);
+  min-width: 13rem;
+  box-shadow: 1px 0 0 var(--linea);
+}
+thead .plano-col-lote, tfoot .plano-col-lote { background: var(--superficie-2); }
+.plano-col-lote b { display: block; font-size: .78rem; }
+.plano-col-lote small { display: block; font-size: .69rem; color: var(--tinta-3); line-height: 1.3; }
+
+.plano-col-fila { min-width: 2.6rem; text-align: center; }
+
+.plano-celda { padding: .15rem !important; }
+.plano-celda input {
+  width: 100%;
+  min-width: 2.4rem;
+  padding: .25rem .15rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: .78rem;
+  color: var(--tinta);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+}
+.plano-celda input:hover { border-color: var(--linea); }
+.plano-celda input:focus {
+  outline: 2px solid var(--acento);
+  outline-offset: -1px;
+  background: var(--superficie);
+}
+/* Se ocultan las flechitas del campo numérico: aquí se escribe, no se pulsa. */
+.plano-celda input::-webkit-outer-spin-button,
+.plano-celda input::-webkit-inner-spin-button { appearance: none; margin: 0; }
+.plano-celda input[type="number"] { -moz-appearance: textfield; }
+
+.plano-celda[data-lleno="si"] { background: var(--acento-suave); }
+.plano-celda[data-lleno="si"] input { font-weight: 600; }
+
+/* Lo que no cuadra, en rojo: la fila entera o la columna entera. */
+table.plano-rejilla [data-mal="si"] { background: var(--critico-suave) !important; color: var(--critico); }
+table.plano-rejilla tr[data-mal="si"] .plano-col-lote { background: var(--critico-suave); }
+.plano-dif { display: block; font-size: .68rem; font-weight: 700; }
+
+table.plano-rejilla tfoot th,
+table.plano-rejilla tfoot td {
+  background: var(--superficie-2);
+  font-size: .76rem;
+  border-block-start: 1px solid var(--linea-2);
+}
+.plano-saldo td { color: var(--tinta-3); }
+
+
+/* ===========================================================================
+   DICTAMEN, TRASLADO Y FACTURACIÓN
+   ===========================================================================
+   Los tres son la misma forma: un panel que se abre pegado a su botón, enseña
+   las consecuencias, y solo entonces deja confirmar. Comparten estructura para
+   que se aprendan una vez.
+   =========================================================================== */
+
+.dictamen {
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+  padding: .9rem;
+  border: 1px solid var(--linea);
+  border-radius: 4px;
+  background: var(--superficie);
+}
+.dictamen-cab {
+  display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  padding-block-end: .5rem; border-block-end: 1px solid var(--linea);
+}
+.dictamen-cab strong { font-size: .9rem; }
+
+/* --- Traslados --- */
+.traslado-panel {
+  display: flex;
+  flex-direction: column;
+  gap: .7rem;
+  padding: .9rem;
+  border: 1.5px solid var(--acento);
+  border-radius: 4px;
+  background: var(--superficie);
+  max-width: 62rem;
+}
+.traslado-panel > strong { font-size: .95rem; color: var(--tinta); }
+.traslado-panel > p { margin: 0; font-size: .83rem; line-height: 1.5; color: var(--tinta-2); }
+
+.traslado-panel table.datos tr[data-mal="si"] td { background: var(--critico-suave); }
+
+.traslado-alerta {
+  display: flex; align-items: center; gap: .4rem;
+  margin: 0; padding: .5rem .7rem;
+  font-size: .82rem; color: var(--atencion);
+  background: var(--atencion-suave);
+  border-inline-start: 3px solid var(--atencion);
+  border-radius: 3px;
+}
+
+/* --- Facturación --- */
+.facturar {
+  border: 1.5px solid var(--acento);
+  border-radius: 4px;
+  background: var(--superficie);
+  overflow: hidden;
+  max-width: 52rem;
+}
+.facturar-cab {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem;
+  padding: .8rem .9rem;
+  background: var(--acento-suave);
+  border-block-end: 1px solid var(--linea);
+}
+.facturar-cab strong { display: block; font-size: 1rem; color: var(--tinta); }
+.facturar-cab span { display: block; font-size: .8rem; color: var(--tinta-2); margin-block-start: .12rem; }
+.facturar-tipo {
+  flex: none;
+  font-size: .64rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  padding: .2em .5em; border-radius: 2px;
+}
+.facturar-tipo[data-tipo="factura"] { color: var(--ok); background: var(--ok-suave); }
+.facturar-tipo[data-tipo="boleta"] { color: var(--atencion); background: var(--atencion-suave); }
+
+.facturar-regla {
+  display: flex; align-items: flex-start; gap: .45rem;
+  margin: 0; padding: .55rem .9rem;
+  font-size: .81rem; line-height: 1.45; color: var(--tinta-2);
+  border-block-end: 1px solid var(--linea);
+}
+.facturar-regla svg { flex: none; margin-block-start: .1rem; color: var(--acento); }
+
+.facturar-avisos, .facturar-bloqueo { padding: .6rem .9rem; border-block-end: 1px solid var(--linea); }
+.facturar-avisos { background: var(--atencion-suave); }
+.facturar-bloqueo { background: var(--critico-suave); }
+.facturar-avisos strong, .facturar-bloqueo strong {
+  display: flex; align-items: center; gap: .35rem;
+  font-size: .82rem; margin-block-end: .25rem;
+}
+.facturar-avisos strong { color: var(--atencion); }
+.facturar-bloqueo strong { color: var(--critico); }
+.facturar-avisos ul, .facturar-bloqueo ul {
+  margin: 0; padding-inline-start: 1.1rem;
+  font-size: .8rem; line-height: 1.5; color: var(--tinta-2);
+}
+
+.facturar table.datos tfoot th { background: var(--superficie-2); font-size: .82rem; }
+tr.facturar-total th {
+  background: var(--acento) !important;
+  color: #fff !important;
+  font-size: .95rem !important;
+}
+
+.facturar-vence {
+  margin: 0; padding: .5rem .9rem;
+  font-size: .8rem; color: var(--tinta-3);
+  border-block-end: 1px solid var(--linea);
+}
+.facturar .acciones-fila { padding: .75rem .9rem; background: var(--superficie-2); }

@@ -31,6 +31,8 @@ import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
+import { FormularioDictamen } from '@/components/almacenes/Dictamen';
+import { motivosCalidad } from '@/app/(erp)/almacenes/calidad/acciones';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,13 +69,19 @@ export default async function FichaLote(props: PageProps<'/almacenes/lotes/[id]'
   const loteId = Number(id);
 
   const supabase = await crearClienteServidor();
-  const { data: lote } = await supabase
-    .from('lotes')
-    .select('*, plantas(nombre, codigo), sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg))')
-    .eq('id', loteId)
-    .single();
+  const [{ data: lote }, usuarioActual, motivos] = await Promise.all([
+    supabase
+      .from('lotes')
+      .select('*, plantas(nombre, codigo), sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg))')
+      .eq('id', loteId)
+      .single(),
+    obtenerUsuarioActual(),
+    motivosCalidad(),
+  ]);
 
   if (!lote) notFound();
+
+  const puedeDictaminar = ['gerencia', 'operaciones', 'calidad'].includes(usuarioActual?.rol ?? '');
 
   const sp = uno<Record<string, unknown>>(lote.sku_presentaciones);
   const sku = uno<Record<string, unknown>>(sp?.skus);
@@ -93,6 +101,13 @@ export default async function FichaLote(props: PageProps<'/almacenes/lotes/[id]'
           <Icono nombre="retiro" tamano={15} />
           Simular retiro
         </Link>
+        <FormularioDictamen
+          loteId={loteId}
+          pallet={lote.codigo_pallet as string}
+          motivos={motivos}
+          puede={puedeDictaminar}
+          compacto
+        />
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>

@@ -25,11 +25,12 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
-import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
+import { CabeceraPagina, RejillaKpi, Kpi, Panel, Etiqueta } from '@/components/ui/Pagina';
 import { EsqueletoKpi, EsqueletoTabla } from '@/components/ui/Esqueleto';
 import { Historial } from '@/components/ui/Historial';
 import { tm, num, fecha } from '@/lib/formato';
 import { BotonDespachar } from './Despachar';
+import { PlanoEditable } from './PlanoEditable';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,7 +94,7 @@ export default async function PaginaPlano(props: PageProps<'/logistica/packing/[
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>
-        <CuerpoPlano packingId={packingId} pk={pk} />
+        <CuerpoPlano packingId={packingId} pk={pk} puedeDespachar={puedeDespachar} />
       </Suspense>
     </>
   );
@@ -110,7 +111,11 @@ function CargandoCuerpo() {
 }
 
 /** La matriz lote x fila, que es lo que cuesta calcular. */
-async function CuerpoPlano({ packingId, pk }: { packingId: number; pk: Record<string, unknown> }) {
+async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
+  packingId: number;
+  pk: Record<string, unknown>;
+  puedeDespachar: boolean;
+}) {
   const supabase = await crearClienteServidor();
 
   const [{ data: lineas }, { data: celdas }] = await Promise.all([
@@ -207,95 +212,41 @@ async function CuerpoPlano({ packingId, pk }: { packingId: number; pk: Record<st
       </Panel>
 
       {/* ══════ EL PLANO ══════ */}
-      <Panel titulo={`Plano de estiba · ${filaMax} filas`}>
-        {(celdas ?? []).length === 0 ? (
-          <Vacio
-            titulo="Sin plano generado"
-            mensaje="Este packing list todavía no tiene su plano de estiba calculado."
-          />
-        ) : (
-          <>
-            <div className="tabla-envoltorio plano-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-              <table className="datos plano">
-                <thead>
-                  <tr>
-                    <th className="plano-fijo">Producto</th>
-                    <th className="plano-fijo2">Lote</th>
-                    <th className="num">Bultos</th>
-                    {columnas.map((f) => (
-                      <th key={f} className="num plano-col">{f}</th>
-                    ))}
-                    <th className="num">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lotes.map((l) => {
-                    const total = columnas.reduce((s, f) => s + (mapa.get(`${l.loteId}:${f}`) ?? 0), 0);
-                    return (
-                      <tr key={l.loteId}>
-                        <td className="plano-fijo">
-                          <strong style={{ fontWeight: 600, fontSize: '.78rem' }}>
-                            {l.especie} · {l.formato}
-                          </strong>
-                          <br />
-                          <span style={{ color: 'var(--tinta-3)', fontSize: '.71rem' }}>
-                            {l.corte} · {l.presentacion}
-                          </span>
-                        </td>
-                        <td className="plano-fijo2 mono">
-                          {l.codigoLote || l.pallet}
-                          <br />
-                          <span style={{ color: 'var(--tinta-3)', fontSize: '.68rem' }}>
-                            {fecha(l.fechaProduccion)}
-                          </span>
-                        </td>
-                        <td className="num">{num(l.bultos)}</td>
-                        {columnas.map((f) => {
-                          const v = mapa.get(`${l.loteId}:${f}`) ?? 0;
-                          return (
-                            <td key={f} className="num plano-celda" data-lleno={v > 0 ? 'si' : 'no'}>
-                              {v > 0 ? v : ''}
-                            </td>
-                          );
-                        })}
-                        <td className="num"><strong>{num(total)}</strong></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="plano-total">
-                    <td className="plano-fijo" colSpan={2}>Total de sacos por fila</td>
-                    <td className="num">{num(totalBultos)}</td>
-                    {totalPorFila.map((t, i) => (
-                      <td key={i} className="num">{t}</td>
-                    ))}
-                    <td className="num"><strong>{num(totalBultos)}</strong></td>
-                  </tr>
-                  <tr className="plano-saldo">
-                    <td className="plano-fijo" colSpan={2}>Saldo por fila</td>
-                    <td className="num"></td>
-                    {saldoPorFila.map((s, i) => (
-                      <td key={i} className="num" data-saldo={s === 0 ? 'cero' : 'resto'}>{s}</td>
-                    ))}
-                    <td className="num"></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+      <Panel titulo={`Plano de estiba · ${filasContenedor} filas de ${sacosPorFila} sacos`}>
+        {/*
+          El plano es editable: el sistema lo propone con criterio FIFO, pero
+          en el muelle mandan cosas que el programa no sabe —lo que se descarga
+          primero va en la puerta, un pallet que no pasó calidad obliga a
+          recolocar—. Lo que no se puede es guardar un plano imposible.
+        */}
+        <PlanoEditable
+          packingId={packingId}
+          lotes={lotes.map((l) => ({
+            lote_id: l.loteId,
+            codigo_pallet: l.pallet,
+            producto: `${l.especie} · ${l.corte} · ${l.presentacion}`,
+            bultos: l.bultos,
+          }))}
+          celdasIniciales={(celdas ?? []).map((c) => ({
+            lote_id: c.lote_id as number,
+            fila: Number(c.fila),
+            sacos: Number(c.sacos ?? 0),
+          }))}
+          filas={filasContenedor}
+          cupoFila={sacosPorFila}
+          puedeEditar={puedeDespachar}
+        />
 
-            <p className="pie-explicativo" style={{ padding: '.9rem 1rem 1rem' }}>
-              <strong>Cómo leerlo:</strong> cada columna numerada es una fila del contenedor, de la
-              primera (al fondo) a la última (junto a la puerta). Cada celda dice cuántos sacos de
-              ese lote se colocaron en esa fila. Un lote puede repartirse entre varias filas
-              contiguas. La fila de <strong>saldo</strong> debe dar cero en todas las filas menos la
-              última: si no, la carga quedó incompleta.
-              <br /><br />
-              El orden lo determina la <strong>fecha de producción</strong>: el lote más antiguo se
-              carga primero. Así el producto viejo sale antes que el nuevo.
-            </p>
-          </>
-        )}
+        <p className="pie-explicativo" style={{ padding: '.9rem 1rem 1rem' }}>
+          <strong>Cómo leerlo:</strong> cada columna numerada es una fila del contenedor, de la
+          primera (al fondo) a la última (junto a la puerta). Cada casilla dice cuántos sacos de ese
+          lote van en esa fila. Un lote puede repartirse entre varias filas.
+          <br /><br />
+          El orden que propone el sistema lo determina la <strong>fecha de producción</strong>: el
+          lote más antiguo se carga primero, así el producto viejo sale antes que el nuevo. Ese
+          orden se puede cambiar; lo que el sistema no deja es que un lote quede con sacos de más o
+          de menos, ni que una fila pase de su cupo.
+        </p>
       </Panel>
 
       <Panel titulo="Historial de este contenedor" className="mb-espacio" >
