@@ -83,14 +83,17 @@ async function principal() {
   pagina.on('requestfailed', (r) => {
     if (RUIDO.some((x) => x.test(r.url()))) return;
     /*
-     * Next.js va precargando en segundo plano las pantallas cuyos enlaces
-     * estan a la vista (las peticiones con ?_rsc=). Si se navega antes de que
-     * terminen, el navegador las cancela. Eso es lo que tiene que pasar: dar
-     * por fallida una precarga abortada seria inventarse un problema.
+     * ERR_ABORTED significa que el NAVEGADOR cancelo la peticion, nunca que
+     * el servidor fallara. Pasa en dos casos normales: Next precarga las
+     * pantallas cuyos enlaces estan a la vista y se navega antes de que
+     * terminen, y una accion de servidor queda superada por otra posterior.
+     *
+     * Un fallo de verdad llega como ERR_CONNECTION_REFUSED o ERR_FAILED, y
+     * esos si se recogen. Que el resultado sea correcto se comprueba mirando
+     * la pantalla, no la red: por eso arriba se verifica que la linea
+     * agregada acaba con precio.
      */
-    const abortadaPrecarga =
-      r.failure()?.errorText === 'net::ERR_ABORTED' && r.url().includes('_rsc=');
-    if (abortadaPrecarga) return;
+    if (r.failure()?.errorText === 'net::ERR_ABORTED') return;
     fallosRed.push(`${r.failure()?.errorText} ${r.url()}`);
   });
 
@@ -243,6 +246,110 @@ async function principal() {
       }
     },
 
+
+
+    /* ════════════════════════════════════════════════════════════════════
+       BUSCADOR DE PRODUCTOS DEL FORMULARIO DE VENTA
+       ════════════════════════════════════════════════════════════════════
+       Comprueba por qué campos se puede buscar de verdad, escribiendo en la
+       caja como lo haría un vendedor: por código, por especie, por formato,
+       por corte y por presentación.
+       ════════════════════════════════════════════════════════════════════ */
+    async buscador() {
+      titulo('El buscador de productos');
+      await pagina.goto(`${BASE}/ventas/cotizaciones/nueva`, { waitUntil: 'networkidle' });
+
+      /*
+       * El buscador esta deshabilitado hasta elegir cliente, y con razon: el
+       * precio depende de quien compra. Asi que primero se elige uno, igual
+       * que haria un vendedor.
+       */
+      const selectorCliente = pagina.locator('select.campo').first();
+      const opciones = await selectorCliente.locator('option').count();
+      comprobar('Hay clientes para elegir', opciones > 1, `${opciones} opciones`);
+      await selectorCliente.selectOption({ index: 1 });
+      await pagina.waitForTimeout(300);
+
+      const caja = pagina.locator('input.form-buscador-input');
+      comprobar('El buscador se habilita al elegir cliente',
+        await caja.isEnabled(), await caja.getAttribute('placeholder') ?? '');
+
+      const PRUEBAS = [
+        ['código de SKU', '01'],
+        ['especie', 'pota'],
+        ['formato', 'laminado'],
+        ['corte', 'anillas'],
+        ['presentación', 'placas'],
+        ['inventado', 'zzzzz'],
+      ];
+
+      for (const [porQue, texto] of PRUEBAS) {
+        await caja.fill('');
+        await caja.fill(texto);
+        await pagina.waitForTimeout(450);
+        const n = await pagina.locator('ul.form-resultados li[role="option"]').count();
+        const esperado = texto !== 'zzzzz';
+        comprobar(`Buscar por ${porQue} («${texto}») ${esperado ? 'encuentra' : 'no encuentra nada'}`,
+          esperado ? n > 0 : n === 0, `${n} resultados`);
+      }
+
+      /* ---- Autocompletado: teclado, resaltado y datos en vivo ---- */
+      await caja.fill('anillas');
+
+      /*
+       * Se espera al dato, no a un reloj. La primera consulta despues de
+       * arrancar el servidor tarda mas porque la ruta se compila en ese
+       * momento; con un timeout fijo la prueba falla por algo que no es un
+       * fallo.
+       */
+      const llegoVivo = await pagina.locator('.form-res-vivo').first()
+        .waitFor({ state: 'visible', timeout: 20000 }).then(() => true).catch(() => false);
+
+      comprobar('Resalta la parte que se escribió',
+        await pagina.locator('.form-res-marca').count() > 0);
+      comprobar('Cada resultado adelanta datos del producto',
+        await pagina.locator('.form-res-datos .form-res-dato').count() > 0,
+        `${await pagina.locator('.form-res-dato').count()} datos`);
+      comprobar('El stock se consulta en vivo al servidor', llegoVivo,
+        `${await pagina.locator('.form-res-vivo').count()} marcas «en vivo»`);
+
+      const primero = pagina.locator('ul.form-resultados li button').first();
+      comprobar('El primer resultado está marcado para el teclado',
+        await primero.getAttribute('data-activo') === 'si');
+
+      await caja.press('ArrowDown');
+      await pagina.waitForTimeout(150);
+      comprobar('La flecha abajo mueve la marca',
+        await pagina.locator('ul.form-resultados li button[data-activo="si"]').count() === 1 &&
+        await primero.getAttribute('data-activo') !== 'si');
+
+      await captura('buscador-productos');
+
+      /* Intro agrega el marcado sin tocar el ratón */
+      const lineasAntes = await pagina.locator('.form-linea, table.datos tbody tr').count();
+      await caja.press('Enter');
+      await pagina.waitForTimeout(900);
+      const lineasDespues = await pagina.locator('.form-linea, table.datos tbody tr').count();
+      comprobar('Intro agrega el producto marcado', lineasDespues > lineasAntes,
+        `${lineasAntes} → ${lineasDespues} líneas`);
+
+      /*
+       * Lo importante no es que aparezca la fila, es que llegue con precio.
+       * Una linea a cero es peor que ninguna: se cotiza sin darse cuenta.
+       */
+      await pagina.waitForTimeout(1200);
+      const totalTexto = (await pagina.locator('.destacado strong').last()
+        .innerText().catch(() => '')).trim();
+      comprobar('La línea agregada llega con precio, no en cero',
+        /[1-9]/.test(totalTexto.replace(/[^0-9]/g, '')), 'total en pantalla: ' + totalTexto.split(String.fromCharCode(10)).join(' '));
+      await captura('buscador-agregado');
+
+      /* Una búsqueda sin resultados explica qué probar */
+      await caja.fill('zzzzz');
+      await pagina.waitForTimeout(400);
+      comprobar('Sin coincidencias, sugiere por dónde buscar',
+        await pagina.locator('.form-res-vacio').count() === 1);
+    },
 
     /* ════════════════════════════════════════════════════════════════════
        CONFIGURACIÓN · las tarjetas de Maestros no pueden ser adornos

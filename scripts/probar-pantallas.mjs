@@ -35,6 +35,7 @@ const PANTALLAS = [
   ['/panel',                     'Control Tower'],
   ['/alertas',                   'Alertas'],
   ['/ventas/clientes',           'Clientes'],
+  ['/ventas/productos',          'Productos'],
   ['/ventas/cotizaciones',       'Cotizaciones'],
   ['/ventas/cotizaciones/nueva', 'Nueva cotización'],
   ['/ventas/pedidos/nuevo',      'Nuevo pedido'],
@@ -140,6 +141,7 @@ async function principal() {
     ['cotizacion', '/ventas/cotizaciones', await unId('cotizaciones'), 'Productos ofertados'],
     ['factura',    '/finanzas/facturas',   await unId('facturas'),     'Detalle facturado'],
     ['embarque',   '/logistica/embarques', await unId('embarques'),    'Datos del embarque'],
+    ['producto',   '/ventas/productos',    await unId('sku_presentaciones'), 'Qué es este producto'],
   ];
 
   for (const [nombre, base, id, marca] of FICHAS) {
@@ -178,6 +180,7 @@ async function principal() {
     ['embarque',   '/logistica/embarques', await unId('embarques')],
     ['pedido',     '/ventas/pedidos',      await unId('pedidos')],
     ['packing',    '/logistica/packing',   await unId('packing_lists')],
+    ['producto',   '/ventas/productos',    await unId('sku_presentaciones')],
   ];
 
   for (const [nombre, base, id] of ESTADOS) {

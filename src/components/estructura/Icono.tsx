@@ -37,6 +37,8 @@ const TRAZOS: Record<string, React.ReactNode> = {
   necesidades: <><path d="M3.5 8 12 3.5 20.5 8v8L12 20.5 3.5 16z" /><path d="M12 12v8.5M3.5 8 12 12l8.5-4" /><path d="M9.2 16.6h5.6" strokeDasharray="1.6 1.6" /></>,
 
   /* ─────────── ALMACENES ─────────── */
+  // Productos: caja con su etiqueta — el catálogo, no el inventario
+  productos: <><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z" /><path d="M3 7.5 12 12l9-4.5M12 12v9" /><path d="M7.5 5.2l9 4.5" /></>,
   // Existencias: cajas apiladas
   existencias: <><rect x="3" y="12.5" width="8" height="8" rx="1" /><rect x="13" y="12.5" width="8" height="8" rx="1" /><rect x="8" y="3.5" width="8" height="8" rx="1" /></>,
   // Reservas: caja con candado — producto que está, pero está apartado

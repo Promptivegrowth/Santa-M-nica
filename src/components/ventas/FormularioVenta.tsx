@@ -28,7 +28,7 @@
  *   3. QUE LOS TOTALES SE VEAN SIEMPRE. La barra inferior queda fija.
  * ============================================================================
  */
-import { useState, useTransition, useMemo } from 'react';
+import { useState, useTransition, useMemo, useEffect, useRef, useId } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -37,6 +37,7 @@ import {
   consultarPrecio,
 } from '@/app/(erp)/ventas/cotizaciones/acciones';
 import { crearPedidoDirecto } from '@/app/(erp)/ventas/pedidos/acciones';
+import { detalleProductos, type DetalleProducto } from '@/app/(erp)/ventas/productos/acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, tm } from '@/lib/formato';
 
@@ -49,6 +50,7 @@ type Unidad = {
   formato: string;
   corte: string;
   presentacion: string;
+  congelamiento: string;
   disponible_kg: number;
 };
 
@@ -93,6 +95,26 @@ export type DatosEdicion = {
     descuento_pct: number;
   }[];
 };
+
+/**
+ * Marca dentro del texto la parte que el usuario escribió.
+ *
+ * Sin esto, ante doce resultados parecidos hay que leerlos enteros para saber
+ * por qué salió cada uno. Con la coincidencia en negrita se ve de un vistazo.
+ */
+function resaltar(texto: string, busca: string): React.ReactNode {
+  const q = busca.trim();
+  if (q.length < 2) return texto;
+  const i = texto.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return texto;
+  return (
+    <>
+      {texto.slice(0, i)}
+      <mark className="form-res-marca">{texto.slice(i, i + q.length)}</mark>
+      {texto.slice(i + q.length)}
+    </>
+  );
+}
 
 const nuevaClave = () => Math.random().toString(36).slice(2, 9);
 const hoyISO = () => new Date().toISOString().slice(0, 10);
@@ -172,6 +194,40 @@ export function FormularioVenta({
   const [busqueda, setBusqueda] = useState('');
   const [mensaje, setMensaje] = useState<{ ok: boolean; texto: string } | null>(null);
 
+  /* ----------------------------------------------------------------------
+     AUTOCOMPLETADOR
+     ----------------------------------------------------------------------
+     `activo` es el resultado marcado con el teclado. Empieza en 0 para que
+     pulsar Intro nada más escribir agregue el primero, que es lo que uno
+     espera de un buscador.
+     ---------------------------------------------------------------------- */
+  const [activo, setActivo] = useState(0);
+  const [abierto, setAbierto] = useState(false);
+  const idResultados = useId();
+  const cajaBusqueda = useRef<HTMLInputElement>(null);
+
+  /*
+   * Detalle en vivo de lo que se está viendo. El catálogo local trae el stock
+   * de cuando se abrió la pantalla; esto lo corrige con lo que hay AHORA, y
+   * añade el precio que le toca a este cliente. Llega un instante después,
+   * así que la lista no espera por él: se pinta y luego se refresca.
+   */
+  const [enVivo, setEnVivo] = useState<{ cliente: number; mapa: Map<number, DetalleProducto> }>({
+    cliente: 0,
+    mapa: new Map(),
+  });
+  const [consultandoVivo, setConsultandoVivo] = useState(false);
+
+  /*
+   * El dato en vivo se guarda junto al cliente para el que se pidió. Si se
+   * cambia de cliente, el precio de antes deja de valer, así que se ignora en
+   * lugar de borrarlo: no hace falta tocar el estado para eso, basta con no
+   * leerlo. Un `setState` de limpieza dentro del efecto obligaría a React a
+   * repintar dos veces por cada tecla.
+   */
+  const datoVivo = (id: number) =>
+    enVivo.cliente === Number(clienteId) ? enVivo.mapa.get(id) : undefined;
+
   const cliente = clientes.find((c) => c.id === clienteId);
 
   /* ---- Buscador de productos: filtra en el navegador, sin esperas ---- */
@@ -179,11 +235,45 @@ export function FormularioVenta({
     const q = busqueda.trim().toLowerCase();
     if (q.length < 2) return [];
     return unidades
+      /*
+       * Se busca sobre TODO lo que identifica al producto, porque cada área lo
+       * nombra distinto: comercial dice «anillas», almacén dice «PLACAS20 KG»
+       * y producción dice «IQF». Cualquiera de las tres tiene que encontrarlo.
+       */
       .filter((u) =>
-        `${u.sku} ${u.especie} ${u.formato} ${u.corte} ${u.presentacion}`.toLowerCase().includes(q)
+        `${u.sku} ${u.especie} ${u.formato} ${u.corte} ${u.presentacion} ${u.congelamiento}`
+          .toLowerCase()
+          .includes(q)
       )
       .slice(0, 12);
   }, [busqueda, unidades]);
+
+  /*
+   * Se consulta el detalle en vivo de los resultados visibles, con un retardo
+   * de un cuarto de segundo: mientras alguien escribe «anillas» no tiene
+   * sentido preguntar por «a», «an», «ani»… Solo por lo que quedó al parar.
+   */
+  const idsVisibles = resultados.map((r) => r.id).join(',');
+  useEffect(() => {
+    if (!clienteId || !idsVisibles) return;
+    let vigente = true;
+
+    const temporizador = setTimeout(async () => {
+      if (!vigente) return;
+      setConsultandoVivo(true);
+      const ids = idsVisibles.split(',').map(Number);
+      try {
+        const detalle = await detalleProductos(ids, Number(clienteId));
+        // Si el usuario siguió escribiendo, esta respuesta ya no vale.
+        if (!vigente) return;
+        setEnVivo({ cliente: Number(clienteId), mapa: new Map(detalle.map((d) => [d.id, d])) });
+      } finally {
+        if (vigente) setConsultandoVivo(false);
+      }
+    }, 250);
+
+    return () => { vigente = false; clearTimeout(temporizador); };
+  }, [idsVisibles, clienteId]);
 
   /* ---- Totales, recalculados con cada cambio ---- */
   const totales = useMemo(() => {
@@ -195,6 +285,34 @@ export function FormularioVenta({
     const impuesto = subtotal * (igv / 100);
     return { subtotal, impuesto, total: subtotal + impuesto, toneladas };
   }, [lineas, igv]);
+
+  /**
+   * Al cambiar lo escrito, la marca vuelve al primer resultado. Si no se hace,
+   * el teclado apunta a una fila que ya no es la misma y se agrega otra cosa.
+   */
+  function escribir(texto: string) {
+    setBusqueda(texto);
+    setActivo(0);
+    setAbierto(true);
+  }
+
+  /** Flechas para moverse, Intro para agregar, Escape para cerrar. */
+  function teclear(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!resultados.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActivo((i) => (i + 1) % resultados.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActivo((i) => (i - 1 + resultados.length) % resultados.length);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const elegido = resultados[activo];
+      if (elegido) agregar(elegido);
+    } else if (e.key === 'Escape') {
+      setAbierto(false);
+    }
+  }
 
   /** Agrega un producto y consulta su precio para este cliente. */
   async function agregar(u: Unidad) {
@@ -210,23 +328,37 @@ export function FormularioVenta({
     const clave = nuevaClave();
     const cantidadInicial = 25;
 
+    /*
+     * Si el buscador ya trajo el precio y el stock en vivo de este producto,
+     * se usan esos y no se vuelve a preguntar. No es solo por rapidez: si la
+     * lista enseña un precio y la línea acaba con otro, el vendedor deja de
+     * fiarse de lo que ve. Lo previsualizado y lo agregado tienen que coincidir.
+     */
+    const yaConocido = datoVivo(u.id);
+
     setLineas((ls) => [
       ...ls,
       {
         clave,
         sku_presentacion_id: u.id,
         cantidad_tm: cantidadInicial,
-        precio_lista_tm: 0,
-        precio_tm: 0,
+        precio_lista_tm: yaConocido?.precio_tm ?? 0,
+        precio_tm: yaConocido?.precio_tm ?? 0,
         descuento_pct: 0,
-        disponible_kg: u.disponible_kg,
-        consultando: true,
+        disponible_kg: yaConocido?.disponible_kg ?? u.disponible_kg,
+        consultando: !yaConocido?.precio_tm,
       },
     ]);
     setBusqueda('');
     setMensaje(null);
+    setAbierto(false);
 
-    // El precio lo resuelve la base de datos, no el navegador
+    /*
+     * Aun teniendo el precio previsualizado se vuelve a consultar, porque
+     * aquel se resolvió para 1 TM y la línea arranca con 25: la escala por
+     * volumen puede dar otro. La diferencia es que ahora la línea ya se ve
+     * completa mientras tanto, en vez de con ceros.
+     */
     const { precio, disponible_kg } = await consultarPrecio(u.id, Number(clienteId), cantidadInicial);
     setLineas((ls) =>
       ls.map((l) =>
@@ -556,32 +688,123 @@ export function FormularioVenta({
           <span className="form-nota-cab">El precio se resuelve solo según cliente y volumen</span>
         </div>
 
+        {/*
+          El buscador es un combobox de verdad, no una caja con una lista
+          debajo: los atributos aria- son lo que hace que un lector de pantalla
+          anuncie cuántos resultados hay y cuál está marcado. Sin ellos, para
+          quien no ve la pantalla esto no existe.
+        */}
         <div className="form-buscador">
           <Icono nombre="buscar" tamano={15} className="form-buscador-lupa" />
           <input
+            ref={cajaBusqueda}
             className="campo form-buscador-input"
             type="search"
-            placeholder={clienteId ? 'Escriba el SKU, el corte o la especie…' : 'Elija primero el cliente'}
+            role="combobox"
+            aria-expanded={abierto && resultados.length > 0}
+            aria-controls={idResultados}
+            aria-autocomplete="list"
+            aria-activedescendant={
+              abierto && resultados[activo] ? `${idResultados}-${resultados[activo].id}` : undefined
+            }
+            placeholder={
+              clienteId
+                ? 'Busque por SKU, especie, formato, corte o presentación…'
+                : 'Elija primero el cliente'
+            }
             value={busqueda}
             disabled={!clienteId}
-            onChange={(e) => setBusqueda(e.target.value)}
+            onChange={(e) => escribir(e.target.value)}
+            onFocus={() => setAbierto(true)}
+            onKeyDown={teclear}
+            // Se cierra con un respiro para que el clic en un resultado llegue
+            // antes: si se cierra al instante, el botón desaparece bajo el dedo.
+            onBlur={() => setTimeout(() => setAbierto(false), 150)}
           />
-          {resultados.length > 0 && (
-            <ul className="form-resultados">
-              {resultados.map((u) => (
-                <li key={u.id}>
-                  <button type="button" onClick={() => agregar(u)}>
-                    <span className="form-res-sku">{u.sku}</span>
-                    <span className="form-res-nombre">
-                      {u.especie} · {u.formato} · {u.corte}
-                      <small>{u.presentacion}</small>
-                    </span>
-                    <span className={`form-res-stock ${u.disponible_kg > 0 ? 'hay' : 'nohay'}`}>
-                      {u.disponible_kg > 0 ? `${tm(u.disponible_kg)} TM` : 'sin stock'}
-                    </span>
-                  </button>
-                </li>
-              ))}
+
+          {abierto && resultados.length > 0 && (
+            <ul className="form-resultados" id={idResultados} role="listbox">
+              {resultados.map((u, i) => {
+                const vivo = datoVivo(u.id);
+                // Mientras no llega la respuesta del servidor se muestra el
+                // dato del catálogo: es preferible un número de hace un rato
+                // que un hueco en blanco.
+                const disponible = vivo ? vivo.disponible_kg : u.disponible_kg;
+                const esperando = consultandoVivo && !vivo;
+
+                return (
+                  <li key={u.id} id={`${idResultados}-${u.id}`} role="option" aria-selected={i === activo}>
+                    <button
+                      type="button"
+                      data-activo={i === activo ? 'si' : undefined}
+                      onMouseEnter={() => setActivo(i)}
+                      onClick={() => agregar(u)}
+                    >
+                      <span className="form-res-sku">{resaltar(u.sku, busqueda)}</span>
+
+                      <span className="form-res-nombre">
+                        {resaltar(`${u.especie} · ${u.formato} · ${u.corte}`, busqueda)}
+                        <small>
+                          {resaltar(u.presentacion, busqueda)}
+                          {u.congelamiento ? ` · ${u.congelamiento}` : ''}
+                        </small>
+
+                        {/* La vista previa: lo que hace falta saber ANTES de
+                            agregarlo, para no tener que abrir otra pantalla. */}
+                        <span className="form-res-datos">
+                          {vivo?.precio_tm ? (
+                            <span className="form-res-dato" data-tipo="precio">
+                              {dinero(vivo.precio_tm, moneda, 2)} / TM
+                            </span>
+                          ) : vivo ? (
+                            <span className="form-res-dato" data-tipo="aviso">Sin precio de lista</span>
+                          ) : null}
+
+                          {vivo && vivo.bultos > 0 && (
+                            <span className="form-res-dato">{num(vivo.bultos)} bultos</span>
+                          )}
+
+                          {vivo && vivo.reservado_kg > 0 && (
+                            <span className="form-res-dato" data-tipo="aviso">
+                              {tm(vivo.reservado_kg)} TM apartadas
+                            </span>
+                          )}
+
+                          {vivo && vivo.almacenes.length > 0 && (
+                            <span className="form-res-dato" data-tipo="lugar">
+                              {vivo.almacenes.slice(0, 2).join(', ')}
+                              {vivo.almacenes.length > 2 ? ` +${vivo.almacenes.length - 2}` : ''}
+                            </span>
+                          )}
+
+                          {vivo?.meses_lote_antiguo != null && vivo.meses_lote_antiguo >= 12 && (
+                            <span className="form-res-dato" data-tipo="antiguo">
+                              lote de {num(vivo.meses_lote_antiguo, 0)} meses
+                            </span>
+                          )}
+                        </span>
+                      </span>
+
+                      <span
+                        className={`form-res-stock ${disponible > 0 ? 'hay' : 'nohay'}`}
+                        data-esperando={esperando ? 'si' : undefined}
+                      >
+                        {disponible > 0 ? `${tm(disponible)} TM` : 'sin stock'}
+                        {vivo && <small className="form-res-vivo">en vivo</small>}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {abierto && clienteId && busqueda.trim().length >= 2 && resultados.length === 0 && (
+            <ul className="form-resultados" id={idResultados} role="listbox">
+              <li className="form-res-vacio">
+                No hay ningún producto que coincida con «{busqueda.trim()}». Pruebe con el corte
+                («anillas»), la especie («pota») o el formato («laminado»).
+              </li>
             </ul>
           )}
         </div>

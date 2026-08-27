@@ -25,6 +25,8 @@ export type UnidadVendible = {
   formato: string;
   corte: string;
   presentacion: string;
+  /** «placas», «IQF», «bloque»… Es como se pide el producto por teléfono. */
+  congelamiento: string;
   disponible_kg: number;
 };
 
@@ -59,7 +61,7 @@ export async function cargarCatalogoVenta() {
       .order('vigente_desde', { ascending: false }),
     supabase
       .from('sku_presentaciones')
-      .select('id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion)')
+      .select('id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(codigo, descripcion, congelamiento)')
       .eq('activo', true)
       .limit(600),
     supabase
@@ -92,7 +94,10 @@ export async function cargarCatalogoVenta() {
       especie: String(esp?.nombre ?? ''),
       formato: String(fmt?.nombre ?? ''),
       corte: String(sku?.corte ?? ''),
-      presentacion: String(pres?.descripcion ?? ''),
+      // El código de la presentación entra en el texto porque en el almacén
+      // se refieren a ella así: «PLACAS20 KG#8», no «2 X 10 KG».
+      presentacion: [pres?.descripcion, pres?.codigo].filter(Boolean).join(' · '),
+      congelamiento: String(pres?.congelamiento ?? ''),
       disponible_kg: stockPorUnidad.get(u.id as number) ?? 0,
     };
   });

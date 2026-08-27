@@ -48,6 +48,7 @@ export const NAVEGACION: Grupo[] = [
     grupo: 'Ventas',
     entradas: [
       { titulo: 'Clientes',           ruta: '/ventas/clientes',       icono: 'clientes',       ayuda: 'Cartera, crédito e historial', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
+      { titulo: 'Productos',          ruta: '/ventas/productos',      icono: 'productos',      ayuda: 'El maestro de lo que se vende', roles: TODOS },
       { titulo: 'Cotizaciones',       ruta: '/ventas/cotizaciones',   icono: 'cotizacion',     ayuda: 'Precios ofrecidos al cliente', roles: ['gerencia', 'operaciones', 'comercial', 'consulta'] },
       { titulo: 'Pedidos',            ruta: '/ventas/pedidos',        icono: 'pedido',         ayuda: 'Las proformas y su avance', roles: TODOS },
       { titulo: 'Disponibilidad',     ruta: '/ventas/disponibilidad', icono: 'disponibilidad', ayuda: 'Cuánto se puede vender de verdad', roles: TODOS },

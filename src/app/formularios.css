@@ -159,3 +159,88 @@
 }
 .aviso-camino strong { color: var(--tinta); font-weight: 600; }
 .aviso-camino a { color: var(--acento); font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+   AUTOCOMPLETADOR DE PRODUCTOS
+   ---------------------------------------------------------------------------
+   La lista ya no es solo «código y nombre»: cada resultado adelanta el precio
+   que le toca a este cliente, cuántos bultos salen, dónde está y si hay algo
+   apartado. La idea es no tener que abrir otra pantalla para decidir.
+   --------------------------------------------------------------------------- */
+
+/* La fila marcada con el teclado se ve igual que la marcada con el ratón:
+   quien navega con flechas tiene que ver lo mismo que quien usa el ratón. */
+.form-resultados button[data-activo="si"] {
+  background: var(--acento-suave);
+  box-shadow: inset 2px 0 0 var(--acento);
+}
+
+/* Alineado arriba, porque ahora cada fila tiene varias líneas. */
+.form-resultados button { align-items: start; }
+
+/* La coincidencia con lo escrito, resaltada */
+.form-res-marca {
+  background: color-mix(in srgb, var(--acento) 22%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 600;
+}
+
+/* La tira de datos de la vista previa */
+.form-res-datos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.4rem;
+  margin-top: 0.28rem;
+}
+.form-res-dato {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  line-height: 1.5;
+  padding: 0.05rem 0.32rem;
+  border-radius: 3px;
+  background: var(--superficie-2);
+  color: var(--tinta-2);
+  border: 1px solid var(--linea);
+  white-space: nowrap;
+}
+.form-res-dato[data-tipo="precio"] {
+  color: var(--acento);
+  background: var(--acento-suave);
+  border-color: color-mix(in srgb, var(--acento) 25%, transparent);
+  font-weight: 600;
+}
+.form-res-dato[data-tipo="aviso"] {
+  color: var(--atencion);
+  background: var(--atencion-suave);
+  border-color: color-mix(in srgb, var(--atencion) 25%, transparent);
+}
+.form-res-dato[data-tipo="antiguo"] {
+  color: var(--critico);
+  background: var(--critico-suave);
+  border-color: color-mix(in srgb, var(--critico) 25%, transparent);
+}
+.form-res-dato[data-tipo="lugar"] { color: var(--tinta-3); }
+
+/* Mientras se consulta el dato real, el número viejo se atenúa: se sigue
+   leyendo, pero se ve que está a punto de cambiar. */
+.form-res-stock { text-align: right; }
+.form-res-stock[data-esperando="si"] { opacity: 0.45; }
+.form-res-vivo {
+  display: block;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ok);
+  font-weight: 600;
+}
+.form-res-stock.nohay .form-res-vivo { color: var(--tinta-3); }
+
+/* Cuando no hay ninguna coincidencia, se dice qué se puede probar. */
+.form-res-vacio {
+  padding: 0.7rem 0.6rem;
+  font-size: 0.79rem;
+  color: var(--tinta-2);
+  line-height: 1.5;
+}
