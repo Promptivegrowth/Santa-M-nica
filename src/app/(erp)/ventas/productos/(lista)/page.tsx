@@ -23,7 +23,7 @@
  */
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { AccionesLista } from '@/components/ui/Acciones';
@@ -39,6 +39,8 @@ const POR_PAGINA = 40;
 export default async function PaginaProductos(props: PageProps<'/ventas/productos'>) {
   const q = await props.searchParams;
   const supabase = await crearClienteServidor();
+  const usuarioActual = await obtenerUsuarioActual();
+  const puedeEditar = ['gerencia', 'operaciones', 'comercial'].includes(usuarioActual?.rol ?? '');
 
   const pagina = Math.max(1, Number(q.pagina ?? 1));
   const buscar = ((q.buscar as string) ?? '').trim();
@@ -114,6 +116,12 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
         titulo="Productos"
         descripcion="El maestro de lo que se puede vender: cada fila es un corte en una presentación concreta. Aparecen también los que ahora mismo no tienen stock, porque se pueden cotizar igual."
       >
+        {puedeEditar && (
+          <Link href="/ventas/productos/nuevo" className="btn btn-primario">
+            <Icono nombre="mas" tamano={15} />
+            Nuevo producto
+          </Link>
+        )}
         <Link href="/ventas/disponibilidad" className="btn btn-secundario">
           <Icono nombre="disponibilidad" tamano={15} />
           Ver solo lo disponible

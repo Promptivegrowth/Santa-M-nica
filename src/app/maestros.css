@@ -1,0 +1,188 @@
+/* ===========================================================================
+   FORMULARIOS DE MAESTRO — clientes y productos
+   ===========================================================================
+   Un formulario de alta se llena una vez y se edita muchas. Las dos cosas se
+   hacen con prisa. De ahí las decisiones de esta hoja:
+
+   · Los campos van agrupados en bloques con título. Veintitantas casillas
+     seguidas no se leen; seis grupos de cuatro, sí.
+   · Cada campo lleva su ayuda DEBAJO, no en un globo al pasar el ratón: la
+     ayuda que hay que descubrir no la lee nadie.
+   · El campo con error se marca en rojo y el mensaje sale arriba, completo.
+     Un borde rojo sin texto solo dice «algo está mal en alguna parte».
+   =========================================================================== */
+
+.form-maestro {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  padding: .3rem .2rem 0;
+}
+
+/* --- Bloque de campos --------------------------------------------------- */
+.form-bloque {
+  border: 1px solid var(--linea);
+  border-radius: 4px;
+  padding: 1rem 1.1rem 1.1rem;
+  margin: 0;
+  background: var(--superficie);
+}
+.form-bloque legend {
+  font-family: var(--font-sans);
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+  padding: 0 .45rem;
+  margin-inline-start: -.45rem;
+}
+
+.form-rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: .9rem 1.1rem;
+}
+
+/* --- Un campo ----------------------------------------------------------- */
+.form-campo {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+  min-width: 0;
+}
+.form-campo-ancho { grid-column: 1 / -1; }
+
+.form-campo > span {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--tinta-2);
+}
+.form-campo .req { color: var(--critico); font-weight: 700; }
+
+.form-campo > small {
+  font-size: .73rem;
+  line-height: 1.4;
+  color: var(--tinta-3);
+}
+.form-campo > small.mal  { color: var(--critico); font-weight: 600; }
+.form-campo > small.bien { color: var(--ok); font-weight: 600; }
+
+/* El campo con problema. El mensaje va arriba; esto solo señala cuál es. */
+.form-maestro .campo[data-error="si"] {
+  border-color: var(--critico);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--critico) 18%, transparent);
+}
+
+/* --- La casilla de verificación, con su explicación --------------------- */
+.form-check {
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+  margin-block-start: .9rem;
+  cursor: pointer;
+}
+.form-check input { margin-block-start: .25rem; flex: none; width: 1rem; height: 1rem; }
+.form-check b { display: block; font-size: .85rem; color: var(--tinta); }
+.form-check small {
+  display: block;
+  font-size: .75rem;
+  line-height: 1.45;
+  color: var(--tinta-3);
+  margin-block-start: .12rem;
+}
+
+/*
+   --- El aviso de consecuencia -------------------------------------------
+   Va pegado a los campos que la provocan, no al final del formulario. Dice en
+   presente lo que va a pasar: «se le emitirá factura con IGV». Es el error más
+   caro de este maestro y el más fácil de cometer.
+*/
+.form-consecuencia {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  margin-block-start: .9rem;
+  padding: .65rem .8rem;
+  border-radius: 3px;
+  font-size: .82rem;
+  line-height: 1.5;
+  border-inline-start: 3px solid;
+}
+.form-consecuencia.local  { color: var(--tinta); background: var(--acento-suave); border-color: var(--acento); }
+.form-consecuencia.export { color: var(--tinta); background: var(--ok-suave); border-color: var(--ok); }
+.form-consecuencia svg { flex: none; margin-block-start: .12rem; }
+
+.form-pista {
+  margin: .8rem 0 0;
+  font-size: .78rem;
+  line-height: 1.5;
+  color: var(--tinta-3);
+}
+
+/* --- Botonera ----------------------------------------------------------- */
+.form-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+  align-items: center;
+  padding-block-start: .2rem;
+}
+
+/* --- Selección múltiple de presentaciones -------------------------------- */
+.form-presentaciones {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: .4rem;
+  margin-block-start: .3rem;
+}
+.form-pres {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  padding: .5rem .6rem;
+  border: 1px solid var(--linea);
+  border-radius: 3px;
+  background: var(--superficie-2);
+  cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.form-pres:hover { border-color: var(--linea-2); }
+.form-pres[data-elegida="si"] {
+  border-color: var(--acento);
+  background: var(--acento-suave);
+}
+.form-pres input { margin-block-start: .18rem; flex: none; }
+.form-pres b { display: block; font-size: .82rem; color: var(--tinta); }
+.form-pres small {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: .71rem;
+  color: var(--tinta-3);
+  margin-block-start: .1rem;
+}
+
+/* --- Zona de peligro ----------------------------------------------------- */
+.zona-peligro {
+  border: 1px solid color-mix(in srgb, var(--critico) 35%, var(--linea));
+  border-radius: 4px;
+  padding: .9rem 1rem;
+  background: var(--critico-suave);
+}
+.zona-peligro h4 {
+  margin: 0 0 .35rem;
+  font-size: .85rem;
+  color: var(--critico);
+}
+.zona-peligro p {
+  margin: 0 0 .7rem;
+  font-size: .8rem;
+  line-height: 1.5;
+  color: var(--tinta-2);
+}
+.zona-peligro .acciones-fila { gap: .5rem; }
+
+@media (max-width: 560px) {
+  .form-rejilla { grid-template-columns: minmax(0, 1fr); }
+  .form-acciones .btn { flex: 1 1 auto; justify-content: center; }
+}

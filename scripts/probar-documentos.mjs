@@ -91,8 +91,53 @@ async function principal() {
     { tipo: 'cotizacion', id: cot?.id, numero: cot?.numero, guardado: null },
     { tipo: 'proforma', id: ped?.id, numero: ped?.numero_proforma, guardado: null },
     { tipo: 'factura', id: fac?.id, numero: fac?.numero, guardado: fac },
-    { tipo: 'boleta', id: bol?.id, numero: bol?.numero, guardado: bol },
   ];
+
+  /*
+   * La boleta solo entra en la prueba si existe alguna.
+   *
+   * Y hoy no existe ninguna, a propósito: desde que todos los clientes
+   * peruanos tienen su RUC cargado, a todos les corresponde factura. Exigir
+   * que exista una boleta sería exigir que haya un cliente mal cargado.
+   *
+   * Lo que sí se comprueba siempre, más abajo, es la REGLA: que el tipo de
+   * cada comprobante coincida con lo que dicta el país y el RUC del cliente.
+   * Esa es la invariante que importa; la boleta suelta era solo una muestra.
+   */
+  if (bol?.id) {
+    CASOS.push({ tipo: 'boleta', id: bol.id, numero: bol.numero, guardado: bol });
+  } else {
+    console.log('   ··  No hay boletas: todos los clientes peruanos tienen RUC, así que a todos les toca factura.');
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     LA REGLA DEL COMPROBANTE
+     Se comprueba sobre TODAS las facturas emitidas, no sobre una muestra:
+     cliente del extranjero o peruano con RUC de once dígitos → factura;
+     peruano sin RUC → boleta. Una sola fila que no cumpla es un comprobante
+     que saldría mal emitido.
+     ══════════════════════════════════════════════════════════════════════ */
+  titulo('La regla de factura contra boleta');
+
+  const { data: todosComprobantes } = await admin
+    .from('facturas')
+    .select('numero, tipo_comprobante, clientes(pais, ruc_tax_id)');
+
+  const malClasificados = (todosComprobantes ?? []).filter((f) => {
+    const c = Array.isArray(f.clientes) ? f.clientes[0] : f.clientes;
+    const ruc = String(c?.ruc_tax_id ?? '');
+    const deberia =
+      c?.pais !== 'Perú' ? 'factura'
+      : /^\d{11}$/.test(ruc) ? 'factura'
+      : 'boleta';
+    return f.tipo_comprobante !== deberia;
+  });
+
+  comprobar(
+    `Los ${(todosComprobantes ?? []).length} comprobantes llevan el tipo que les toca`,
+    malClasificados.length === 0,
+    malClasificados.slice(0, 3).map((f) => f.numero).join(', ')
+  );
 
   /* ══════════════════════════════════════════════════════════════════════
      PDF

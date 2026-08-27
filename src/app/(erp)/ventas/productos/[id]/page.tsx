@@ -25,6 +25,8 @@ import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
+import { AccionesMaestro } from '@/components/ui/AccionesMaestro';
+import { cambiarEstadoProducto, eliminarProducto } from '../accionesMaestro';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,16 +45,23 @@ export default async function FichaProducto(props: PageProps<'/ventas/productos/
   const unidadId = Number(id);
 
   const supabase = await crearClienteServidor();
-  const { data: u } = await supabase
-    .from('sku_presentaciones')
-    .select('id, activo, skus(id, codigo, corte, clasificacion_comercial, empaque, vida_util_meses, activo, especies(nombre), formatos(nombre)), presentaciones(codigo, descripcion, congelamiento, peso_bulto_kg)')
-    .eq('id', unidadId)
-    .single();
+  const [{ data: u }, usuarioActual] = await Promise.all([
+    supabase
+      .from('sku_presentaciones')
+      .select('id, activo, skus(id, codigo, corte, clasificacion_comercial, empaque, vida_util_meses, activo, especies(nombre), formatos(nombre)), presentaciones(codigo, descripcion, congelamiento, peso_bulto_kg)')
+      .eq('id', unidadId)
+      .single(),
+    obtenerUsuarioActual(),
+  ]);
 
   if (!u) notFound();
 
   const sku = uno<Record<string, unknown>>(u.skus);
   const pres = uno<Record<string, unknown>>(u.presentaciones);
+
+  const rolActual = usuarioActual?.rol ?? 'consulta';
+  const puedeEditar = ['gerencia', 'operaciones', 'comercial'].includes(rolActual);
+  const puedeBorrar = ['gerencia', 'operaciones'].includes(rolActual);
 
   return (
     <>
@@ -70,6 +79,29 @@ export default async function FichaProducto(props: PageProps<'/ventas/productos/
           <Icono nombre="cotizacion" tamano={15} />
           Cotizar
         </Link>
+        {puedeEditar && (
+          <Link href={`/ventas/productos/${unidadId}/editar`} className="btn btn-secundario">
+            <Icono nombre="editar" tamano={15} />
+            Editar
+          </Link>
+        )}
+        {/*
+          Las acciones operan sobre el SKU entero, no sobre esta presentación:
+          desactivar «el 05» lo saca del catálogo en todas sus presentaciones,
+          que es como se piensa un producto descatalogado.
+        */}
+        <AccionesMaestro
+          id={Number(campo(sku, 'id'))}
+          nombre={`${campo(sku, 'codigo')} · ${campo(sku, 'corte')}`}
+          codigo={String(campo(sku, 'codigo'))}
+          activo={Boolean(sku?.activo)}
+          puedeEditar={puedeEditar}
+          puedeBorrar={puedeBorrar}
+          queEs="producto"
+          cambiarEstado={cambiarEstadoProducto}
+          eliminar={eliminarProducto}
+          volverA="/ventas/productos"
+        />
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>

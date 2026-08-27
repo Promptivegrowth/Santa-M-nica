@@ -26,6 +26,8 @@ import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { campo } from '@/lib/relaciones';
+import { AccionesMaestro } from '@/components/ui/AccionesMaestro';
+import { cambiarEstadoCliente, eliminarCliente } from '../acciones';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,13 +64,16 @@ export default async function FichaCliente(props: PageProps<'/ventas/clientes/[i
   const cliId = Number(id);
 
   const supabase = await crearClienteServidor();
-  const { data: c } = await supabase
-    .from('clientes')
-    .select('*, vendedores(id, nombre, email)')
-    .eq('id', cliId)
-    .single();
+  const [{ data: c }, usuarioActual] = await Promise.all([
+    supabase.from('clientes').select('*, vendedores(id, nombre, email)').eq('id', cliId).single(),
+    obtenerUsuarioActual(),
+  ]);
 
   if (!c) notFound();
+
+  const rolActual = usuarioActual?.rol ?? 'consulta';
+  const puedeEditar = ['gerencia', 'operaciones', 'comercial'].includes(rolActual);
+  const puedeBorrar = ['gerencia', 'operaciones'].includes(rolActual);
 
   return (
     <>
@@ -85,6 +90,24 @@ export default async function FichaCliente(props: PageProps<'/ventas/clientes/[i
           <Icono nombre="mas" tamano={15} />
           Nuevo pedido
         </Link>
+        {puedeEditar && (
+          <Link href={`/ventas/clientes/${cliId}/editar`} className="btn btn-secundario">
+            <Icono nombre="editar" tamano={15} />
+            Editar
+          </Link>
+        )}
+        <AccionesMaestro
+          id={cliId}
+          nombre={c.razon_social as string}
+          codigo={c.codigo as string}
+          activo={Boolean(c.activo)}
+          puedeEditar={puedeEditar}
+          puedeBorrar={puedeBorrar}
+          queEs="cliente"
+          cambiarEstado={cambiarEstadoCliente}
+          eliminar={eliminarCliente}
+          volverA="/ventas/clientes"
+        />
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>

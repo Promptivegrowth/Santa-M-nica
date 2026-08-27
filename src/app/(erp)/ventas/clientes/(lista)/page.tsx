@@ -11,12 +11,14 @@
  *  lugar de escribir texto libre.
  * ============================================================================
  */
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Etiqueta } from '@/components/ui/Pagina';
 import { Listado } from '@/components/ui/Listado';
 import { dinero, num } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
+import { Icono } from '@/components/estructura/Icono';
 
 export const metadata: Metadata = { title: 'Clientes' };
 export const dynamic = 'force-dynamic';
@@ -25,6 +27,7 @@ export default async function PaginaClientes(props: PageProps<'/ventas/clientes'
   const q = await props.searchParams;
   const usuario = await obtenerUsuarioActual();
   const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
+  const puedeEditar = ['gerencia', 'operaciones', 'comercial'].includes(usuario?.rol ?? '');
 
   const supabase = await crearClienteServidor();
   const { data: paises } = await supabase.from('clientes').select('pais').order('pais');
@@ -35,7 +38,14 @@ export default async function PaginaClientes(props: PageProps<'/ventas/clientes'
       <CabeceraPagina
         titulo="Clientes"
         descripcion="Un registro por empresa real, con su línea de crédito y su condición de pago. El resto del sistema elige de esta lista: se acabó el texto libre."
-      />
+      >
+        {puedeEditar && (
+          <Link href="/ventas/clientes/nuevo" className="btn btn-primario">
+            <Icono nombre="mas" tamano={15} />
+            Nuevo cliente
+          </Link>
+        )}
+      </CabeceraPagina>
 
       <Listado
         vista="clientes"
