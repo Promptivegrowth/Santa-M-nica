@@ -176,8 +176,12 @@ export function FormularioEmbarque({
         ) : (
           <>
             <p className="form-pista" style={{ marginTop: 0, marginBottom: '.6rem' }}>
-              Se puede embarcar un pedido aunque no esté cubierto al 100 %: eso es un{' '}
-              <b>despacho parcial</b>. Los más cubiertos salen primero.
+              Marque los pedidos que salen. La bodega de abajo se propone sola según dónde esté
+              su mercadería.
+              <br />
+              <b>Cubierto</b> compara lo apartado con lo que pidió el cliente: al 50 % todavía le
+              falta la mitad por conseguir. Se puede embarcar igual —eso es un{' '}
+              <b>despacho parcial</b>— y el resto sale en el próximo.
             </p>
 
             <div className="tabla-envoltorio">
@@ -188,10 +192,22 @@ export function FormularioEmbarque({
                     <th>Proforma</th>
                     <th>Cliente</th>
                     <th>Destino</th>
-                    <th>Su stock está en</th>
-                    <th className="num">Pedido</th>
-                    <th className="num">Apartado</th>
-                    <th className="num">Cobertura</th>
+                    <th>
+                      Dónde está lo apartado
+                      <small>verde = se puede cargar</small>
+                    </th>
+                    <th className="num">
+                      Pidió
+                      <small>el cliente</small>
+                    </th>
+                    <th className="num">
+                      Apartado
+                      <small>en total</small>
+                    </th>
+                    <th className="num">
+                      Cubierto
+                      <small>de lo que pidió</small>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -221,16 +237,24 @@ export function FormularioEmbarque({
                         <td style={{ fontSize: '.78rem' }}>{p.cliente}</td>
                         <td style={{ fontSize: '.78rem' }}>{p.destino}</td>
                         <td style={{ fontSize: '.74rem' }}>
-                          {p.bodegas.length === 0 ? '—' : p.bodegas.map((b) => (
-                            <span key={b.almacen_id} className="bodega-chip"
-                                  data-aqui={b.almacen_id === d.almacen_id ? 'si' : 'no'}>
-                              {b.nombre} · {cifra(b.kg / 1000, 2)} TM
-                            </span>
-                          ))}
+                          {p.bodegas.length === 0 ? '—' : p.bodegas.map((b) => {
+                            const cargable = b.almacen_id === d.almacen_id;
+                            return (
+                              <span key={b.almacen_id} className="bodega-chip"
+                                    data-aqui={cargable ? 'si' : 'no'}
+                                    title={cargable
+                                      ? 'Está en la bodega de salida: sube al contenedor'
+                                      : 'Está en otra bodega: no sube a este contenedor'}>
+                                {b.nombre} · {cifra(b.kg / 1000, 2)} TM
+                                <i>{cargable ? 'sube' : 'se queda'}</i>
+                              </span>
+                            );
+                          })}
                           {elegido && fuera.length > 0 && (
                             <span className="bodega-aviso">
-                              Desde esta bodega solo se podrán cargar {cifra(enEstaBodega / 1000, 2)} TM.
-                              El resto necesita un traslado.
+                              El camión carga en {nombreBodega}: suben {cifra(enEstaBodega / 1000, 2)} TM.
+                              Las otras {cifra((p.tm_reservadas * 1000 - enEstaBodega) / 1000, 2)} TM
+                              se quedan donde están.
                             </span>
                           )}
                         </td>
@@ -251,8 +275,10 @@ export function FormularioEmbarque({
               <div className="varado">
                 <Icono nombre="alerta" tamano={16} />
                 <span>
-                  <b>{cifra(tmVaradas, 2)} TM quedarían fuera de este embarque</b> porque están en
-                  otra bodega. Hay dos salidas y las dos son válidas:
+                  <b>{cifra(tmVaradas, 2)} TM se quedarían en tierra.</b> El contenedor se carga en
+                  una sola bodega —{nombreBodega}—, y esa mercadería está en otra: cuando el camión
+                  esté en el muelle, esos kilos seguirán donde están. Hay dos salidas y las dos son
+                  válidas:
                   <ul>
                     <li>
                       <b>Despachar parcial:</b> sale lo que está en {nombreBodega} y el resto en el
@@ -270,9 +296,9 @@ export function FormularioEmbarque({
 
             {elegidos.length > 0 && (
               <p className="form-pista">
-                <b>{elegidos.length} pedido{elegidos.length === 1 ? '' : 's'}</b> con{' '}
-                <b>{cifra(tmElegidas, 2)} TM</b> apartadas, de las cuales{' '}
-                <b>{cifra(tmCargables, 2)} TM</b> están en {nombreBodega} y se podrán cargar.
+                <b>{elegidos.length} pedido{elegidos.length === 1 ? '' : 's'}</b> ·{' '}
+                <b>{cifra(tmElegidas, 2)} TM</b> apartadas en total ·{' '}
+                <b>{cifra(tmCargables, 2)} TM</b> suben al contenedor desde {nombreBodega}.
               </p>
             )}
           </>

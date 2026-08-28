@@ -779,3 +779,34 @@ tr.facturar-total th {
 .varado ul { margin: .4rem 0 0; padding-inline-start: 1.1rem; }
 .varado li { margin-block-end: .3rem; }
 .varado a { color: var(--acento); font-weight: 600; }
+
+
+/* --- Aclaraciones en la cabecera de la tabla -----------------------------
+   «Cobertura» y «apartado» son dos cifras parecidas que significan cosas
+   distintas —una es contra lo que pidió el cliente, la otra contra dónde está
+   la mercadería— y se confundían. Cada columna dice ahora qué compara.
+   -------------------------------------------------------------------------- */
+table.datos thead th small {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: .62rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tinta-3);
+  margin-block-start: .1rem;
+}
+
+/* El chip dice con palabras si sube o se queda: el color solo no basta, y
+   además hay quien no lo distingue. */
+.bodega-chip i {
+  font-style: normal;
+  font-size: .6rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  margin-inline-start: .3rem;
+  opacity: .85;
+}
+.bodega-chip[data-aqui="no"] { text-decoration: line-through; text-decoration-thickness: 1px; }
+.bodega-chip[data-aqui="no"] i { text-decoration: none; display: inline-block; }
