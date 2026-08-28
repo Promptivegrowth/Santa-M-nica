@@ -23,6 +23,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { hoyEnLima } from '@/lib/fechas';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel } from '@/components/ui/Pagina';
 import { CalendarioEmbarques, type EmbarqueCalendario } from './Calendario';
 import { num, tm } from '@/lib/formato';
@@ -30,11 +31,6 @@ import { uno, campo } from '@/lib/relaciones';
 
 export const metadata: Metadata = { title: 'Planificador' };
 export const dynamic = 'force-dynamic';
-
-/** La fecha de hoy en el huso de Lima, que es donde está la operación. */
-function hoyEnLima(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-}
 
 /**
  * Interpreta el parámetro `mes` ('AAAA-MM'). Si no viene o viene mal, se

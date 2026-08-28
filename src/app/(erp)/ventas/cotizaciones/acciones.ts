@@ -16,6 +16,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 import { columnasContacto, type ContactoDocumento } from '@/lib/contactoDocumento';
 import { puedeVender, type Rol } from '@/lib/navegacion';
 
@@ -314,8 +315,12 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
   }
   const numeroProforma = `SM${anio}-${correlativo}`;
 
-  const hoy = new Date();
-  const comprometida = new Date(hoy.getTime() + 21 * 86400000).toISOString().slice(0, 10);
+  /*
+   * En Lima, no en UTC. Un pedido creado de noche nacía con fecha de mañana
+   * y aparecía como «futuro» en los reportes del propio día en que se creó.
+   */
+  const hoy = hoyEnLima();
+  const comprometida = desplazarDias(hoy, 21);
 
   /* ---- El pedido HEREDA todo de la cotización ---- */
   const { data: pedido, error: errPed } = await supabase
@@ -333,7 +338,7 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
       dias_credito: cliente?.dias_credito ?? 0,
       condicion_pago: (cliente?.dias_credito ?? 0) > 0 ? `Crédito ${cliente?.dias_credito} días` : 'Contado',
       prioridad: 'normal',
-      fecha_solicitada: hoy.toISOString().slice(0, 10),
+      fecha_solicitada: hoy,
       fecha_comprometida: comprometida,
       ciclo: 'pendiente_validacion',
       cobertura: 'pendiente_stock',

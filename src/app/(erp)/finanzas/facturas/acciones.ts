@@ -28,6 +28,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 
 export type Resultado =
   | { ok: true; id: number; numero: string; mensaje: string }
@@ -145,7 +146,7 @@ export async function previaFactura(pedidoId: number): Promise<Previa | null> {
   const total = redondear(subtotal + igv);
 
   const dias = Number(pedido.dias_credito ?? cliente?.dias_credito ?? 0);
-  const vencimiento = new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10);
+  const vencimiento = desplazarDias(hoyEnLima(), dias);
 
   return {
     puede: impedimentos.length === 0,
@@ -214,7 +215,9 @@ export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
       subtotal: previa.subtotal,
       igv: previa.igv,
       total: previa.total,
-      fecha_emision: new Date().toISOString().slice(0, 10),
+      // En Lima, no en UTC: una factura emitida a las siete de la tarde
+      // salía fechada al día siguiente, o sea en otro período fiscal.
+      fecha_emision: hoyEnLima(),
       fecha_vencimiento: previa.vencimiento,
       estado: 'emitida',
       tipo_comprobante: previa.tipo,
@@ -396,7 +399,7 @@ export async function registrarCobranza(d: DatosCobranza): Promise<Resultado> {
   /* ---- El estado de la factura se recalcula con lo cobrado ---- */
   const nuevoCobrado = redondear(cobrado + d.monto);
   const nuevoSaldo = redondear(Number(f.total) - nuevoCobrado);
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyEnLima();
 
   const { data: fv } = await supabase
     .from('facturas').select('fecha_vencimiento').eq('id', d.factura_id).maybeSingle();

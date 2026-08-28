@@ -24,6 +24,7 @@ import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
+import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 
 export const metadata: Metadata = { title: 'Reservas' };
 export const dynamic = 'force-dynamic';
@@ -52,6 +53,16 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
   // Por defecto se muestran las activas: son las que hoy están reteniendo kilos.
   const estado = (q.estado as string) ?? 'activa';
   const idBuscado = q.id ? Number(q.id) : null;
+  const buscar = ((q.buscar as string) ?? '').trim();
+  const almacen = (q.almacen as string) ?? '';
+  const desde = (q.desde as string) ?? '';
+  const hasta = (q.hasta as string) ?? '';
+  /*
+   * El rango puede mirar dos cosas distintas y no dan lo mismo: «qué se apartó
+   * esta semana» es la fecha de creación; «qué se me vence esta semana» es la
+   * de vencimiento, que es la pregunta que de verdad importa aquí.
+   */
+  const campoFecha = (q.campo_fecha as string) === 'creado_en' ? 'creado_en' : 'vence_el';
 
   let consulta = supabase
     .from('reservas')
@@ -64,8 +75,23 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
     );
 
   // Si se llega desde una alerta, se enfoca esa reserva concreta sin filtros.
-  if (idBuscado) consulta = consulta.eq('id', idBuscado);
-  else if (estado) consulta = consulta.eq('estado', estado);
+  if (idBuscado) {
+    consulta = consulta.eq('id', idBuscado);
+  } else {
+    if (estado) consulta = consulta.eq('estado', estado);
+    if (almacen) consulta = consulta.eq('almacen_id', Number(almacen));
+    if (desde) consulta = consulta.gte(campoFecha, desde);
+    // «Hasta el 27» tiene que incluir el 27 entero: la columna lleva hora.
+    if (hasta) consulta = consulta.lte(campoFecha, `${hasta}T23:59:59.999`);
+    if (buscar) {
+      const limpio = buscar.replace(/[%,()]/g, ' ');
+      consulta = consulta.or(
+        `lotes.codigo_pallet.ilike.%${limpio}%,` +
+        `pedido_lineas.pedidos.numero_proforma.ilike.%${limpio}%,` +
+        `pedido_lineas.pedidos.clientes.razon_social.ilike.%${limpio}%`
+      );
+    }
+  }
 
   const [{ data: filas, count }, { data: todas }, { data: yaVencidas }] = await Promise.all([
     consulta
@@ -87,6 +113,32 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
       .eq('estado', 'activa')
       .lt('vence_el', 'now()'),
   ]);
+
+  const { data: almacenes } = await supabase
+    .from('almacenes').select('id, nombre').eq('activo', true).order('nombre');
+
+  /* Fechas para los atajos, en el huso de la operación. */
+  const hoy = hoyEnLima();
+  const ayer = desplazarDias(hoy, -1);
+  const enTresDias = desplazarDias(hoy, 3);
+  const enUnaSemana = desplazarDias(hoy, 7);
+
+  /** Arma la dirección conservando lo que ya está puesto. */
+  function conFiltros(cambios: Record<string, string>) {
+    const p = new URLSearchParams();
+    if (estado) p.set('estado', estado);
+    if (almacen) p.set('almacen', almacen);
+    if (buscar) p.set('buscar', buscar);
+    if (campoFecha !== 'vence_el') p.set('campo_fecha', campoFecha);
+    if (desde) p.set('desde', desde);
+    if (hasta) p.set('hasta', hasta);
+    for (const [k, v] of Object.entries(cambios)) {
+      if (v) p.set(k, v);
+      else p.delete(k);
+    }
+    const t = p.toString();
+    return `/almacenes/reservas${t ? '?' + t : ''}`;
+  }
 
   const universo = todas ?? [];
   const activas = universo.filter((r) => r.estado === 'activa');
@@ -144,16 +196,61 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
             </Link>
           </div>
         ) : (
-          <Filtros
-            campos={[
-              {
-                tipo: 'select',
-                clave: 'estado',
-                etiqueta: 'Estado',
-                opciones: Object.keys(TONO).map((e) => ({ valor: e, texto: etiquetaEstado(e) })),
-              },
-            ]}
-          />
+          <>
+            <Filtros
+              campos={[
+                {
+                  tipo: 'select',
+                  clave: 'estado',
+                  etiqueta: 'Estado',
+                  opciones: Object.keys(TONO).map((e) => ({ valor: e, texto: etiquetaEstado(e) })),
+                },
+                {
+                  tipo: 'select',
+                  clave: 'almacen',
+                  etiqueta: 'Almacén',
+                  opciones: (almacenes ?? []).map((a) => ({
+                    valor: String(a.id), texto: a.nombre as string,
+                  })),
+                },
+                {
+                  tipo: 'select',
+                  clave: 'campo_fecha',
+                  etiqueta: 'Filtrar por',
+                  opciones: [
+                    { valor: 'vence_el', texto: 'Fecha de vencimiento' },
+                    { valor: 'creado_en', texto: 'Fecha en que se apartó' },
+                  ],
+                },
+                { tipo: 'fecha', clave: 'desde', etiqueta: 'Desde' },
+                { tipo: 'fecha', clave: 'hasta', etiqueta: 'Hasta' },
+                { tipo: 'texto', clave: 'buscar', etiqueta: 'Pallet, proforma o cliente', ancho: '16rem' },
+              ]}
+            />
+
+            {/* Los rangos que se consultan a diario, a un clic */}
+            <div className="atajos-fecha">
+              <span>Rápido:</span>
+              <Link href={conFiltros({ estado: 'activa', campo_fecha: 'vence_el', desde: '', hasta: ayer })}>
+                Ya vencidas
+              </Link>
+              <Link href={conFiltros({ estado: 'activa', campo_fecha: 'vence_el', desde: hoy, hasta: enTresDias })}>
+                Vencen en 3 días
+              </Link>
+              <Link href={conFiltros({ estado: 'activa', campo_fecha: 'vence_el', desde: hoy, hasta: enUnaSemana })}>
+                Vencen esta semana
+              </Link>
+              <Link href={conFiltros({ campo_fecha: 'creado_en', desde: hoy, hasta: hoy })}>
+                Apartadas hoy
+              </Link>
+              {(desde || hasta || almacen || buscar) && (
+                <Link href={conFiltros({ desde: '', hasta: '', almacen: '', buscar: '', campo_fecha: '' })}
+                      className="atajo-limpiar">
+                  Quitar filtros
+                </Link>
+              )}
+            </div>
+          </>
         )}
 
         {(filas ?? []).length === 0 ? (

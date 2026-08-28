@@ -22,6 +22,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { hoyEnLima } from '@/lib/fechas';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { BotonesReporte } from '@/components/ui/BotonesReporte';
@@ -51,11 +52,6 @@ const TIPOS: Record<string, { texto: string; signo: 1 | -1; tono: 'ok' | 'atenci
   ajuste_negativo:   { texto: 'Ajuste que resta',      signo: -1, tono: 'atencion' },
   salida_merma:      { texto: 'Merma',                 signo: -1, tono: 'critico' },
 };
-
-/** La fecha de hoy en el huso de Lima, que es donde está la cámara. */
-function hoyEnLima(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
-}
 
 /** Hora legible de una marca de tiempo. */
 function hora(valor: string): string {

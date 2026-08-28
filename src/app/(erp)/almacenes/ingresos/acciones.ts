@@ -29,6 +29,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { hoyEnLima } from '@/lib/fechas';
 
 export type Resultado =
   | { ok: true; id: number; mensaje: string }
@@ -80,7 +81,7 @@ function validar(d: DatosIngreso): { mensaje: string; campo: string } | null {
    * caras: el anticuamiento sale negativo y el producto nunca entra en alerta
    * de vida útil.
    */
-  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+  const hoy = hoyEnLima();
   if (d.fecha_produccion > hoy) {
     return { mensaje: `La fecha de producción no puede ser futura: hoy es ${hoy}.`, campo: 'fecha_produccion' };
   }

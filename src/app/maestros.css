@@ -694,3 +694,31 @@ tr.facturar-total th {
 /* La tabla de pedidos del embarque marca el elegido igual que el resto. */
 .form-bloque table.datos tr[data-elegido="si"] { background: var(--acento-suave); }
 .form-bloque table.datos tr[data-elegido="si"] td { font-weight: 600; }
+
+
+/* --- Atajos de rango de fecha -------------------------------------------
+   Escribir dos fechas para ver «lo de hoy» es un trabajo que la pantalla
+   puede ahorrarse. Los cinco rangos de uso diario van a un clic, y conservan
+   la búsqueda y la prioridad que ya estuvieran puestas. */
+.atajos-fecha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .3rem .5rem;
+  padding: 0 1rem .7rem;
+  font-size: .78rem;
+}
+.atajos-fecha > span { color: var(--tinta-3); margin-inline-end: .1rem; }
+.atajos-fecha a {
+  display: inline-block;
+  padding: .18rem .5rem;
+  border: 1px solid var(--linea);
+  border-radius: 3px;
+  background: var(--superficie);
+  color: var(--tinta-2);
+  text-decoration: none;
+  transition: border-color .12s, color .12s;
+}
+.atajos-fecha a:hover { border-color: var(--acento); color: var(--acento); }
+.atajos-fecha a:focus-visible { outline: 2px solid var(--acento-2); outline-offset: 1px; }
+.atajos-fecha .atajo-limpiar { color: var(--critico); border-color: color-mix(in srgb, var(--critico) 35%, transparent); }

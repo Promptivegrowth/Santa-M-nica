@@ -31,6 +31,22 @@ export const dynamic = 'force-dynamic';
 const POR_PAGINA = 30;
 
 /**
+ * Suma o resta días a una fecha «AAAA-MM-DD», devolviendo otra igual.
+ *
+ * Se hace la aritmética en UTC y a mediodía: sumar 86 400 000 milisegundos a
+ * una fecha local puede caer en el día anterior o el siguiente cuando hay
+ * cambio de horario, y aquí lo que se quiere es «el mismo día, siete casillas
+ * más atrás en el calendario».
+ *
+ * Es una función pura y por eso vive fuera del componente: no mira el reloj,
+ * solo transforma la fecha que se le da.
+ */
+function desplazar(fechaISO: string, dias: number): string {
+  const base = new Date(`${fechaISO}T12:00:00Z`);
+  return new Date(base.getTime() + dias * 86400000).toISOString().slice(0, 10);
+}
+
+/**
  * Las vistas guardadas que pedía la especificación.
  * Cada una es un filtro con nombre sobre la misma consulta.
  */
@@ -61,12 +77,22 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
   const vista = (q.vista as string) ?? '';
   const buscar = (q.buscar as string) ?? '';
   const prioridad = (q.prioridad as string) ?? '';
+  const desde = (q.desde as string) ?? '';
+  const hasta = (q.hasta as string) ?? '';
+  const campoFecha = (q.campo_fecha as string) || 'fecha_solicitada';
 
   let consulta = supabase.from('v_pedidos_tablero').select('*', { count: 'exact' });
 
 
   /* ---- Vistas guardadas ---- */
-  const hoy = new Date().toISOString().slice(0, 10);
+  /*
+   * La fecha de hoy en el huso de LIMA, no en UTC.
+   *
+   * Con `toISOString()` la pestaña «De hoy» empezaba a mostrar los pedidos de
+   * mañana a partir de las siete de la tarde, que es cuando en Lima ya es el
+   * día siguiente en UTC. Justo la hora en que se revisa el cierre del día.
+   */
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
   switch (vista) {
     case 'hoy':         consulta = consulta.eq('fecha_solicitada', hoy); break;
     case 'abiertos':    consulta = consulta.eq('ciclo', 'confirmado'); break;
@@ -86,6 +112,17 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
   }
   if (prioridad) consulta = consulta.eq('prioridad', prioridad);
 
+  /*
+   * El rango de fechas se aplica sobre la columna que se elija. No es lo
+   * mismo preguntar «qué pedí esta semana» que «qué me toca entregar esta
+   * semana»: la primera mira la fecha de solicitud y la segunda la
+   * comprometida. Comercial usa una y despacho la otra.
+   */
+  const COLUMNAS_FECHA = ['fecha_solicitada', 'fecha_comprometida'];
+  const columna = COLUMNAS_FECHA.includes(campoFecha) ? campoFecha : 'fecha_solicitada';
+  if (desde) consulta = consulta.gte(columna, desde);
+  if (hasta) consulta = consulta.lte(columna, hasta);
+
   const [{ data: filas, count }, { data: conCotizacion }] = await Promise.all([
     consulta
       .order('fecha_solicitada', { ascending: false })
@@ -97,15 +134,38 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
 
   const origenes = new Set((conCotizacion ?? []).map((p) => Number(p.id)));
 
-  /** Conserva los filtros al cambiar de vista. */
-  function urlVista(clave: string) {
+  /**
+   * Arma la dirección conservando lo que ya está puesto.
+   *
+   * Cambiar de vista o pulsar un atajo de fecha no debería perder la búsqueda
+   * ni la prioridad: quien filtró por «urgente» y salta a «De hoy» quiere los
+   * urgentes de hoy, no todos los de hoy.
+   */
+  function enlaceVista(clave: string, cambios: Record<string, string> = {}) {
     const p = new URLSearchParams();
     if (clave) p.set('vista', clave);
     if (buscar) p.set('buscar', buscar);
     if (prioridad) p.set('prioridad', prioridad);
+    if (campoFecha && campoFecha !== 'fecha_solicitada') p.set('campo_fecha', campoFecha);
+    if (desde) p.set('desde', desde);
+    if (hasta) p.set('hasta', hasta);
+
+    // Lo que llega en `cambios` manda; una cadena vacía quita el parámetro.
+    for (const [k, v] of Object.entries(cambios)) {
+      if (v) p.set(k, v);
+      else p.delete(k);
+    }
+
     const s = p.toString();
     return `/ventas/pedidos${s ? '?' + s : ''}`;
   }
+
+  /** El mismo nombre de antes, para no tocar las pestañas. */
+  const urlVista = (clave: string) => enlaceVista(clave);
+
+  /** Fechas relativas a hoy, calculadas sobre la fecha ya resuelta. */
+  const haceDias = (n: number) => desplazar(hoy, -n);
+  const enDias = (n: number) => desplazar(hoy, n);
 
   return (
     <>
@@ -148,8 +208,34 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                 { valor: 'baja', texto: 'Baja' },
               ],
             },
+            {
+              tipo: 'select', clave: 'campo_fecha', etiqueta: 'Filtrar por',
+              opciones: [
+                { valor: 'fecha_solicitada', texto: 'Fecha de solicitud' },
+                { valor: 'fecha_comprometida', texto: 'Fecha comprometida' },
+              ],
+            },
+            { tipo: 'fecha', clave: 'desde', etiqueta: 'Desde' },
+            { tipo: 'fecha', clave: 'hasta', etiqueta: 'Hasta' },
           ]}
         />
+
+        {/* Rangos de uso diario, para no tener que escribir dos fechas */}
+        <div className="atajos-fecha">
+          <span>Rápido:</span>
+          <Link href={enlaceVista(vista, { desde: hoy, hasta: hoy })}>Hoy</Link>
+          <Link href={enlaceVista(vista, { desde: haceDias(7), hasta: hoy })}>Últimos 7 días</Link>
+          <Link href={enlaceVista(vista, { desde: haceDias(30), hasta: hoy })}>Últimos 30 días</Link>
+          <Link href={enlaceVista(vista, { desde: hoy.slice(0, 8) + '01', hasta: hoy })}>Este mes</Link>
+          <Link href={enlaceVista(vista, {
+            campo_fecha: 'fecha_comprometida', desde: hoy, hasta: enDias(7),
+          })}>Entregas de la semana</Link>
+          {(desde || hasta) && (
+            <Link href={enlaceVista(vista, { desde: '', hasta: '' })} className="atajo-limpiar">
+              Quitar fechas
+            </Link>
+          )}
+        </div>
 
         {(filas ?? []).length === 0 ? (
           <Vacio titulo="Sin pedidos" mensaje="No hay pedidos que coincidan con esta vista y estos filtros." />
