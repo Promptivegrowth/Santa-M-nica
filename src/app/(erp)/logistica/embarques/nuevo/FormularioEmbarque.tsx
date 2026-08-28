@@ -170,7 +170,16 @@ export function FormularioEmbarque({
     iniciar(async () => {
       const r = await crearEmbarque(d);
       if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: r.campo }); return; }
-      router.push('/logistica/embarques');
+
+      /*
+       * Se va a la FICHA del embarque, no a la lista.
+       *
+       * Volver a la lista dejaba al usuario buscando entre 190 embarques el
+       * que acababa de crear —y la lista ordena por fecha, así que uno para
+       * mañana queda al fondo—. Además, el paso siguiente es crearle el
+       * contenedor, y eso se hace justamente en su ficha.
+       */
+      router.push(`/logistica/embarques/${r.id}`);
       router.refresh();
     });
   }

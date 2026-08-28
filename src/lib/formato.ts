@@ -61,8 +61,33 @@ export function pct(valor: number | string | null | undefined, decimales = 1): s
 /** Fecha corta: 25/08/2026 */
 export function fecha(valor: string | Date | null | undefined): string {
   if (!valor) return '—';
+
+  /*
+   * UNA FECHA SIN HORA NO SE CONVIERTE DE HUSO.
+   *
+   * `new Date('2026-08-28')` no es «el 28 de agosto»: es la medianoche del 28
+   * EN UTC, o sea las siete de la tarde del 27 en Lima. Al pedirle después
+   * que se muestre en el huso de Lima, salía 27/08/2026.
+   *
+   * Eso estaba pasando en TODA la aplicación: fechas de producción,
+   * vencimientos de reserva, fechas comprometidas, vencimientos de SOAT.
+   * Todas se veían un día antes de lo que decía la base de datos.
+   *
+   * Una columna `date` de PostgreSQL es una casilla del calendario, no un
+   * instante: el 28 de agosto es el 28 de agosto en Lima, en Madrid y en
+   * Qingdao. Convertirla de huso no tiene sentido, así que se reordena el
+   * texto tal cual llegó.
+   */
+  if (typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+    const [anio, mes, dia] = valor.split('-');
+    return `${dia}/${mes}/${anio}`;
+  }
+
   const d = typeof valor === 'string' ? new Date(valor) : valor;
   if (Number.isNaN(d.getTime())) return '—';
+
+  /* Aquí sí es un instante, y el huso importa: una marca de tiempo guardada
+     en UTC hay que verla en la hora de la operación. */
   return d.toLocaleDateString(LOCALE, {
     day: '2-digit',
     month: '2-digit',
