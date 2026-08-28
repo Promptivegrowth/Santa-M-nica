@@ -1,3 +1,4 @@
+import Link from 'next/link';
 /**
  * ============================================================================
  *  PLANO DE ESTIBA · el mapa de la carga del contenedor
@@ -26,6 +27,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Etiqueta } from '@/components/ui/Pagina';
+import { Icono } from '@/components/estructura/Icono';
 import { EsqueletoKpi, EsqueletoTabla } from '@/components/ui/Esqueleto';
 import { Historial } from '@/components/ui/Historial';
 import { tm, num, fecha } from '@/lib/formato';
@@ -84,9 +86,21 @@ export default async function PaginaPlano(props: PageProps<'/logistica/packing/[
     <>
       <CabeceraPagina
         titulo={pk.codigo as string}
-        descripcion={`Contenedor ${pk.contenedor ?? 's/n'} · ${almCab?.nombre ?? ''} → ${dstCab?.puerto ?? ''}${dstCab?.pais ? ', ' + dstCab.pais : ''}`}
+        /*
+         * El número del embarque va en la descripción, y no solo el destino.
+         * Sin él era imposible saber a qué salida pertenece este contenedor:
+         * ya pasó que se creara uno en el embarque equivocado y no hubiera
+         * forma de notarlo desde esta pantalla.
+         */
+        descripcion={`Embarque ${embCab?.numero ?? '—'} · contenedor ${pk.contenedor ?? 's/n'} · ${almCab?.nombre ?? ''} → ${dstCab?.puerto ?? ''}${dstCab?.pais ? ', ' + dstCab.pais : ''}`}
         volver={{ href: '/logistica/packing', texto: 'Volver a packing lists' }}
       >
+        {embCab?.numero ? (
+          <Link href={`/logistica/embarques?buscar=${embCab.numero}`} className="btn btn-sutil">
+            <Icono nombre="embarques" tamano={15} />
+            Ver el embarque
+          </Link>
+        ) : null}
         <Etiqueta
           texto={String(pk.estado).replace('_', ' ')}
           tono={pk.estado === 'cerrado' ? 'ok' : 'atencion'}
@@ -167,7 +181,14 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
   }
 
   // ¿Hasta qué fila llegó la carga?
-  const filaMax = Math.max(1, ...(celdas ?? []).map((c) => Number(c.fila ?? 0)));
+  /*
+   * Con el contenedor vacío, cero filas. El `Math.max(1, ...)` de antes hacía
+   * que un packing recién creado dijera «1 / 22 filas utilizadas» sin tener
+   * un solo saco dentro.
+   */
+  const filaMax = (celdas ?? []).length === 0
+    ? 0
+    : Math.max(...(celdas ?? []).map((c) => Number(c.fila ?? 0)));
   const columnas = Array.from({ length: filaMax }, (_, i) => i + 1);
 
   // Totales por fila y comprobación de que el saldo cierra en cero
@@ -177,20 +198,29 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
   const saldoPorFila = totalPorFila.map((t) => sacosPorFila - t);
   const totalBultos = lotes.reduce((s, l) => s + l.bultos, 0);
   const totalPeso = lotes.reduce((s, l) => s + l.peso, 0);
-  const cierraEnCero = saldoPorFila.slice(0, -1).every((s) => s === 0);
+  /*
+   * «Cierra» significa que lo cargado cuadra con el plano. Un contenedor sin
+   * nada dentro no cierra ni deja de cerrar: está vacío, y decir «todas las
+   * filas completas» con cero sacos era sencillamente falso.
+   */
+  const vacio = lotes.length === 0;
+  const cierraEnCero = !vacio && saldoPorFila.slice(0, -1).every((s) => s === 0);
 
   return (
     <>
       <RejillaKpi>
         <Kpi etiqueta="Total de bultos" valor={num(totalBultos)} nota={`${lotes.length} lotes distintos`} />
         <Kpi etiqueta="Peso neto" valor={tm(totalPeso)} sufijo="TM" />
-        <Kpi etiqueta="Filas utilizadas" valor={`${filaMax} / ${filasContenedor}`} tono="marca"
+        <Kpi etiqueta="Filas utilizadas" valor={`${filaMax} / ${filasContenedor}`}
+             tono={vacio ? 'neutro' : 'marca'}
              nota={`${sacosPorFila} sacos por fila`} />
         <Kpi
           etiqueta="Saldo por fila"
-          valor={cierraEnCero ? 'Cierra' : 'Revisar'}
-          tono={cierraEnCero ? 'ok' : 'critico'}
-          nota={cierraEnCero ? 'Todas las filas completas' : 'Hay filas incompletas'}
+          valor={vacio ? 'Vacío' : cierraEnCero ? 'Cierra' : 'Revisar'}
+          tono={vacio ? 'neutro' : cierraEnCero ? 'ok' : 'critico'}
+          nota={vacio
+            ? 'Sin pallets cargados'
+            : cierraEnCero ? 'Todas las filas completas' : 'Hay filas incompletas'}
         />
       </RejillaKpi>
 

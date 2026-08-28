@@ -905,3 +905,29 @@ table.datos thead th small {
   margin: 0; padding: .65rem .85rem;
   font-size: .84rem; color: var(--ok); background: var(--ok-suave);
 }
+
+
+/* --- Los dos grupos de pallets cargables ---------------------------------
+   Lo apartado para los pedidos del embarque va primero y con su etiqueta: es
+   lo que corresponde cargar. El stock libre va debajo, para completar. Sin
+   esta separación la lista era un muro de sesenta pallets donde el que se
+   buscaba no se distinguía de los demás — y peor, no aparecía, porque estar
+   apartado le baja el disponible a cero.
+   -------------------------------------------------------------------------- */
+.cargar-grupo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .8rem;
+  flex-wrap: wrap;
+  padding: .7rem .3rem .5rem;
+}
+.cargar-grupo strong { display: block; font-size: .86rem; color: var(--tinta); }
+.cargar-grupo span {
+  display: block;
+  font-size: .76rem;
+  line-height: 1.45;
+  color: var(--tinta-3);
+  margin-block-start: .1rem;
+  max-width: 52ch;
+}

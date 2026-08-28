@@ -231,6 +231,70 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
     return { ok: false, mensaje: `No se pudo crear el packing: ${error?.message}` };
   }
 
+  /* ══════════════════════════════════════════════════════════════════════
+     EL CONTENEDOR NACE CON LOS PALLETS QUE YA ESTABAN APARTADOS
+     ══════════════════════════════════════════════════════════════════════
+     Si el embarque lleva pedidos con stock apartado en esta bodega, esa
+     mercadería ES la que va a subir: alguien ya decidió que es de ese
+     cliente. Obligar a buscarla otra vez en una lista de sesenta pallets
+     —donde además no aparecía, porque estar apartado le baja el disponible a
+     cero— era hacer dos veces el mismo trabajo.
+
+     Se precarga, y desde la ficha se puede quitar o agregar lo que haga
+     falta. Precargar no es decidir por el usuario: es no pedirle que repita
+     una decisión que ya tomó.
+     ══════════════════════════════════════════════════════════════════════ */
+  const { data: pedidosDelEmbarque } = await supabase
+    .from('embarque_pedidos').select('pedido_id').eq('embarque_id', d.embarque_id);
+  const idsPedidos = (pedidosDelEmbarque ?? []).map((x) => Number(x.pedido_id));
+
+  let precargados = 0;
+  let kgPrecargados = 0;
+
+  if (idsPedidos.length > 0) {
+    const { data: emb2 } = await supabase
+      .from('embarques').select('almacen_id').eq('id', d.embarque_id).maybeSingle();
+
+    const { data: reservas } = await supabase
+      .from('reservas')
+      .select('lote_id, bultos, peso_neto_kg, pedido_lineas!inner(pedido_id)')
+      .eq('almacen_id', Number(emb2?.almacen_id))
+      .in('estado', ['activa', 'en_preparacion'])
+      .in('pedido_lineas.pedido_id', idsPedidos);
+
+    /* Un pallet puede tener varias reservas del mismo embarque: viajan juntas
+       en una sola línea de packing, que es como sube al contenedor. */
+    const porLote = new Map<number, { bultos: number; kg: number }>();
+    for (const r of reservas ?? []) {
+      const id = Number(r.lote_id);
+      const previo = porLote.get(id) ?? { bultos: 0, kg: 0 };
+      previo.bultos += Number(r.bultos ?? 0);
+      previo.kg += Number(r.peso_neto_kg ?? 0);
+      porLote.set(id, previo);
+    }
+
+    if (porLote.size > 0) {
+      const { error: errPre } = await supabase.from('packing_lineas').insert(
+        [...porLote.entries()].map(([lote_id, v]) => ({
+          packing_list_id: packing.id,
+          lote_id,
+          bultos: Math.max(1, Math.round(v.bultos)),
+          peso_neto_kg: v.kg,
+        }))
+      );
+
+      /*
+       * Si la precarga falla, el contenedor se queda igual: existe y está
+       * vacío, que es un estado válido y se puede llenar a mano. Deshacer el
+       * packing por esto sería peor.
+       */
+      if (!errPre) {
+        precargados = porLote.size;
+        kgPrecargados = [...porLote.values()].reduce((t, v) => t + v.kg, 0);
+      }
+    }
+  }
+
   // El embarque pasa a estar en preparación: ya se está armando su carga.
   if (emb.estado === 'planificado' || emb.estado === 'confirmado') {
     await supabase.from('embarques').update({ estado: 'en_preparacion' }).eq('id', d.embarque_id);
@@ -245,7 +309,11 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
     numero: codigo,
     mensaje:
       `Contenedor ${codigo} creado para el embarque ${emb.numero}. ` +
-      'Ahora hay que cargarle los pallets y armar su plano de estiba.',
+      (precargados > 0
+        ? `Ya lleva cargados ${precargados} pallet${precargados === 1 ? '' : 's'} ` +
+          `—${(kgPrecargados / 1000).toFixed(2)} TM— que estaban apartados para sus pedidos. ` +
+          'Revíselos y arme el plano de estiba.'
+        : 'Ahora hay que cargarle los pallets y armar su plano de estiba.'),
   };
 }
 

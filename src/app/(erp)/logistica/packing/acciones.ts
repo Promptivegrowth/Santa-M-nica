@@ -236,7 +236,20 @@ export async function regenerarPlano(packingId: number): Promise<Resultado> {
    LOS LOTES DEL PACKING
    ========================================================================== */
 
-/** Los lotes que se pueden cargar en este contenedor. */
+/**
+ * Los lotes que se pueden cargar en este contenedor.
+ *
+ * Vienen en dos grupos y el orden importa:
+ *
+ *   1. Los APARTADOS para los pedidos de este embarque. Son los que hay que
+ *      cargar: alguien ya decidió que esa mercadería es de ese cliente.
+ *   2. El resto del stock libre de la bodega, por si hay que completar.
+ *
+ * Los apartados no aparecían en absoluto, y era un agujero de los grandes:
+ * reservar un pallet le baja el disponible a cero, y el filtro pedía
+ * disponible mayor que cero. O sea que reservar volvía el pallet incargable y
+ * la cadena se rompía justo entre apartar y despachar.
+ */
 export type LoteCargable = {
   lote_id: number;
   codigo_pallet: string;
@@ -247,6 +260,7 @@ export type LoteCargable = {
   kg_disponibles: number;
   /** Para convertir bultos a kilos en la pantalla sin volver a preguntar. */
   kg_por_bulto: number;
+  /** Si está apartado para un pedido de este embarque, cuál. */
   reservado_para: string | null;
 };
 
@@ -259,6 +273,28 @@ export async function lotesCargables(packingId: number): Promise<LoteCargable[]>
 
   const emb = Array.isArray(pk.embarques) ? pk.embarques[0] : pk.embarques;
   const almacenId = Number(emb?.almacen_id);
+
+  // Los que ya están en este packing no se vuelven a ofrecer.
+  const { data: puestosData } = await supabase
+    .from('packing_lineas').select('lote_id').eq('packing_list_id', packingId);
+  const puestos = new Set((puestosData ?? []).map((x) => Number(x.lote_id)));
+
+  /* ---- 1 · Lo APARTADO para los pedidos de este embarque ----
+     Es lo que de verdad hay que cargar. Se busca por las reservas, no por el
+     disponible: un pallet reservado tiene disponible cero, que es
+     precisamente lo que lo hacía invisible aquí. */
+  const { data: pedidosDelEmbarque } = await supabase
+    .from('embarque_pedidos').select('pedido_id').eq('embarque_id', pk.embarque_id);
+  const idsPedidos = (pedidosDelEmbarque ?? []).map((x) => Number(x.pedido_id));
+
+  const { data: apartados } = idsPedidos.length
+    ? await supabase
+        .from('reservas')
+        .select('lote_id, bultos, peso_neto_kg, lotes(codigo_pallet, fecha_produccion, sku_presentacion_id), pedido_lineas!inner(pedido_id, pedidos(numero_proforma, clientes(razon_social)))')
+        .eq('almacen_id', almacenId)
+        .in('estado', ['activa', 'en_preparacion'])
+        .in('pedido_lineas.pedido_id', idsPedidos)
+    : { data: [] };
 
   /*
    * Solo lotes de la MISMA bodega desde la que sale el embarque. Cargar un
@@ -296,13 +332,68 @@ export async function lotesCargables(packingId: number): Promise<LoteCargable[]>
     })
   );
 
-  // Los que ya están en este packing no se vuelven a ofrecer.
-  const { data: yaPuestos } = await supabase
-    .from('packing_lineas').select('lote_id').eq('packing_list_id', packingId);
-  const puestos = new Set((yaPuestos ?? []).map((x) => Number(x.lote_id)));
+  /* Los productos de los lotes apartados, que pueden no estar en `stock`. */
+  const idsApartados = [...new Set((apartados ?? []).map((r) => {
+    const lote = Array.isArray(r.lotes) ? r.lotes[0] : r.lotes;
+    return Number(lote?.sku_presentacion_id);
+  }).filter(Boolean))];
 
-  return (stock ?? [])
-    .filter((s) => !puestos.has(Number(s.lote_id)) && Number(s.bloqueado_kg) === 0)
+  const faltantes = idsApartados.filter((id) => !desc.has(id));
+  if (faltantes.length) {
+    const { data: extra } = await supabase
+      .from('sku_presentaciones')
+      .select('id, skus(codigo, corte, especies(nombre)), presentaciones(descripcion, peso_bulto_kg)')
+      .in('id', faltantes);
+    for (const p of extra ?? []) {
+      const sku = Array.isArray(p.skus) ? p.skus[0] : p.skus;
+      const esp = Array.isArray(sku?.especies) ? sku.especies[0] : sku?.especies;
+      const pres = Array.isArray(p.presentaciones) ? p.presentaciones[0] : p.presentaciones;
+      desc.set(p.id as number, {
+        texto: `${sku?.codigo ?? ''} · ${esp?.nombre ?? ''} · ${sku?.corte ?? ''} · ${pres?.descripcion ?? ''}`,
+        kgBulto: Number(pres?.peso_bulto_kg ?? 0) || 1,
+      });
+    }
+  }
+
+  /* Un mismo pallet puede tener varias reservas del embarque: se suman. */
+  const porLote = new Map<number, LoteCargable>();
+  for (const r of apartados ?? []) {
+    const lote = Array.isArray(r.lotes) ? r.lotes[0] : r.lotes;
+    const pl = Array.isArray(r.pedido_lineas) ? r.pedido_lineas[0] : r.pedido_lineas;
+    const ped = Array.isArray(pl?.pedidos) ? pl.pedidos[0] : pl?.pedidos;
+    const cli = Array.isArray(ped?.clientes) ? ped.clientes[0] : ped?.clientes;
+    const loteId = Number(r.lote_id);
+    if (puestos.has(loteId)) continue;
+
+    const info = desc.get(Number(lote?.sku_presentacion_id));
+    const previo = porLote.get(loteId);
+    if (previo) {
+      previo.bultos_disponibles += Number(r.bultos ?? 0);
+      previo.kg_disponibles += Number(r.peso_neto_kg ?? 0);
+    } else {
+      porLote.set(loteId, {
+        lote_id: loteId,
+        codigo_pallet: String(lote?.codigo_pallet ?? loteId),
+        producto: info?.texto ?? '—',
+        fecha_produccion: String(lote?.fecha_produccion ?? ''),
+        meses: 0,
+        bultos_disponibles: Number(r.bultos ?? 0),
+        kg_disponibles: Number(r.peso_neto_kg ?? 0),
+        kg_por_bulto: info?.kgBulto ?? 1,
+        reservado_para: `${ped?.numero_proforma ?? '—'} · ${cli?.razon_social ?? ''}`.trim(),
+      });
+    }
+  }
+
+  const apartadosLista = [...porLote.values()];
+  const yaApartado = new Set(apartadosLista.map((l) => l.lote_id));
+
+  /* ---- 2 · El resto del stock libre de la bodega ---- */
+  const libres = (stock ?? [])
+    .filter((s) =>
+      !puestos.has(Number(s.lote_id)) &&
+      !yaApartado.has(Number(s.lote_id)) &&
+      Number(s.bloqueado_kg) === 0)
     .map((s) => {
       const info = desc.get(s.sku_presentacion_id as number);
       const kg = Number(s.disponible_kg);
@@ -317,10 +408,12 @@ export async function lotesCargables(packingId: number): Promise<LoteCargable[]>
         bultos_disponibles: Math.floor(kg / (info?.kgBulto ?? 1)),
         kg_disponibles: kg,
         kg_por_bulto: info?.kgBulto ?? 1,
-        reservado_para: null,
+        reservado_para: null as string | null,
       };
     })
     .filter((l) => l.bultos_disponibles > 0);
+
+  return [...apartadosLista, ...libres];
 }
 
 export async function agregarLoteAlPacking(

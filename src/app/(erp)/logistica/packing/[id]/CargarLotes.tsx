@@ -85,6 +85,41 @@ export function CargarLotes({
     });
   }
 
+  const apartados = (candidatos ?? []).filter((l) => l.reservado_para);
+  const libres = (candidatos ?? []).filter((l) => !l.reservado_para);
+
+  /**
+   * Carga de una vez todos los pallets apartados para este embarque.
+   *
+   * Es el caso normal: si alguien ya decidió qué mercadería es de qué cliente,
+   * el contenedor lleva eso. Hacerlo pallet por pallet solo añade clics y
+   * ocasiones de saltarse uno.
+   */
+  function agregarTodosApartados() {
+    setAviso(null);
+    iniciarGuardado(async () => {
+      let bien = 0;
+      const fallos: string[] = [];
+      for (const l of apartados) {
+        const r = await agregarLoteAlPacking(
+          packingId, l.lote_id, l.bultos_disponibles, l.kg_disponibles
+        );
+        if (r.ok) bien += 1;
+        else fallos.push(`${l.codigo_pallet}: ${r.mensaje}`);
+      }
+      setAviso({
+        tipo: bien > 0 ? 'ok' : 'mal',
+        texto: bien > 0
+          ? `${bien} pallet${bien === 1 ? '' : 's'} cargado${bien === 1 ? '' : 's'}.` +
+            (fallos.length ? ` No se pudo con: ${fallos.join(' · ')}` : ' Ahora repártalos en el plano de estiba.')
+          : `No se pudo cargar ninguno. ${fallos.join(' · ')}`,
+      });
+      router.refresh();
+      setCandidatos(await lotesCargables(packingId));
+      setElegido(null);
+    });
+  }
+
   const totalBultos = cargados.reduce((s, l) => s + l.bultos, 0);
   const totalKg = cargados.reduce((s, l) => s + l.peso, 0);
 
@@ -153,15 +188,71 @@ export function CargarLotes({
       {/* ---------- Los candidatos ---------- */}
       {candidatos && (
         <div className="cargar-panel">
-          <p className="cargar-pista">
-            Solo pallets de la bodega desde la que sale este embarque, con saldo disponible y sin
-            bloqueo de calidad. Van del <b>más antiguo al más nuevo</b>.
-          </p>
+          {/*
+            Dos grupos, y el orden no es estético: lo apartado para los pedidos
+            de este embarque es lo que hay que cargar —alguien ya decidió que
+            esa mercadería es de ese cliente—. El stock libre es para
+            completar, y va debajo.
+          */}
+          {apartados.length > 0 && (
+            <>
+              <div className="cargar-grupo">
+                <div>
+                  <strong>Apartado para los pedidos de este embarque</strong>
+                  <span>Es lo que corresponde cargar. Ya está comprometido con su cliente.</span>
+                </div>
+                {apartados.length > 1 && (
+                  <button type="button" className="btn btn-primario btn-chico"
+                          onClick={agregarTodosApartados} disabled={guardando}>
+                    <Icono nombre="packing" tamano={14} />
+                    {guardando ? 'Cargando…' : `Cargar los ${apartados.length}`}
+                  </button>
+                )}
+              </div>
 
-          {candidatos.length === 0 ? (
+              <div className="tabla-envoltorio">
+                <table className="datos">
+                  <thead>
+                    <tr>
+                      <th>Pallet</th><th>Producto</th><th>Para</th>
+                      <th className="num">Apartado</th><th className="num">Bultos</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {apartados.map((l) => (
+                      <tr key={l.lote_id} data-elegido={elegido?.lote_id === l.lote_id ? 'si' : 'no'}>
+                        <td className="mono">{l.codigo_pallet}</td>
+                        <td style={{ fontSize: '.76rem' }}>{l.producto}</td>
+                        <td style={{ fontSize: '.72rem', color: 'var(--acento)' }}>{l.reservado_para}</td>
+                        <td className="num mono">{cifra(l.kg_disponibles)} kg</td>
+                        <td className="num mono">{cifra(l.bultos_disponibles)}</td>
+                        <td>
+                          <button type="button" className="btn btn-sutil btn-chico" onClick={() => elegir(l)}>
+                            {elegido?.lote_id === l.lote_id ? 'Elegido' : 'Elegir'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          <div className="cargar-grupo">
+            <div>
+              <strong>Otro stock libre en la bodega</strong>
+              <span>
+                Sin apartar y sin bloqueo de calidad, del <b>más antiguo al más nuevo</b>. Sirve
+                para completar el contenedor.
+              </span>
+            </div>
+          </div>
+
+          {libres.length === 0 ? (
             <p className="cargar-vacio">
-              No queda ni un pallet cargable en esa bodega: o están todos apartados para otros
-              pedidos, o bloqueados por calidad, o ya están en este contenedor.
+              No queda stock libre en esa bodega: o está todo apartado para otros pedidos, o
+              bloqueado por calidad, o ya está en este contenedor.
             </p>
           ) : (
             <div className="tabla-envoltorio">
@@ -174,7 +265,7 @@ export function CargarLotes({
                   </tr>
                 </thead>
                 <tbody>
-                  {candidatos.map((l) => (
+                  {libres.map((l) => (
                     <tr key={l.lote_id} data-elegido={elegido?.lote_id === l.lote_id ? 'si' : 'no'}>
                       <td className="mono">{l.codigo_pallet}</td>
                       <td style={{ fontSize: '.76rem' }}>{l.producto}</td>
