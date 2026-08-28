@@ -754,3 +754,28 @@ tr.facturar-total th {
   line-height: 1.4;
   color: var(--atencion);
 }
+
+
+/* --- Lo que quedaría fuera del embarque ----------------------------------
+   No basta con avisar: hay que decir qué se puede hacer. Las dos salidas son
+   legítimas y la elección depende de cuántos kilos sean, así que se ofrecen
+   las dos con su criterio en vez de empujar hacia una.
+   -------------------------------------------------------------------------- */
+.varado {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  margin-block: .7rem 0;
+  padding: .7rem .85rem;
+  border-inline-start: 3px solid var(--atencion);
+  background: var(--atencion-suave);
+  border-radius: 3px;
+  font-size: .83rem;
+  line-height: 1.5;
+  color: var(--tinta-2);
+}
+.varado svg { flex: none; margin-block-start: .15rem; color: var(--atencion); }
+.varado b { color: var(--tinta); }
+.varado ul { margin: .4rem 0 0; padding-inline-start: 1.1rem; }
+.varado li { margin-block-end: .3rem; }
+.varado a { color: var(--acento); font-weight: 600; }

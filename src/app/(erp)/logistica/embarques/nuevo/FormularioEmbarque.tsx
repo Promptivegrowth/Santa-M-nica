@@ -4,20 +4,29 @@
  * ============================================================================
  *  PROGRAMAR UN EMBARQUE
  * ============================================================================
- *  Un embarque es la salida: qué día, desde qué bodega, hacia qué puerto.
+ *  PRIMERO EL PEDIDO, DESPUÉS LA BODEGA
  *
- *  LO QUE HACE ÚTIL ESTA PANTALLA
- *  Que enseñe los pedidos que se pueden cargar CON SU COBERTURA. Un pedido al
- *  40 % se puede embarcar igual —despacho parcial—, pero conviene saberlo
- *  antes y no cuando el contenedor está a medio llenar. Los que están al 100 %
- *  salen primero, que son los que de verdad están listos.
+ *  Este formulario empezó pidiendo la bodega de salida antes que los pedidos,
+ *  y estaba mal. Nadie piensa «hoy despacho desde Freeko»: piensa «tengo que
+ *  sacar el pedido de AGI Trading». La bodega no es una decisión de partida,
+ *  es una CONSECUENCIA de dónde quedó apartado el stock.
  *
- *  Y que avise si el camión tiene el SOAT vencido para esa fecha, antes de
- *  programarlo. Enterarse en la carretera cuesta el flete y el contenedor.
+ *  Así que ahora se eligen primero los pedidos y el sistema propone la bodega
+ *  desde la que se puede cargar más. Se puede cambiar —a veces el contenedor
+ *  ya está reservado en un terminal concreto y entonces sí manda la bodega—,
+ *  pero el valor que llega puesto es el correcto casi siempre.
+ *
+ *  POR QUÉ UNA SOLA BODEGA Y NO VARIAS
+ *  Porque un contenedor se arrima al muelle de UNA cámara y se carga ahí.
+ *  Recorrer tres almacenes recogiendo pallets rompe la cadena de frío y
+ *  multiplica movimientos y documentos. Lo que quede en otra bodega necesita
+ *  un traslado antes, y esta pantalla lo dice con los kilos exactos para que
+ *  se pueda decidir si compensa.
  * ============================================================================
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
 import { crearEmbarque, type DatosEmbarque, type PedidoEmbarcable } from '../acciones';
 
@@ -65,11 +74,29 @@ export function FormularioEmbarque({
     setProblema(null);
   }
 
+  /** Si el usuario ya eligió bodega a mano, no se le vuelve a mover. */
+  const [bodegaTocada, setBodegaTocada] = useState(false);
+
   function alternarPedido(id: number) {
-    setD((p) => ({
-      ...p,
-      pedidos: p.pedidos.includes(id) ? p.pedidos.filter((x) => x !== id) : [...p.pedidos, id],
-    }));
+    setD((p) => {
+      const yaEstaba = p.pedidos.includes(id);
+      const siguiente = yaEstaba
+        ? p.pedidos.filter((x) => x !== id)
+        : [...p.pedidos, id];
+
+      /*
+       * Al marcar el PRIMER pedido se propone la bodega donde tiene más kilos
+       * apartados: es la que permite cargar más sin trasladar nada. Solo se
+       * propone si el usuario no eligió una a mano, y solo con el primero:
+       * cambiarle la bodega al marcar el cuarto pedido sería desconcertante.
+       */
+      if (!yaEstaba && p.pedidos.length === 0 && !bodegaTocada) {
+        const pedido = pedidos.find((x) => x.id === id);
+        const mayor = pedido?.bodegas?.[0];
+        if (mayor) return { ...p, pedidos: siguiente, almacen_id: mayor.almacen_id };
+      }
+      return { ...p, pedidos: siguiente };
+    });
     setProblema(null);
   }
 
@@ -95,6 +122,27 @@ export function FormularioEmbarque({
   );
   const nombreBodega = almacenes.find((a) => a.id === d.almacen_id)?.nombre ?? 'la bodega elegida';
 
+  /*
+   * Cuántos kilos de los pedidos elegidos hay en CADA bodega. Con eso se sabe
+   * cuál conviene, y se puede enseñar la comparación en vez de obligar a
+   * deducirla de los chips uno por uno.
+   */
+  const kgPorBodega = new Map<number, number>();
+  for (const p of elegidos) {
+    for (const b of p.bodegas) {
+      kgPorBodega.set(b.almacen_id, (kgPorBodega.get(b.almacen_id) ?? 0) + b.kg);
+    }
+  }
+  const mejorBodega = [...kgPorBodega.entries()]
+    .map(([almacen_id, kg]) => ({
+      almacen_id, kg,
+      nombre: almacenes.find((a) => a.id === almacen_id)?.nombre ?? '—',
+    }))
+    .sort((a, b) => b.kg - a.kg)[0];
+
+  /** Lo que se quedaría en otra bodega y necesitaría un traslado. */
+  const tmVaradas = tmElegidas - tmCargables;
+
   function enviar(e: React.FormEvent) {
     e.preventDefault();
     setProblema(null);
@@ -116,100 +164,6 @@ export function FormularioEmbarque({
           <span>{problema.mensaje}</span>
         </div>
       )}
-
-      <fieldset className="form-bloque">
-        <legend>Cuándo y hacia dónde</legend>
-        <div className="form-rejilla">
-          <label className="form-campo">
-            <span>Fecha de salida <b className="req">*</b></span>
-            <input className="campo" type="date" value={d.fecha_programada} data-error={error('fecha_programada')}
-                   onChange={(e) => campo('fecha_programada', e.target.value)} required />
-          </label>
-
-          <label className="form-campo">
-            <span>Tipo</span>
-            <select className="campo" value={d.tipo_despacho}
-                    onChange={(e) => campo('tipo_despacho', e.target.value as DatosEmbarque['tipo_despacho'])}>
-              <option value="exportacion">Exportación</option>
-              <option value="mercado_nacional">Mercado nacional</option>
-              <option value="traslado">Traslado</option>
-            </select>
-          </label>
-
-          <label className="form-campo">
-            <span>Bodega de salida <b className="req">*</b></span>
-            <select className="campo" value={d.almacen_id || ''} data-error={error('almacen_id')}
-                    onChange={(e) => campo('almacen_id', Number(e.target.value))} required>
-              {almacenes.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-            </select>
-          </label>
-
-          <label className="form-campo">
-            <span>Destino {d.tipo_despacho === 'exportacion' && <b className="req">*</b>}</span>
-            <select className="campo" value={d.destino_id ?? ''} data-error={error('destino_id')}
-                    onChange={(e) => campo('destino_id', e.target.value ? Number(e.target.value) : null)}>
-              <option value="">Sin especificar</option>
-              {destinos.map((x) => (
-                <option key={x.id} value={x.id}>{x.puerto}{x.pais ? `, ${x.pais}` : ''}</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="form-campo">
-            <span>Booking</span>
-            <input className="campo mono" value={d.booking ?? ''} maxLength={40}
-                   onChange={(e) => campo('booking', e.target.value)} placeholder="LMM000000" />
-          </label>
-
-          <label className="form-campo">
-            <span>Naviera</span>
-            <input className="campo" value={d.naviera ?? ''} maxLength={60}
-                   onChange={(e) => campo('naviera', e.target.value)} placeholder="COSCO, Maersk…" />
-          </label>
-        </div>
-      </fieldset>
-
-      <fieldset className="form-bloque">
-        <legend>Quién lo lleva</legend>
-        <div className="form-rejilla">
-          <label className="form-campo">
-            <span>Transportista</span>
-            <select className="campo" value={d.transportista_id ?? ''}
-                    onChange={(e) => campo('transportista_id', e.target.value ? Number(e.target.value) : null)}>
-              <option value="">Sin asignar</option>
-              {transportistas.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
-            </select>
-          </label>
-
-          <label className="form-campo">
-            <span>Vehículo</span>
-            <select className="campo" value={d.vehiculo_id ?? ''} data-error={error('vehiculo_id')}
-                    onChange={(e) => campo('vehiculo_id', e.target.value ? Number(e.target.value) : null)}>
-              <option value="">Sin asignar</option>
-              {vehiculos.map((v) => <option key={v.id} value={v.id}>{v.placa}</option>)}
-            </select>
-          </label>
-
-          <label className="form-campo">
-            <span>Conductor</span>
-            <select className="campo" value={d.conductor_id ?? ''}
-                    onChange={(e) => campo('conductor_id', e.target.value ? Number(e.target.value) : null)}>
-              <option value="">Sin asignar</option>
-              {conductores.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-            </select>
-          </label>
-        </div>
-
-        {vencidos.length > 0 && (
-          <div className="form-consecuencia local" style={{ borderColor: 'var(--critico)', background: 'var(--critico-suave)' }}>
-            <Icono nombre="alerta" tamano={16} />
-            <span>
-              A <b>{vehiculo?.placa}</b> se le vence {vencidos.join(' y ')} antes del{' '}
-              {d.fecha_programada}. Un camión sin documentos en regla no puede salir.
-            </span>
-          </div>
-        )}
-      </fieldset>
 
       <fieldset className="form-bloque">
         <legend>Qué pedidos van en este embarque</legend>
@@ -293,18 +247,144 @@ export function FormularioEmbarque({
               </table>
             </div>
 
+            {tmVaradas > 0.005 && (
+              <div className="varado">
+                <Icono nombre="alerta" tamano={16} />
+                <span>
+                  <b>{cifra(tmVaradas, 2)} TM quedarían fuera de este embarque</b> porque están en
+                  otra bodega. Hay dos salidas y las dos son válidas:
+                  <ul>
+                    <li>
+                      <b>Despachar parcial:</b> sale lo que está en {nombreBodega} y el resto en el
+                      próximo embarque. Es lo normal cuando son pocos kilos.
+                    </li>
+                    <li>
+                      <b>Trasladar primero:</b> mover esa mercadería a {nombreBodega} y cargar todo
+                      junto. Cuesta un camión y medio día, así que compensa cuando son toneladas.{' '}
+                      <Link href="/almacenes/traslados">Ir a traslados</Link>
+                    </li>
+                  </ul>
+                </span>
+              </div>
+            )}
+
             {elegidos.length > 0 && (
               <p className="form-pista">
                 <b>{elegidos.length} pedido{elegidos.length === 1 ? '' : 's'}</b> con{' '}
                 <b>{cifra(tmElegidas, 2)} TM</b> apartadas, de las cuales{' '}
                 <b>{cifra(tmCargables, 2)} TM</b> están en {nombreBodega} y se podrán cargar.
-                {tmElegidas - tmCargables > 0.005 && (
-                  <> Las otras {cifra(tmElegidas - tmCargables, 2)} TM están en otra bodega y
-                  necesitan un traslado antes.</>
-                )}
               </p>
             )}
           </>
+        )}
+      </fieldset>
+
+      <fieldset className="form-bloque">
+        <legend>Cuándo y hacia dónde</legend>
+        <div className="form-rejilla">
+          <label className="form-campo">
+            <span>Fecha de salida <b className="req">*</b></span>
+            <input className="campo" type="date" value={d.fecha_programada} data-error={error('fecha_programada')}
+                   onChange={(e) => campo('fecha_programada', e.target.value)} required />
+          </label>
+
+          <label className="form-campo">
+            <span>Tipo</span>
+            <select className="campo" value={d.tipo_despacho}
+                    onChange={(e) => campo('tipo_despacho', e.target.value as DatosEmbarque['tipo_despacho'])}>
+              <option value="exportacion">Exportación</option>
+              <option value="mercado_nacional">Mercado nacional</option>
+              <option value="traslado">Traslado</option>
+            </select>
+          </label>
+
+          <label className="form-campo">
+            <span>Bodega de salida <b className="req">*</b></span>
+            <select className="campo" value={d.almacen_id || ''} data-error={error('almacen_id')}
+                    onChange={(e) => { setBodegaTocada(true); campo('almacen_id', Number(e.target.value)); }}
+                    required>
+              {almacenes.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.nombre}
+                  {kgPorBodega.get(a.id)
+                    ? ` — ${cifra((kgPorBodega.get(a.id) ?? 0) / 1000, 2)} TM cargables`
+                    : ''}
+                </option>
+              ))}
+            </select>
+            <small>
+              {elegidos.length === 0
+                ? 'Se propone sola al elegir el primer pedido, según dónde esté su stock.'
+                : mejorBodega && mejorBodega.almacen_id !== d.almacen_id
+                  ? `Desde ${mejorBodega.nombre} se cargarían ${cifra(mejorBodega.kg / 1000, 2)} TM, más que desde aquí.`
+                  : 'Es la bodega con más kilos cargables de los pedidos elegidos.'}
+            </small>
+          </label>
+
+          <label className="form-campo">
+            <span>Destino {d.tipo_despacho === 'exportacion' && <b className="req">*</b>}</span>
+            <select className="campo" value={d.destino_id ?? ''} data-error={error('destino_id')}
+                    onChange={(e) => campo('destino_id', e.target.value ? Number(e.target.value) : null)}>
+              <option value="">Sin especificar</option>
+              {destinos.map((x) => (
+                <option key={x.id} value={x.id}>{x.puerto}{x.pais ? `, ${x.pais}` : ''}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="form-campo">
+            <span>Booking</span>
+            <input className="campo mono" value={d.booking ?? ''} maxLength={40}
+                   onChange={(e) => campo('booking', e.target.value)} placeholder="LMM000000" />
+          </label>
+
+          <label className="form-campo">
+            <span>Naviera</span>
+            <input className="campo" value={d.naviera ?? ''} maxLength={60}
+                   onChange={(e) => campo('naviera', e.target.value)} placeholder="COSCO, Maersk…" />
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset className="form-bloque">
+        <legend>Quién lo lleva</legend>
+        <div className="form-rejilla">
+          <label className="form-campo">
+            <span>Transportista</span>
+            <select className="campo" value={d.transportista_id ?? ''}
+                    onChange={(e) => campo('transportista_id', e.target.value ? Number(e.target.value) : null)}>
+              <option value="">Sin asignar</option>
+              {transportistas.map((t) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+            </select>
+          </label>
+
+          <label className="form-campo">
+            <span>Vehículo</span>
+            <select className="campo" value={d.vehiculo_id ?? ''} data-error={error('vehiculo_id')}
+                    onChange={(e) => campo('vehiculo_id', e.target.value ? Number(e.target.value) : null)}>
+              <option value="">Sin asignar</option>
+              {vehiculos.map((v) => <option key={v.id} value={v.id}>{v.placa}</option>)}
+            </select>
+          </label>
+
+          <label className="form-campo">
+            <span>Conductor</span>
+            <select className="campo" value={d.conductor_id ?? ''}
+                    onChange={(e) => campo('conductor_id', e.target.value ? Number(e.target.value) : null)}>
+              <option value="">Sin asignar</option>
+              {conductores.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          </label>
+        </div>
+
+        {vencidos.length > 0 && (
+          <div className="form-consecuencia local" style={{ borderColor: 'var(--critico)', background: 'var(--critico-suave)' }}>
+            <Icono nombre="alerta" tamano={16} />
+            <span>
+              A <b>{vehiculo?.placa}</b> se le vence {vencidos.join(' y ')} antes del{' '}
+              {d.fecha_programada}. Un camión sin documentos en regla no puede salir.
+            </span>
+          </div>
         )}
       </fieldset>
 
