@@ -14,6 +14,8 @@ import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
 import { num, fecha, etiquetaEstado } from '@/lib/formato';
+import { Filtros } from '@/components/ui/Filtros';
+import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 
 export const metadata: Metadata = { title: 'Packing y estiba' };
 export const dynamic = 'force-dynamic';
@@ -21,19 +23,56 @@ export const dynamic = 'force-dynamic';
 export default async function PaginaPacking(props: PageProps<'/logistica/packing'>) {
   const q = await props.searchParams;
   const estado = (q.estado as string) ?? '';
+  const buscar = ((q.buscar as string) ?? '').trim();
+  const desde = (q.desde as string) ?? '';
+  const hasta = (q.hasta as string) ?? '';
   const supabase = await crearClienteServidor();
 
   let consulta = supabase
     .from('packing_lists')
     .select('id, codigo, contenedor, guia_remision, dam, fecha_carga, hora_inicio, hora_fin, turno, estado, filas_contenedor, sacos_por_fila, embarques(id, numero, almacenes(nombre), destinos(puerto))')
-    .order('fecha_carga', { ascending: false })
-    .limit(120);
+    .order('fecha_carga', { ascending: false, nullsFirst: true })
+    .limit(200);
   if (estado) consulta = consulta.eq('estado', estado);
+
+  /*
+   * El rango va sobre la FECHA DE CARGA, que es cuando se llenó el
+   * contenedor. Un packing recién creado todavía no la tiene, y por eso el
+   * orden pone los nulos primero: lo que se acaba de crear y aún no se cargó
+   * es justamente lo que se está buscando.
+   */
+  if (desde) consulta = consulta.gte('fecha_carga', desde);
+  if (hasta) consulta = consulta.lte('fecha_carga', hasta);
+
+  if (buscar) {
+    const limpio = buscar.replace(/[%,()]/g, ' ');
+    consulta = consulta.or(
+      `codigo.ilike.%${limpio}%,contenedor.ilike.%${limpio}%,` +
+      `guia_remision.ilike.%${limpio}%,precinto.ilike.%${limpio}%`
+    );
+  }
 
   const [{ data: filas }, { data: prod }] = await Promise.all([
     consulta,
     supabase.from('v_productividad_despacho').select('horas_carga, horas_objetivo, tm'),
   ]);
+
+  /** Conserva los filtros al cambiar de pestaña o pulsar un atajo. */
+  function enlace(cambios: Record<string, string>) {
+    const p = new URLSearchParams();
+    if (estado) p.set('estado', estado);
+    if (buscar) p.set('buscar', buscar);
+    if (desde) p.set('desde', desde);
+    if (hasta) p.set('hasta', hasta);
+    for (const [k, v] of Object.entries(cambios)) {
+      if (v) p.set(k, v);
+      else p.delete(k);
+    }
+    const t = p.toString();
+    return `/logistica/packing${t ? '?' + t : ''}`;
+  }
+
+  const hoy = hoyEnLima();
 
   const horas = (prod ?? []).map((p) => Number(p.horas_carga ?? 0)).filter((h) => h > 0);
   const promedio = horas.length ? horas.reduce((a, b) => a + b, 0) / horas.length : 0;
@@ -57,13 +96,33 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
 
       <Panel titulo={`${(filas ?? []).length} packing lists`}>
         <nav className="pestanas no-imprimir" style={{ padding: '.7rem 1rem 0', margin: 0 }}>
-          <Link href="/logistica/packing" className="pestana" data-activa={!estado ? 'si' : 'no'}>Todos</Link>
+          <Link href={enlace({ estado: '' })} className="pestana" data-activa={!estado ? 'si' : 'no'}>Todos</Link>
           {['abierto', 'en_carga', 'cerrado'].map((e) => (
-            <Link key={e} href={`/logistica/packing?estado=${e}`} className="pestana" data-activa={estado === e ? 'si' : 'no'}>
+            <Link key={e} href={enlace({ estado: e })} className="pestana" data-activa={estado === e ? 'si' : 'no'}>
               {etiquetaEstado(e)}
             </Link>
           ))}
         </nav>
+
+        <Filtros
+          campos={[
+            { tipo: 'texto', clave: 'buscar', etiqueta: 'Packing, contenedor o guía', ancho: '16rem' },
+            { tipo: 'fecha', clave: 'desde', etiqueta: 'Cargado desde' },
+            { tipo: 'fecha', clave: 'hasta', etiqueta: 'Cargado hasta' },
+          ]}
+        />
+
+        <div className="atajos-fecha">
+          <span>Rápido:</span>
+          <Link href={enlace({ estado: 'abierto', desde: '', hasta: '' })}>Sin cargar todavía</Link>
+          <Link href={enlace({ desde: hoy, hasta: hoy })}>Cargados hoy</Link>
+          <Link href={enlace({ desde: desplazarDias(hoy, -7), hasta: hoy })}>Últimos 7 días</Link>
+          {(buscar || desde || hasta) && (
+            <Link href={enlace({ buscar: '', desde: '', hasta: '' })} className="atajo-limpiar">
+              Quitar filtros
+            </Link>
+          )}
+        </div>
 
         {(filas ?? []).length === 0 ? (
           <Vacio titulo="Sin packing lists" mensaje="No hay contenedores con este estado." />

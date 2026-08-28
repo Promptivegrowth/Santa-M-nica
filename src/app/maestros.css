@@ -931,3 +931,13 @@ table.datos thead th small {
   margin-block-start: .1rem;
   max-width: 52ch;
 }
+
+
+/* El despacho, con sitio propio debajo de la cabecera. */
+.fila-despachar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .6rem;
+  margin-block-end: 1rem;
+}

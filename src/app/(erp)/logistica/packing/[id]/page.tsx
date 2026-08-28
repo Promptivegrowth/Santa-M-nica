@@ -105,8 +105,18 @@ export default async function PaginaPlano(props: PageProps<'/logistica/packing/[
           texto={String(pk.estado).replace('_', ' ')}
           tono={pk.estado === 'cerrado' ? 'ok' : 'atencion'}
         />
-        <BotonDespachar packingListId={packingId} puede={puedeDespachar} />
       </CabeceraPagina>
+
+      {/*
+        El botón de despachar y su panel van AQUÍ, debajo de la cabecera y a
+        lo ancho. Dentro de la botonera del título, el panel salía flotando
+        arriba a la derecha, encima del propio título y dejando medio ancho de
+        página en blanco: es una tabla de ocho datos con dos avisos, no cabe
+        en una fila de botones.
+      */}
+      <div className="fila-despachar no-imprimir">
+        <BotonDespachar packingListId={packingId} puede={puedeDespachar} />
+      </div>
 
       <Suspense fallback={<CargandoCuerpo />}>
         <CuerpoPlano packingId={packingId} pk={pk} puedeDespachar={puedeDespachar} />
