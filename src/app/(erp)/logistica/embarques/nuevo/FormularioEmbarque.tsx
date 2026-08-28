@@ -86,6 +86,15 @@ export function FormularioEmbarque({
   const elegidos = pedidos.filter((p) => d.pedidos.includes(p.id));
   const tmElegidas = elegidos.reduce((s, p) => s + p.tm_reservadas, 0);
 
+  /* Lo que de verdad se podrá cargar: solo lo que está en la bodega elegida. */
+  const tmCargables = elegidos.reduce(
+    (total, p) => total + p.bodegas
+      .filter((b) => b.almacen_id === d.almacen_id)
+      .reduce((k, b) => k + b.kg, 0) / 1000,
+    0
+  );
+  const nombreBodega = almacenes.find((a) => a.id === d.almacen_id)?.nombre ?? 'la bodega elegida';
+
   function enviar(e: React.FormEvent) {
     e.preventDefault();
     setProblema(null);
@@ -225,6 +234,7 @@ export function FormularioEmbarque({
                     <th>Proforma</th>
                     <th>Cliente</th>
                     <th>Destino</th>
+                    <th>Su stock está en</th>
                     <th className="num">Pedido</th>
                     <th className="num">Apartado</th>
                     <th className="num">Cobertura</th>
@@ -234,6 +244,18 @@ export function FormularioEmbarque({
                   {pedidos.map((p) => {
                     const cobertura = (p.tm_reservadas / (p.tm_pedidas || 1)) * 100;
                     const elegido = d.pedidos.includes(p.id);
+
+                    /*
+                     * Los kilos que SÍ se pueden cargar en este embarque son
+                     * solo los que están en la bodega de salida. El resto
+                     * necesita un traslado antes, y más vale saberlo ahora que
+                     * el día de la carga con el contenedor esperando.
+                     */
+                    const enEstaBodega = p.bodegas
+                      .filter((b) => b.almacen_id === d.almacen_id)
+                      .reduce((k, b) => k + b.kg, 0);
+                    const fuera = p.bodegas.filter((b) => b.almacen_id !== d.almacen_id);
+
                     return (
                       <tr key={p.id} data-elegido={elegido ? 'si' : 'no'}>
                         <td>
@@ -244,6 +266,20 @@ export function FormularioEmbarque({
                         <td className="mono">{p.numero}</td>
                         <td style={{ fontSize: '.78rem' }}>{p.cliente}</td>
                         <td style={{ fontSize: '.78rem' }}>{p.destino}</td>
+                        <td style={{ fontSize: '.74rem' }}>
+                          {p.bodegas.length === 0 ? '—' : p.bodegas.map((b) => (
+                            <span key={b.almacen_id} className="bodega-chip"
+                                  data-aqui={b.almacen_id === d.almacen_id ? 'si' : 'no'}>
+                              {b.nombre} · {cifra(b.kg / 1000, 2)} TM
+                            </span>
+                          ))}
+                          {elegido && fuera.length > 0 && (
+                            <span className="bodega-aviso">
+                              Desde esta bodega solo se podrán cargar {cifra(enEstaBodega / 1000, 2)} TM.
+                              El resto necesita un traslado.
+                            </span>
+                          )}
+                        </td>
                         <td className="num mono">{cifra(p.tm_pedidas)} TM</td>
                         <td className="num mono">{cifra(p.tm_reservadas)} TM</td>
                         <td className="num mono"
@@ -260,7 +296,12 @@ export function FormularioEmbarque({
             {elegidos.length > 0 && (
               <p className="form-pista">
                 <b>{elegidos.length} pedido{elegidos.length === 1 ? '' : 's'}</b> con{' '}
-                <b>{cifra(tmElegidas, 2)} TM</b> apartadas en total.
+                <b>{cifra(tmElegidas, 2)} TM</b> apartadas, de las cuales{' '}
+                <b>{cifra(tmCargables, 2)} TM</b> están en {nombreBodega} y se podrán cargar.
+                {tmElegidas - tmCargables > 0.005 && (
+                  <> Las otras {cifra(tmElegidas - tmCargables, 2)} TM están en otra bodega y
+                  necesitan un traslado antes.</>
+                )}
               </p>
             )}
           </>

@@ -722,3 +722,35 @@ tr.facturar-total th {
 .atajos-fecha a:hover { border-color: var(--acento); color: var(--acento); }
 .atajos-fecha a:focus-visible { outline: 2px solid var(--acento-2); outline-offset: 1px; }
 .atajos-fecha .atajo-limpiar { color: var(--critico); border-color: color-mix(in srgb, var(--critico) 35%, transparent); }
+
+
+/* --- Dónde está el stock de un pedido -------------------------------------
+   El error más caro al programar un embarque es elegir un pedido cuya
+   mercadería está en otra bodega: se descubre el día de la carga, con el
+   contenedor esperando. Aquí se ve antes de marcarlo: en verde lo que está en
+   la bodega de salida, apagado lo que no.
+   -------------------------------------------------------------------------- */
+.bodega-chip {
+  display: inline-block;
+  padding: .1rem .35rem;
+  margin: 0 .25rem .2rem 0;
+  border: 1px solid var(--linea);
+  border-radius: 2px;
+  font-size: .69rem;
+  color: var(--tinta-3);
+  background: var(--superficie-2);
+  white-space: nowrap;
+}
+.bodega-chip[data-aqui="si"] {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+  background: var(--ok-suave);
+  font-weight: 600;
+}
+.bodega-aviso {
+  display: block;
+  margin-block-start: .2rem;
+  font-size: .69rem;
+  line-height: 1.4;
+  color: var(--atencion);
+}

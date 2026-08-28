@@ -262,23 +262,37 @@ export type PedidoEmbarcable = {
   tm_pedidas: number;
   tm_reservadas: number;
   fecha_comprometida: string | null;
+  /**
+   * En qué bodegas está el stock que se le apartó, con sus kilos.
+   *
+   * Es lo que evita el error más caro de esta pantalla: un embarque sale de
+   * UNA bodega, y si el pedido tiene la mercadería repartida entre dos, solo
+   * se podrá cargar la parte que esté en la bodega elegida. El resto necesita
+   * un traslado antes, y eso se decide ahora, no el día de la carga.
+   */
+  bodegas: { almacen_id: number; nombre: string; kg: number }[];
 };
 
 export async function pedidosParaEmbarcar(almacenId: number): Promise<PedidoEmbarcable[]> {
   const supabase = await crearClienteServidor();
 
+  /*
+   * El filtro va EN LA CONSULTA, no después de traer las filas.
+   *
+   * Antes se pedían los 120 pedidos con la fecha comprometida más próxima y
+   * recién ahí se descartaban los que no tenían reserva. Con 436 pedidos en
+   * el sistema, uno creado hoy quedaba fuera de esos 120 y no aparecía nunca
+   * en esta lista, por mucho que estuviera cubierto al 50 %. El corte se
+   * comía justo lo que se acababa de apartar.
+   */
   const { data } = await supabase
     .from('v_pedidos_tablero')
     .select('id, numero_proforma, cliente, destino, tm_pedidas, tm_reservadas, fecha_comprometida')
+    .gt('tm_reservadas', 0)
     .order('fecha_comprometida', { ascending: true })
-    .limit(120);
+    .limit(300);
 
-  /*
-   * Se ofrecen los que tengan algo apartado: sin reserva no hay nada que
-   * cargar. Los que están al 100 % van primero, que son los que de verdad
-   * están listos para salir.
-   */
-  const conReserva = (data ?? []).filter((p) => Number(p.tm_reservadas ?? 0) > 0);
+  const conReserva = data ?? [];
 
   // Los que ya están en algún embarque no se vuelven a ofrecer.
   const { data: yaPuestos } = await supabase.from('embarque_pedidos').select('pedido_id');
@@ -287,8 +301,32 @@ export async function pedidosParaEmbarcar(almacenId: number): Promise<PedidoEmba
   const almacenNum = Number(almacenId);
   void almacenNum; // La bodega ya filtra los lotes; aquí solo se listan pedidos.
 
-  return conReserva
-    .filter((p) => !puestos.has(Number(p.id)))
+  const candidatos = conReserva.filter((p) => !puestos.has(Number(p.id)));
+  const ids = candidatos.map((p) => Number(p.id));
+
+  /* ---- Dónde está físicamente lo que se apartó a cada pedido ---- */
+  const { data: reservas } = ids.length
+    ? await supabase
+        .from('reservas')
+        .select('peso_neto_kg, almacen_id, almacenes(nombre), pedido_lineas!inner(pedido_id)')
+        .in('estado', ['activa', 'en_preparacion'])
+        .in('pedido_lineas.pedido_id', ids)
+    : { data: [] };
+
+  const porPedido = new Map<number, Map<number, { nombre: string; kg: number }>>();
+  for (const r of reservas ?? []) {
+    const pl = Array.isArray(r.pedido_lineas) ? r.pedido_lineas[0] : r.pedido_lineas;
+    const alm = Array.isArray(r.almacenes) ? r.almacenes[0] : r.almacenes;
+    const pedidoId = Number(pl?.pedido_id);
+    const almacen = Number(r.almacen_id);
+    if (!porPedido.has(pedidoId)) porPedido.set(pedidoId, new Map());
+    const mapa = porPedido.get(pedidoId)!;
+    const previo = mapa.get(almacen) ?? { nombre: String(alm?.nombre ?? '—'), kg: 0 };
+    previo.kg += Number(r.peso_neto_kg ?? 0);
+    mapa.set(almacen, previo);
+  }
+
+  return candidatos
     .map((p) => ({
       id: p.id as number,
       numero: p.numero_proforma as string,
@@ -297,6 +335,9 @@ export async function pedidosParaEmbarcar(almacenId: number): Promise<PedidoEmba
       tm_pedidas: Number(p.tm_pedidas ?? 0),
       tm_reservadas: Number(p.tm_reservadas ?? 0),
       fecha_comprometida: (p.fecha_comprometida as string) ?? null,
+      bodegas: [...(porPedido.get(Number(p.id)) ?? new Map()).entries()]
+        .map(([almacen_id, v]) => ({ almacen_id, nombre: v.nombre, kg: v.kg }))
+        .sort((a, b) => b.kg - a.kg),
     }))
     .sort((a, b) => (b.tm_reservadas / (b.tm_pedidas || 1)) - (a.tm_reservadas / (a.tm_pedidas || 1)));
 }
