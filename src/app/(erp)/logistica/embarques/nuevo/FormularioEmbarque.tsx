@@ -29,6 +29,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
 import { crearEmbarque, type DatosEmbarque, type PedidoEmbarcable } from '../acciones';
+import { consolidarEnBodega } from '@/app/(erp)/almacenes/traslados/acciones';
 
 const cifra = (n: number, d = 1) =>
   n.toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -68,6 +69,9 @@ export function FormularioEmbarque({
   });
 
   const [problema, setProblema] = useState<{ mensaje: string; campo?: string } | null>(null);
+  const [consolidando, iniciarConsolidacion] = useTransition();
+  const [consolidado, setConsolidado] =
+    useState<{ ok: boolean; texto: string; enlaces?: { id: number; numero: string }[] } | null>(null);
 
   function campo<K extends keyof DatosEmbarque>(k: K, v: DatosEmbarque[K]) {
     setD((p) => ({ ...p, [k]: v }));
@@ -133,15 +137,32 @@ export function FormularioEmbarque({
       kgPorBodega.set(b.almacen_id, (kgPorBodega.get(b.almacen_id) ?? 0) + b.kg);
     }
   }
-  const mejorBodega = [...kgPorBodega.entries()]
+  const opcionesBodega = [...kgPorBodega.entries()]
     .map(([almacen_id, kg]) => ({
       almacen_id, kg,
       nombre: almacenes.find((a) => a.id === almacen_id)?.nombre ?? '—',
     }))
-    .sort((a, b) => b.kg - a.kg)[0];
+    .sort((a, b) => b.kg - a.kg);
+  const mejorBodega = opcionesBodega[0];
 
   /** Lo que se quedaría en otra bodega y necesitaría un traslado. */
   const tmVaradas = tmElegidas - tmCargables;
+
+  /**
+   * Arma los traslados que hacen falta para poder cargarlo todo desde la
+   * bodega elegida. Es la salida al problema, no solo el aviso de que existe.
+   */
+  function consolidar() {
+    setConsolidado(null);
+    iniciarConsolidacion(async () => {
+      const r = await consolidarEnBodega(d.pedidos, d.almacen_id);
+      setConsolidado({
+        ok: r.ok,
+        texto: r.mensaje,
+        enlaces: r.ok ? r.traslados.map((t) => ({ id: t.id, numero: t.numero })) : undefined,
+      });
+    });
+  }
 
   function enviar(e: React.FormEvent) {
     e.preventDefault();
@@ -194,7 +215,7 @@ export function FormularioEmbarque({
                     <th>Destino</th>
                     <th>
                       Dónde está lo apartado
-                      <small>verde = se puede cargar</small>
+                      <small>al marcar, dice cuál sube</small>
                     </th>
                     <th className="num">
                       Pidió
@@ -237,24 +258,32 @@ export function FormularioEmbarque({
                         <td style={{ fontSize: '.78rem' }}>{p.cliente}</td>
                         <td style={{ fontSize: '.78rem' }}>{p.destino}</td>
                         <td style={{ fontSize: '.74rem' }}>
+                          {/*
+                            Los chips solo se marcan como «sube» o «se queda»
+                            cuando ESA fila está elegida. Antes se marcaban
+                            todas contra la bodega por defecto, que era la
+                            primera alfabéticamente y casi nunca tenía nada:
+                            la tabla entera salía tachada antes de que el
+                            usuario hiciera nada, y parecía que no funcionaba.
+                          */}
                           {p.bodegas.length === 0 ? '—' : p.bodegas.map((b) => {
                             const cargable = b.almacen_id === d.almacen_id;
                             return (
                               <span key={b.almacen_id} className="bodega-chip"
-                                    data-aqui={cargable ? 'si' : 'no'}
-                                    title={cargable
-                                      ? 'Está en la bodega de salida: sube al contenedor'
-                                      : 'Está en otra bodega: no sube a este contenedor'}>
+                                    data-aqui={!elegido ? 'neutro' : cargable ? 'si' : 'no'}
+                                    title={!elegido
+                                      ? `${cifra(b.kg / 1000, 2)} TM apartadas en ${b.nombre}`
+                                      : cargable
+                                        ? 'Está en la bodega de salida: sube al contenedor'
+                                        : 'Está en otra bodega: no sube a este contenedor'}>
                                 {b.nombre} · {cifra(b.kg / 1000, 2)} TM
-                                <i>{cargable ? 'sube' : 'se queda'}</i>
+                                {elegido && <i>{cargable ? 'sube' : 'se queda'}</i>}
                               </span>
                             );
                           })}
                           {elegido && fuera.length > 0 && (
                             <span className="bodega-aviso">
-                              El camión carga en {nombreBodega}: suben {cifra(enEstaBodega / 1000, 2)} TM.
-                              Las otras {cifra((p.tm_reservadas * 1000 - enEstaBodega) / 1000, 2)} TM
-                              se quedan donde están.
+                              Suben {cifra(enEstaBodega / 1000, 2)} TM desde {nombreBodega}.
                             </span>
                           )}
                         </td>
@@ -271,35 +300,102 @@ export function FormularioEmbarque({
               </table>
             </div>
 
-            {tmVaradas > 0.005 && (
-              <div className="varado">
-                <Icono nombre="alerta" tamano={16} />
-                <span>
-                  <b>{cifra(tmVaradas, 2)} TM se quedarían en tierra.</b> El contenedor se carga en
-                  una sola bodega —{nombreBodega}—, y esa mercadería está en otra: cuando el camión
-                  esté en el muelle, esos kilos seguirán donde están. Hay dos salidas y las dos son
-                  válidas:
-                  <ul>
-                    <li>
-                      <b>Despachar parcial:</b> sale lo que está en {nombreBodega} y el resto en el
-                      próximo embarque. Es lo normal cuando son pocos kilos.
-                    </li>
-                    <li>
-                      <b>Trasladar primero:</b> mover esa mercadería a {nombreBodega} y cargar todo
-                      junto. Cuesta un camión y medio día, así que compensa cuando son toneladas.{' '}
-                      <Link href="/almacenes/traslados">Ir a traslados</Link>
-                    </li>
-                  </ul>
-                </span>
-              </div>
-            )}
-
             {elegidos.length > 0 && (
-              <p className="form-pista">
-                <b>{elegidos.length} pedido{elegidos.length === 1 ? '' : 's'}</b> ·{' '}
-                <b>{cifra(tmElegidas, 2)} TM</b> apartadas en total ·{' '}
-                <b>{cifra(tmCargables, 2)} TM</b> suben al contenedor desde {nombreBodega}.
-              </p>
+              <div className="decision">
+                <div className="decision-cab">
+                  <strong>Desde qué bodega conviene salir</strong>
+                  <span>
+                    {elegidos.length} pedido{elegidos.length === 1 ? '' : 's'} ·{' '}
+                    {cifra(tmElegidas, 2)} TM apartadas en total
+                  </span>
+                </div>
+
+                {/*
+                  Cada bodega con lo que se cargaría desde ella. Elegir es un
+                  clic aquí, no bajar al desplegable: esta es LA decisión de
+                  la pantalla y merece estar donde se toma.
+                */}
+                <ul className="decision-bodegas">
+                  {opcionesBodega.map((o) => {
+                    const pct = tmElegidas > 0 ? (o.kg / 1000 / tmElegidas) * 100 : 0;
+                    const activa = o.almacen_id === d.almacen_id;
+                    return (
+                      <li key={o.almacen_id}>
+                        <button type="button" data-activa={activa ? 'si' : 'no'}
+                                onClick={() => { setBodegaTocada(true); campo('almacen_id', o.almacen_id); }}>
+                          <span className="dec-nombre">{o.nombre}</span>
+                          <span className="dec-kg">{cifra(o.kg / 1000, 2)} TM</span>
+                          <span className="dec-barra">
+                            <i style={{ width: `${Math.max(3, pct)}%` }} />
+                          </span>
+                          <span className="dec-pct">{cifra(pct, 0)} %</span>
+                          {activa && <span className="dec-marca">Elegida</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {tmVaradas > 0.005 ? (
+                  <div className="decision-falta">
+                    <p>
+                      <b>Quedan {cifra(tmVaradas, 2)} TM en otra bodega.</b> El contenedor se carga
+                      en una sola —{nombreBodega}—, así que cuando el camión esté en el muelle esos
+                      kilos seguirán donde están. Dos salidas, las dos válidas:
+                    </p>
+                    <div className="decision-opciones">
+                      <div>
+                        <b>Despachar parcial</b>
+                        <small>
+                          Salen {cifra(tmCargables, 2)} TM ahora y el resto en el próximo embarque.
+                          Es lo normal cuando son pocos kilos: mover mercadería cuesta un camión y
+                          medio día.
+                        </small>
+                        <span className="decision-nada">No hay que hacer nada: siga programando.</span>
+                      </div>
+                      <div>
+                        <b>Consolidar primero</b>
+                        <small>
+                          Junta esas {cifra(tmVaradas, 2)} TM en {nombreBodega} y sale todo en un
+                          solo contenedor. Compensa cuando son toneladas.
+                        </small>
+                        <button type="button" className="btn btn-secundario btn-chico"
+                                onClick={consolidar} disabled={consolidando}>
+                          <Icono nombre="traslados" tamano={14} />
+                          {consolidando ? 'Armando…' : `Armar el traslado de ${cifra(tmVaradas, 2)} TM`}
+                        </button>
+                      </div>
+                    </div>
+
+                    {consolidado && (
+                      <div className={`ficha-aviso ${consolidado.ok ? 'ficha-aviso-info' : 'ficha-aviso-critico'}`}
+                           role={consolidado.ok ? 'status' : 'alert'}>
+                        <Icono nombre="alerta" tamano={16} />
+                        <span>
+                          {consolidado.texto}
+                          {consolidado.enlaces?.length ? (
+                            <>
+                              {' '}
+                              {consolidado.enlaces.map((t) => (
+                                <Link key={t.id} href={`/almacenes/traslados/${t.id}`}
+                                      style={{ marginInlineEnd: '.5rem' }}>
+                                  {t.numero}
+                                </Link>
+                              ))}
+                            </>
+                          ) : null}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="decision-completo">
+                    <Icono nombre="ingresos" tamano={15} />
+                    Todo lo apartado está en {nombreBodega}: suben las {cifra(tmCargables, 2)} TM
+                    completas.
+                  </p>
+                )}
+              </div>
             )}
           </>
         )}

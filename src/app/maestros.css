@@ -808,5 +808,100 @@ table.datos thead th small {
   margin-inline-start: .3rem;
   opacity: .85;
 }
+.bodega-chip[data-aqui="neutro"] { color: var(--tinta-2); }
 .bodega-chip[data-aqui="no"] { text-decoration: line-through; text-decoration-thickness: 1px; }
 .bodega-chip[data-aqui="no"] i { text-decoration: none; display: inline-block; }
+
+
+/* ===========================================================================
+   EL PANEL DE DECISIÓN DEL EMBARQUE
+   ===========================================================================
+   Elegir la bodega de salida es LA decisión de esta pantalla, y estaba
+   escondida en un desplegable entre otros seis campos. Aquí sube al sitio
+   donde se toma —justo debajo de los pedidos elegidos— con las cifras que la
+   sustentan: cuánto se cargaría desde cada una.
+
+   Y cuando queda mercadería fuera, no basta con avisar: se ofrecen las dos
+   salidas con su criterio, y la que exige trabajo lleva el botón que lo hace.
+   Un enlace a la lista de traslados obligaba a averiguar otra vez qué lotes,
+   de qué bodega y cuántos kilos; el sistema ya lo sabe.
+   =========================================================================== */
+
+.decision {
+  margin-block-start: .9rem;
+  border: 1px solid var(--acento);
+  border-radius: 4px;
+  background: var(--superficie);
+  overflow: hidden;
+}
+
+.decision-cab {
+  padding: .65rem .85rem;
+  background: var(--acento-suave);
+  border-block-end: 1px solid var(--linea);
+}
+.decision-cab strong { display: block; font-size: .92rem; color: var(--tinta); }
+.decision-cab span { display: block; font-size: .78rem; color: var(--tinta-2); margin-block-start: .1rem; }
+
+.decision-bodegas { list-style: none; margin: 0; padding: 0; }
+.decision-bodegas li { border-block-end: 1px solid var(--linea); }
+.decision-bodegas button {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.4fr) 5.5rem minmax(4rem, 1fr) 3rem auto;
+  align-items: center;
+  gap: .7rem;
+  width: 100%;
+  padding: .5rem .85rem;
+  font: inherit;
+  text-align: start;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background .12s;
+}
+.decision-bodegas button:hover { background: var(--superficie-2); }
+.decision-bodegas button:focus-visible { outline: 2px solid var(--acento-2); outline-offset: -2px; }
+.decision-bodegas button[data-activa="si"] { background: var(--acento-suave); }
+
+.dec-nombre { font-size: .85rem; color: var(--tinta); font-weight: 500; }
+.dec-kg {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: .84rem; font-weight: 600; text-align: end; color: var(--tinta);
+}
+.dec-barra { height: 6px; background: var(--linea); border-radius: 3px; overflow: hidden; }
+.dec-barra i { display: block; height: 100%; background: var(--acento); border-radius: 3px; }
+.dec-pct {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: .76rem; color: var(--tinta-3); text-align: end;
+}
+.dec-marca {
+  font-size: .62rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--acento); white-space: nowrap;
+}
+
+.decision-falta { padding: .75rem .85rem; background: var(--atencion-suave); }
+.decision-falta > p { margin: 0 0 .7rem; font-size: .84rem; line-height: 1.5; color: var(--tinta-2); }
+.decision-falta > p b { color: var(--tinta); }
+
+.decision-opciones {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: .6rem;
+}
+.decision-opciones > div {
+  display: flex; flex-direction: column; gap: .35rem;
+  padding: .65rem .75rem;
+  background: var(--superficie);
+  border: 1px solid var(--linea);
+  border-radius: 3px;
+}
+.decision-opciones b { font-size: .85rem; color: var(--tinta); }
+.decision-opciones small { font-size: .77rem; line-height: 1.45; color: var(--tinta-3); }
+.decision-opciones .btn { align-self: flex-start; }
+.decision-nada { font-size: .74rem; color: var(--ok); font-weight: 600; }
+
+.decision-completo {
+  display: flex; align-items: center; gap: .45rem;
+  margin: 0; padding: .65rem .85rem;
+  font-size: .84rem; color: var(--ok); background: var(--ok-suave);
+}
