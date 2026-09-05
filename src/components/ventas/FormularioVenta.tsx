@@ -111,6 +111,7 @@ export type DatosEdicion = {
   tipo_cambio: number;
   incoterm: 'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP';
   validez_dias: number;
+  prioridad?: 'baja' | 'normal' | 'alta' | 'urgente';
   observaciones: string | null;
   /** Lo que tenía guardado; se respeta tal cual al reabrir el documento. */
   contacto?: ContactoDocumento;
@@ -219,7 +220,8 @@ export function FormularioVenta({
 
   /* ---- Solo pedido ---- */
   const [ocCliente, setOcCliente] = useState('');
-  const [prioridad, setPrioridad] = useState<'baja' | 'normal' | 'alta' | 'urgente'>('normal');
+  const [prioridad, setPrioridad] =
+    useState<'baja' | 'normal' | 'alta' | 'urgente'>(edicion?.prioridad ?? 'normal');
   const [fechaSolicitada, setFechaSolicitada] = useState(hoyISO());
   const [fechaComprometida, setFechaComprometida] = useState(enDiasISO(21));
 
@@ -528,6 +530,8 @@ export function FormularioVenta({
             vendedor_id: vendedorId ? Number(vendedorId) : null,
             destino_id: destinoId ? Number(destinoId) : null,
             lista_id: listaId ? Number(listaId) : null,
+            // La urgencia se pacta al cotizar y viaja al pedido al convertir.
+            prioridad,
             moneda,
             tipo_cambio: tipoCambio,
             incoterm,
@@ -559,6 +563,8 @@ export function FormularioVenta({
             vendedor_id: vendedorId ? Number(vendedorId) : null,
             destino_id: destinoId ? Number(destinoId) : null,
             lista_id: listaId ? Number(listaId) : null,
+            // La urgencia se pacta al cotizar y viaja al pedido al convertir.
+            prioridad,
             moneda,
             tipo_cambio: tipoCambio,
             incoterm,
@@ -748,9 +754,31 @@ export function FormularioVenta({
             </label>
           )}
 
+          {/*
+            La prioridad se marca en LOS DOS documentos, no solo en el pedido.
+            La urgencia se conoce al cotizar —«lo necesito ya y te pago el
+            100 %», que fue el ejemplo que puso el cliente— y al convertir la
+            oferta en proforma viaja con ella. Antes se perdía justo en el
+            documento que compromete la entrega.
+          */}
+          <label className="form-campo">
+            <span className="etiqueta">Prioridad</span>
+            <select
+              className="campo"
+              value={prioridad}
+              onChange={(e) => setPrioridad(e.target.value as typeof prioridad)}
+            >
+              <option value="baja">Baja</option>
+              <option value="normal">Normal</option>
+              <option value="alta">Alta</option>
+              <option value="urgente">Urgente</option>
+            </select>
+            {!esPedido && <small>Se conserva al convertir la cotización en pedido.</small>}
+          </label>
+
           {esPedido && (
             <>
-              <label className="form-campo">
+              <label className="form-campo" hidden>
                 <span className="etiqueta">Prioridad</span>
                 <select
                   className="campo"

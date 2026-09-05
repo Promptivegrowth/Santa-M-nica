@@ -46,7 +46,7 @@ export default async function PaginaEditarCotizacion(
   const [{ data: cot }, { data: lineas }, { data: pedido }, { data: cuentas }] = await Promise.all([
     supabase
       .from('cotizaciones')
-      .select('id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, observaciones, contacto_id, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email')
+      .select('id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, prioridad, observaciones, contacto_id, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email')
       .eq('id', cotId)
       .single(),
     supabase
@@ -79,6 +79,7 @@ export default async function PaginaEditarCotizacion(
     tipo_cambio: Number(cot.tipo_cambio),
     incoterm: cot.incoterm as DatosEdicion['incoterm'],
     validez_dias: Number(cot.validez_dias ?? 15),
+    prioridad: (cot.prioridad as 'baja' | 'normal' | 'alta' | 'urgente') ?? 'normal',
     observaciones: (cot.observaciones as string) ?? null,
     // Se recupera tal cual estaba: al reabrir un documento no se le cambia el
     // contacto por debajo, porque quizá ya se envió con ese.

@@ -37,6 +37,8 @@ export type DatosCotizacion = {
   lista_id: number | null;
   moneda: 'USD' | 'PEN';
   tipo_cambio: number;
+  /** Urgencia pactada con el cliente. Viaja al pedido al convertir. */
+  prioridad: 'baja' | 'normal' | 'alta' | 'urgente';
   incoterm: 'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP';
   validez_dias: number;
   observaciones: string | null;
@@ -196,6 +198,7 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
       lista_id: datos.lista_id,
       moneda: datos.moneda,
       tipo_cambio: datos.tipo_cambio,
+      prioridad: datos.prioridad ?? 'normal',
       incoterm: datos.incoterm,
       validez_dias: datos.validez_dias,
       observaciones: datos.observaciones,
@@ -250,6 +253,82 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
 /* ==========================================================================
    CAMBIAR EL ESTADO DE UNA COTIZACIÓN
    ========================================================================== */
+/* ==========================================================================
+   APROBAR LA OFERTA
+   --------------------------------------------------------------------------
+   Se pidió en la reunión: una cotización no sale al cliente sin que alguien
+   con autoridad haya visto el precio. Es el único dato del documento que la
+   empresa no puede deshacer una vez que el cliente lo tiene delante.
+
+   QUIÉN APRUEBA
+   Gerencia. Y no Comercial, aunque Comercial sea quien más sabe del precio:
+   si quien redacta la oferta es también quien la autoriza, el control no
+   existe. Es la razón de ser de una aprobación.
+   ========================================================================== */
+
+/** Los roles que pueden dar el visto bueno a una oferta. */
+const PUEDEN_APROBAR = ['gerencia'];
+
+/** ¿La aprobación es obligatoria? Lo decide Configuración, no el código. */
+export async function aprobacionObligatoria(): Promise<boolean> {
+  const supabase = await crearClienteServidor();
+  const { data } = await supabase
+    .from('parametros').select('valor').eq('clave', 'cotizacion_requiere_aprobacion').maybeSingle();
+  // Ante la duda, se exige: es el lado seguro de la decisión.
+  return (data?.valor ?? 'si').toLowerCase() !== 'no';
+}
+
+export async function aprobarCotizacion(id: number): Promise<Resultado> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
+
+  if (!PUEDEN_APROBAR.includes(usuario.rol)) {
+    return {
+      ok: false,
+      mensaje:
+        `Su rol (${usuario.rol}) no puede aprobar cotizaciones. ` +
+        'La aprobación corresponde a Gerencia: si quien redacta la oferta fuera también quien la autoriza, el control no serviría de nada.',
+    };
+  }
+
+  const supabase = await crearClienteServidor();
+  const { data: cot } = await supabase
+    .from('cotizaciones')
+    .select('numero, estado, aprobada_en, cotizacion_lineas(id)')
+    .eq('id', id).maybeSingle();
+
+  if (!cot) return { ok: false, mensaje: 'Esa cotización ya no existe.' };
+  if (cot.estado !== 'borrador') {
+    return { ok: false, mensaje: `${cot.numero} ya pasó de borrador: está ${cot.estado}.` };
+  }
+  // Aprobar una oferta vacía no significa nada.
+  if (!(cot.cotizacion_lineas ?? []).length) {
+    return { ok: false, mensaje: 'La cotización no tiene líneas de producto: no hay precio que aprobar.' };
+  }
+
+  const { error } = await supabase
+    .from('cotizaciones')
+    .update({ estado: 'aprobada', aprobada_por: usuario.id, aprobada_en: new Date().toISOString() })
+    .eq('id', id);
+
+  if (error) return { ok: false, mensaje: `No se pudo aprobar: ${error.message}` };
+
+  await supabase.rpc('registrar_evento', {
+    p_entidad: 'cotizaciones',
+    p_entidad_id: id,
+    p_tipo: 'cotizacion_aprobada',
+    p_descripcion: `${usuario.nombre} aprobó la cotización ${cot.numero}. Ya se puede enviar al cliente.`,
+    p_severidad: 'info',
+  }).then(() => undefined, () => undefined);
+
+  revalidatePath('/ventas/cotizaciones');
+  revalidatePath(`/ventas/cotizaciones/${id}`);
+  return {
+    ok: true, id, numero: cot.numero as string,
+    mensaje: `${cot.numero} aprobada. Ya se puede enviar al cliente.`,
+  };
+}
+
 export async function cambiarEstadoCotizacion(
   id: number,
   estado: 'borrador' | 'enviada' | 'aceptada' | 'rechazada' | 'vencida'
@@ -258,12 +337,35 @@ export async function cambiarEstadoCotizacion(
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
 
   const supabase = await crearClienteServidor();
+
+  /*
+   * EL CONTROL DE VERDAD ESTÁ AQUÍ, NO EN EL BOTÓN.
+   *
+   * La botonera no ofrece «enviar» sin aprobación, pero esta función es
+   * pública y se puede llamar de otras formas. Si la comprobación viviera
+   * solo en la pantalla, el control sería decorativo.
+   */
+  if (estado === 'enviada' && (await aprobacionObligatoria())) {
+    const { data: previa } = await supabase
+      .from('cotizaciones').select('numero, aprobada_en').eq('id', id).maybeSingle();
+
+    if (previa && !previa.aprobada_en) {
+      return {
+        ok: false,
+        mensaje:
+          `${previa.numero} todavía no está aprobada, así que no puede salir al cliente. ` +
+          'Pídale a Gerencia que revise el precio.',
+      };
+    }
+  }
+
   const { data, error } = await supabase
     .from('cotizaciones').update({ estado }).eq('id', id).select('numero').single();
 
   if (error) return { ok: false, mensaje: `No se pudo actualizar: ${error.message}` };
 
   revalidatePath('/ventas/cotizaciones');
+  revalidatePath(`/ventas/cotizaciones/${id}`);
   return { ok: true, id, numero: data.numero as string, mensaje: `Cotización marcada como ${estado}.` };
 }
 
@@ -345,7 +447,9 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
       tipo_despacho: cot.incoterm === 'EXW' ? 'mercado_nacional' : 'exportacion',
       dias_credito: cliente?.dias_credito ?? 0,
       condicion_pago: (cliente?.dias_credito ?? 0) > 0 ? `Crédito ${cliente?.dias_credito} días` : 'Contado',
-      prioridad: 'normal',
+      // La urgencia se pactó con el cliente al cotizar; sería absurdo perderla
+      // justo en el documento que compromete la entrega.
+      prioridad: cot.prioridad ?? 'normal',
       fecha_solicitada: hoy,
       fecha_comprometida: comprometida,
       ciclo: 'pendiente_validacion',
@@ -554,6 +658,7 @@ export async function actualizarCotizacion(
       lista_id: datos.lista_id,
       moneda: datos.moneda,
       tipo_cambio: datos.tipo_cambio,
+      prioridad: datos.prioridad ?? 'normal',
       incoterm: datos.incoterm,
       validez_dias: datos.validez_dias,
       observaciones: datos.observaciones,

@@ -1,0 +1,21 @@
+-- ============================================================================
+--  023 · UN ESTADO NUEVO PARA LA COTIZACIÓN: «APROBADA»
+-- ============================================================================
+--  Va en su propio archivo, y no junto al resto del cambio, por una razón
+--  técnica de PostgreSQL: un valor añadido a un tipo enumerado no se puede
+--  USAR dentro de la misma transacción en que se declara. Si se mezclara con
+--  las funciones y los filtros que ya lo mencionan, la migración fallaría.
+--
+--  POR QUÉ HACE FALTA EL ESTADO
+--  Hasta ahora la cotización pasaba de «borrador» a «enviada» sin que nadie
+--  diera el visto bueno. Se pidió en la reunión que una oferta no salga al
+--  cliente sin aprobación: el precio es lo único que la empresa no puede
+--  deshacer después.
+--
+--  El recorrido queda así:
+--
+--      borrador → aprobada → enviada → aceptada
+--                                    ↘ rechazada
+--                                    ↘ vencida
+-- ============================================================================
+alter type estado_cotizacion add value if not exists 'aprobada' after 'borrador';

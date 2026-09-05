@@ -160,7 +160,13 @@ async function CuerpoPedido({
   const [{ data: cabecera }, { data: filasCuentas }] = await Promise.all([
     supabase
       .from('pedidos')
-      .select('contacto_nombre, contacto_cargo, contacto_telefono, contacto_email')
+      /*
+       * Se trae también de qué cotización nació. Se pidió expresamente en la
+       * reunión: desde la cotización ya se veía el pedido, pero no al revés,
+       * y quien abre una proforma necesita poder volver a la oferta que la
+       * originó —es donde está la negociación—.
+       */
+      .select('contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, cotizacion_id, cotizaciones(numero, fecha, estado)')
       .eq('id', pedidoId)
       .single(),
     supabase
@@ -172,6 +178,7 @@ async function CuerpoPedido({
   // `?? {}` deja el tipo en objeto vacío y TypeScript no encuentra los campos;
   // se declara lo que de verdad llega.
   const contacto = (cabecera ?? {}) as Record<string, string | null>;
+  const origen = uno<Record<string, unknown>>(cabecera?.cotizaciones);
   const cuentasDoc = (filasCuentas ?? [])
     .map((f) => uno<Record<string, unknown>>(f.cuentas_bancarias))
     .filter(Boolean)
@@ -258,6 +265,27 @@ async function CuerpoPedido({
               <div><dt>Incoterm</dt><dd>{pedido.incoterm}</dd></div>
               <div><dt>Moneda</dt><dd>{moneda} · TC {num(Number(pedido.tipo_cambio), 2)}</dd></div>
               <div><dt>Prioridad</dt><dd><Etiqueta texto={etiquetaEstado(pedido.prioridad as string)} tono={pedido.prioridad === 'urgente' ? 'critico' : 'neutro'} /></dd></div>
+              {/*
+                De dónde vino. Un pedido nacido de una oferta enlaza con ella;
+                uno directo lo dice, que también es información: significa que
+                no hubo negociación previa y por tanto no entra en el ratio de
+                conversión comercial.
+              */}
+              <div>
+                <dt>Origen</dt>
+                <dd>
+                  {origen ? (
+                    <Link
+                      href={`/ventas/cotizaciones/${cabecera?.cotizacion_id}`}
+                      className="enlace-dato mono"
+                    >
+                      {String(origen.numero)}
+                    </Link>
+                  ) : (
+                    <span style={{ color: 'var(--tinta-3)' }}>Pedido directo, sin cotización previa</span>
+                  )}
+                </dd>
+              </div>
             </dl>
           </Panel>
 

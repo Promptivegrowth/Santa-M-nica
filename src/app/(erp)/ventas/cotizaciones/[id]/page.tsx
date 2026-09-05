@@ -20,9 +20,10 @@ import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
 import { EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { AccionesFicha } from './AccionesFicha';
+import { aprobacionObligatoria } from '../acciones';
 import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { Icono } from '@/components/estructura/Icono';
-import { fecha, num, dinero, pct, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
+import { fecha, fechaHora, num, dinero, pct, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
 
@@ -103,10 +104,10 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
    * botones de editar y eliminar salen activos o apagados. Son dos consultas
    * ligeras, ambas por clave.
    */
-  const [{ data: cot }, { data: pedido }] = await Promise.all([
+  const [{ data: cot }, { data: pedido }, requiereAprobacion] = await Promise.all([
     supabase
       .from('cotizaciones')
-      .select('*, clientes(id, razon_social, pais, moneda, bloqueado), vendedores(nombre), destinos(puerto, pais), listas_precio(nombre), usuarios!cotizaciones_creado_por_fkey(nombre)')
+      .select('*, clientes(id, razon_social, pais, moneda, bloqueado), vendedores(nombre), destinos(puerto, pais), listas_precio(nombre), usuarios!cotizaciones_creado_por_fkey(nombre), aprobador:usuarios!cotizaciones_aprobada_por_fkey(nombre)')
       .eq('id', cotId)
       .single(),
     supabase
@@ -114,11 +115,14 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
       .select('id, numero_proforma, ciclo')
       .eq('cotizacion_id', cotId)
       .maybeSingle(),
+    aprobacionObligatoria(),
   ]);
 
   if (!cot) notFound();
 
   const estado = cot.estado as string;
+  const aprobada = Boolean(cot.aprobada_en);
+  const puedeAprobar = (usuario?.rol ?? '') === 'gerencia';
 
   return (
     <>
@@ -135,9 +139,41 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
             numero={cot.numero as string}
             estado={estado}
             yaConvertida={!!pedido}
+            aprobada={aprobada}
+            requiereAprobacion={requiereAprobacion}
+            puedeAprobar={puedeAprobar}
           />
         )}
       </CabeceraPagina>
+
+      {/*
+        El estado de la firma se dice ANTES de que el usuario baje a mirar el
+        documento: si está esperando aprobación, eso es lo único que importa
+        de esta pantalla ahora mismo.
+      */}
+      {estado === 'borrador' && requiereAprobacion && !aprobada && (
+        <div className="ficha-aviso ficha-aviso-atencion" role="status">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>Esperando aprobación.</strong> Esta oferta no puede salir al cliente hasta que
+            Gerencia autorice el precio.{' '}
+            {puedeAprobar
+              ? 'Use el botón «Aprobar» de arriba.'
+              : 'Avise a Gerencia para que la revise.'}
+          </span>
+        </div>
+      )}
+
+      {aprobada && ['aprobada', 'enviada'].includes(estado) && (
+        <div className="ficha-aviso ficha-aviso-ok" role="status">
+          <Icono nombre="guardar" tamano={17} />
+          <span>
+            Aprobada por <strong>{campo(cot.aprobador, 'nombre', 'Gerencia')}</strong> el{' '}
+            {fechaHora(cot.aprobada_en as string)}.
+            {estado === 'aprobada' && ' Ya se puede enviar al cliente.'}
+          </span>
+        </div>
+      )}
 
       <Suspense fallback={<CargandoCuerpo />}>
         <CuerpoCotizacion cotId={cotId} cot={cot} pedido={pedido} />

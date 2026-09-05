@@ -430,23 +430,46 @@ export async function sembrarOperacion(ctx) {
   for (let i = 1; i <= 140; i++) {
     const c = elegir(clientesDb);
     const nac = c.pais === 'Perú';
+    /*
+     * LA FECHA TIENE QUE CUADRAR CON EL ESTADO.
+     *
+     * Antes se elegían por separado —estado al azar, fecha entre 1 y 200 días
+     * atrás— y con 15 días de validez el resultado era que TODAS las ofertas
+     * «enviada» nacían ya caducadas. La pantalla de cotizaciones se quedaba
+     * sin una sola oferta vigente que enseñar.
+     *
+     * Una oferta que sigue esperando respuesta es, por definición, reciente.
+     * Una cerrada puede ser de cuando sea.
+     */
+    const estadoCot = elegir([
+      'borrador', 'enviada', 'enviada', 'aceptada', 'aceptada', 'aceptada', 'rechazada', 'vencida',
+    ]);
+    const validezCot = 15;
+    const fechaCot = estadoCot === 'enviada'
+      // Dentro de su plazo: unas holgadas, otras a punto de caducar.
+      ? fechaMenos(entero(1, validezCot - 1))
+      : estadoCot === 'borrador'
+        ? fechaMenos(entero(0, 20))
+        : fechaMenos(entero(20, 200));
+
     cotizaciones.push({
       numero: `COT-2026-${String(i).padStart(4, '0')}`,
       cliente_id: c.id,
       vendedor_id: elegir(vendDb).id,
-      estado: elegir(['borrador', 'enviada', 'enviada', 'aceptada', 'aceptada', 'aceptada', 'rechazada', 'vencida']),
+      estado: estadoCot,
       moneda: nac ? 'PEN' : 'USD',
       // Soles por dólar, SIEMPRE, sea cual sea la moneda del documento.
       tipo_cambio: TIPO_CAMBIO,
       incoterm: nac ? 'EXW' : elegir(['FOB', 'FOB', 'CFR', 'CIF']),
       destino_id: elegir(destinosDb).id,
       lista_id: nac ? listaNac : listaFob,
-      fecha: fechaMenos(entero(1, 200)),
+      prioridad: elegir(['baja', 'normal', 'normal', 'normal', 'alta', 'urgente']),
+      fecha: fechaCot,
       creado_por: uComercial,
     });
   }
   await insertarLote('cotizaciones',
-    ['numero', 'cliente_id', 'vendedor_id', 'estado', 'moneda', 'tipo_cambio', 'incoterm',
+    ['numero', 'cliente_id', 'vendedor_id', 'estado', 'moneda', 'tipo_cambio', 'incoterm', 'prioridad',
      'destino_id', 'lista_id', 'fecha', 'creado_por'],
     cotizaciones);
   const cotDb = await consultar('select id, cliente_id, moneda, incoterm, destino_id, estado, fecha from cotizaciones order by id');

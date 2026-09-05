@@ -16,7 +16,9 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { convertirEnPedido, eliminarCotizacion, cambiarEstadoCotizacion } from '../acciones';
+import {
+  convertirEnPedido, eliminarCotizacion, cambiarEstadoCotizacion, aprobarCotizacion,
+} from '../acciones';
 import { Icono } from '@/components/estructura/Icono';
 
 export function AccionesFicha({
@@ -24,19 +26,35 @@ export function AccionesFicha({
   numero,
   estado,
   yaConvertida,
+  aprobada,
+  requiereAprobacion,
+  puedeAprobar,
 }: {
   cotizacionId: number;
   numero: string;
   estado: string;
   yaConvertida: boolean;
+  /** ¿Ya tiene la firma de Gerencia? */
+  aprobada: boolean;
+  /** ¿La empresa exige esa firma? Se configura, no está en el código. */
+  requiereAprobacion: boolean;
+  /** ¿El usuario que está mirando puede darla? */
+  puedeAprobar: boolean;
 }) {
   const router = useRouter();
   const [confirmando, setConfirmando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendiente, iniciar] = useTransition();
 
-  const editable = !yaConvertida && ['borrador', 'enviada'].includes(estado);
+  const editable = !yaConvertida && ['borrador', 'aprobada', 'enviada'].includes(estado);
   const convertible = !yaConvertida && !['rechazada', 'vencida'].includes(estado);
+
+  /*
+   * Una oferta solo sale al cliente si lleva la firma —cuando la empresa la
+   * exige—. El botón no se esconde: se deshabilita y dice por qué. Un botón
+   * que desaparece deja al usuario preguntándose qué hizo mal.
+   */
+  const puedeEnviar = !requiereAprobacion || aprobada;
 
   function accion(fn: () => Promise<{ ok: boolean; mensaje?: string; id?: number }>, alPedido = false) {
     setError(null);
@@ -69,12 +87,31 @@ export function AccionesFicha({
 
   return (
     <div className="ficha-botonera">
-      {/* --- Marcar como enviada: el paso natural de un borrador --- */}
-      {estado === 'borrador' && (
+      {/* --- Aprobar: la firma que autoriza el precio --- */}
+      {estado === 'borrador' && requiereAprobacion && (
+        <button
+          type="button"
+          className="btn btn-primario"
+          disabled={pendiente || !puedeAprobar}
+          title={puedeAprobar
+            ? 'Autoriza el precio para que la oferta pueda salir al cliente'
+            : 'Solo Gerencia puede aprobar una cotización'}
+          onClick={() => accion(() => aprobarCotizacion(cotizacionId))}
+        >
+          <Icono nombre="guardar" tamano={15} />
+          {pendiente ? 'Aprobando…' : 'Aprobar'}
+        </button>
+      )}
+
+      {/* --- Marcar como enviada: solo con la firma puesta --- */}
+      {['borrador', 'aprobada'].includes(estado) && (
         <button
           type="button"
           className="btn btn-secundario"
-          disabled={pendiente}
+          disabled={pendiente || !puedeEnviar}
+          title={puedeEnviar
+            ? 'Registra que la oferta ya se le pasó al cliente'
+            : `${numero} todavía no está aprobada: el precio no puede salir sin el visto bueno de Gerencia`}
           onClick={() => accion(() => cambiarEstadoCotizacion(cotizacionId, 'enviada'))}
         >
           <Icono nombre="reportes" tamano={15} />
