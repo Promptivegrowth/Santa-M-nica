@@ -253,7 +253,7 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                     <th className="num">Pedido</th>
                     <th className="num">Avance</th>
                     <th className="num">Falta</th>
-                    {puedeVerCostos && <th className="num">Venta</th>}
+                    {puedeVerCostos && <th className="num">Venta US$</th>}
                     <th className="num">Compromiso</th>
                     <th>Prioridad</th>
                     <th>Acciones</th>
@@ -301,8 +301,11 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                             <strong style={{ color: 'var(--atencion)' }}>{num(p.tm_faltantes, 1)} TM</strong>
                           ) : '—'}
                         </td>
+                        {/* En dólares, porque esta columna se compara y se suma
+                            entre pedidos de distinta moneda. El importe en la
+                            moneda de la proforma está en su ficha. */}
                         {puedeVerCostos && (
-                          <td className="num">{dinero(p.venta, p.moneda as 'USD' | 'PEN', 0)}</td>
+                          <td className="num">{dinero(p.venta_usd, 'USD', 0)}</td>
                         )}
                         <td className="num" style={{ color: p.atrasado ? 'var(--critico)' : undefined }}>
                           {fecha(p.fecha_comprometida as string)}

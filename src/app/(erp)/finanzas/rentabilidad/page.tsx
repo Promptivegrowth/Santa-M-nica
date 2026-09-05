@@ -158,9 +158,12 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
                       </td>
                       <td className="num">{fecha(f.fecha_solicitada as string)}</td>
                       <td className="num">{num(f.tm, 1)}</td>
-                      <td className="num">{dinero(f.venta as number, f.moneda as 'USD' | 'PEN', 0)}</td>
-                      <td className="num">{dinero(f.costo_estimado as number, f.moneda as 'USD' | 'PEN', 0)}</td>
-                      <td className="num">{dinero(f.margen as number, f.moneda as 'USD' | 'PEN', 0)}</td>
+                      {/* La vista devuelve estas tres cifras YA en dólares:
+                          es la única forma de restar la venta contra un costo
+                          que siempre se registra en dólares. */}
+                      <td className="num">{dinero(f.venta as number, 'USD', 0)}</td>
+                      <td className="num">{dinero(f.costo_estimado as number, 'USD', 0)}</td>
+                      <td className="num">{dinero(f.margen as number, 'USD', 0)}</td>
                       <td className="num">
                         <strong style={{ color: Number(f.margen_pct) < margenMinimo ? 'var(--critico)' : 'var(--ok)' }}>
                           {pct(f.margen_pct)}

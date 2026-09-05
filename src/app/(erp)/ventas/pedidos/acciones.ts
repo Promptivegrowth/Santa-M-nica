@@ -25,6 +25,7 @@
 import { revalidatePath } from 'next/cache';
 import { columnasContacto, type ContactoDocumento } from '@/lib/contactoDocumento';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { revisarTipoCambio } from '@/lib/moneda';
 import { puedeVender, type Rol } from '@/lib/navegacion';
 
 export type LineaPedido = {
@@ -79,8 +80,15 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
   if (!datos.lineas.length) {
     return { ok: false, mensaje: 'Agregue al menos un producto al pedido.', campo: 'lineas' };
   }
-  if (datos.tipo_cambio <= 0) {
-    return { ok: false, mensaje: 'El tipo de cambio debe ser mayor que cero.', campo: 'tipo_cambio' };
+  /*
+   * El tipo de cambio son soles por dólar, siempre. Un documento en soles con
+   * un «1» aquí no se puede convertir después, y de ahí salían totales que
+   * mezclaban monedas. La base lo rechaza igual, pero su mensaje no le sirve a
+   * un comercial.
+   */
+  const problemaTc = revisarTipoCambio(datos.tipo_cambio);
+  if (problemaTc) {
+    return { ok: false, mensaje: problemaTc, campo: 'tipo_cambio' };
   }
   if (!datos.fecha_solicitada || !datos.fecha_comprometida) {
     return { ok: false, mensaje: 'Indique la fecha de solicitud y la fecha comprometida.', campo: 'fechas' };

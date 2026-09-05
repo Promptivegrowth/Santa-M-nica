@@ -37,6 +37,7 @@ import { AccionesLista } from '@/components/ui/Acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, fecha } from '@/lib/formato';
 import { uno, campo } from '@/lib/relaciones';
+import { aDolares } from '@/lib/moneda';
 
 export const metadata: Metadata = { title: 'Productos' };
 export const dynamic = 'force-dynamic';
@@ -69,7 +70,7 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
    * relacionadas— sin pelearse con los filtros anidados de PostgREST, que no
    * saben filtrar por «el nombre de la especie de este SKU».
    */
-  const [{ data: unidades }, { data: ventas }, { data: especies }, { data: tcParam }] = await Promise.all([
+  const [{ data: unidades }, { data: ventas }, { data: especies }] = await Promise.all([
     supabase
       .from('sku_presentaciones')
       .select('id, activo, skus(id, codigo, corte, clasificacion_comercial, empaque, vida_util_meses, activo, especies(nombre), formatos(nombre)), presentaciones(codigo, descripcion, congelamiento, peso_bulto_kg)')
@@ -93,23 +94,7 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
       .not('pedidos.ciclo', 'in', '(borrador,cancelado)')
       .limit(5000),
     supabase.from('especies').select('nombre').eq('activo', true).order('nombre'),
-    supabase.from('parametros').select('valor').eq('clave', 'tipo_cambio_referencial').maybeSingle(),
   ]);
-
-  /*
-   * EL TIPO DE CAMBIO DE RESPALDO
-   *
-   * Los pedidos en soles guardan `tipo_cambio = 1`, no la cotización del
-   * dólar: el campo se llenó como «soles por unidad de la moneda del
-   * documento», que para un documento en soles vale uno. Dividir por ese uno
-   * dejaría un importe en soles rotulado como dólares —una diferencia de casi
-   * cuatro veces—, así que cuando el valor guardado no es una cotización
-   * creíble se usa el referencial de Configuración.
-   *
-   * Es un parche honesto sobre una ambigüedad del modelo: hay que decidir con
-   * el cliente qué significa exactamente ese campo y normalizarlo.
-   */
-  const tcReferencial = Number(tcParam?.valor ?? 3.75) || 3.75;
 
   /* ---- El último precio de venta de cada unidad vendible, en dólares ---- */
   const ultimaVenta = new Map<number, { precio: number; fecha: string }>();
@@ -123,19 +108,13 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
     if (previo && previo.fecha >= cuando) continue;   // las fechas ISO se comparan como texto
 
     /*
-     * Todo se muestra en dólares, que es como lo pidió el cliente. Un pedido
-     * en soles se convierte con SU PROPIO tipo de cambio —el que se pactó ese
-     * día—, no con el referencial de hoy: si no, el precio histórico cambiaría
-     * solo cada vez que se mueve el dólar.
+     * Todo se muestra en dólares. Un pedido en soles se convierte con SU
+     * PROPIO tipo de cambio —el que se pactó ese día—, no con el referencial
+     * de hoy: si no, el precio histórico cambiaría solo cada vez que se mueve
+     * el dólar.
      */
     const bruto = Number(l.precio_tm ?? 0) * (1 - Number(l.descuento_pct ?? 0) / 100);
-    let enDolares = bruto;
-    if (ped?.moneda === 'PEN') {
-      const propio = Number(ped?.tipo_cambio ?? 0);
-      // Por debajo de 1,5 no puede ser una cotización del dólar: es el 1 por
-      // defecto. En ese caso manda el referencial de Configuración.
-      enDolares = bruto / (propio > 1.5 ? propio : tcReferencial);
-    }
+    const enDolares = aDolares(bruto, ped?.moneda as string, ped?.tipo_cambio as number);
 
     ultimaVenta.set(id, { precio: enDolares, fecha: cuando });
   }

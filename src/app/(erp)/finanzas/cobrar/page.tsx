@@ -27,13 +27,22 @@ export default async function PaginaCobrar() {
     .from('v_cuentas_cobrar').select('*').gt('saldo', 0).order('dias_vencida', { ascending: false });
 
   const lista = filas ?? [];
-  const total = lista.reduce((s, f) => s + Number(f.saldo ?? 0), 0);
-  const vencido = lista.filter((f) => Number(f.dias_vencida) > 0).reduce((s, f) => s + Number(f.saldo ?? 0), 0);
-  const masDe90 = lista.filter((f) => Number(f.dias_vencida) > 90).reduce((s, f) => s + Number(f.saldo ?? 0), 0);
+
+  /*
+   * Los totales van SIEMPRE sobre `saldo_usd` y no sobre `saldo`.
+   *
+   * `saldo` está en la moneda de cada factura, así que sumarlo mezclaría soles
+   * con dólares en una sola cifra —que es exactamente lo que hacía esta
+   * pantalla antes, mientras rotulaba el resultado en dólares—. La cartera
+   * solo se puede totalizar en una moneda.
+   */
+  const total = lista.reduce((s, f) => s + Number(f.saldo_usd ?? 0), 0);
+  const vencido = lista.filter((f) => Number(f.dias_vencida) > 0).reduce((s, f) => s + Number(f.saldo_usd ?? 0), 0);
+  const masDe90 = lista.filter((f) => Number(f.dias_vencida) > 90).reduce((s, f) => s + Number(f.saldo_usd ?? 0), 0);
 
   const porTramo = TRAMOS.map((t) => ({
     etiqueta: t,
-    valor: lista.filter((f) => f.tramo_antiguedad === t).reduce((s, f) => s + Number(f.saldo ?? 0), 0),
+    valor: lista.filter((f) => f.tramo_antiguedad === t).reduce((s, f) => s + Number(f.saldo_usd ?? 0), 0),
   })).filter((t) => t.valor > 0);
 
   return (
@@ -74,7 +83,7 @@ export default async function PaginaCobrar() {
                 <tr>
                   <th>Documento</th><th>Cliente</th><th>País</th>
                   <th className="num">Vencimiento</th><th className="num">Días</th>
-                  <th className="num">Total</th><th className="num">Cobrado</th><th className="num">Saldo</th>
+                  <th className="num">Total US$</th><th className="num">Cobrado US$</th><th className="num">Saldo US$</th>
                   <th>Antigüedad</th>
                   <th>Acciones</th>
                 </tr>
@@ -97,9 +106,26 @@ export default async function PaginaCobrar() {
                       <td className="num" style={{ color: dias > 0 ? 'var(--critico)' : 'var(--tinta-3)' }}>
                         {dias > 0 ? `+${dias}` : dias}
                       </td>
-                      <td className="num">{dinero(f.total as number, f.moneda as 'USD' | 'PEN', 0)}</td>
-                      <td className="num">{dinero(f.cobrado as number, f.moneda as 'USD' | 'PEN', 0)}</td>
-                      <td className="num"><strong>{dinero(f.saldo as number, f.moneda as 'USD' | 'PEN', 0)}</strong></td>
+                      {/*
+                        La cifra grande va en dólares, para que la fila se pueda
+                        comparar con las demás y cuadre con el total de arriba.
+                        Cuando la factura no está en dólares se muestra debajo su
+                        importe real: quien llama a cobrar tiene que decir la
+                        cifra que figura en el documento, no la convertida.
+                      */}
+                      <td className="num">{dinero(f.total_usd as number, 'USD', 0)}</td>
+                      <td className="num">{dinero(f.cobrado_usd as number, 'USD', 0)}</td>
+                      <td className="num">
+                        <strong>{dinero(f.saldo_usd as number, 'USD', 0)}</strong>
+                        {f.moneda !== 'USD' && (
+                          <>
+                            <br />
+                            <span style={{ color: 'var(--tinta-3)', fontSize: '.68rem' }}>
+                              {dinero(f.saldo as number, f.moneda as 'USD' | 'PEN', 0)} en la factura
+                            </span>
+                          </>
+                        )}
+                      </td>
                       <td>
                         <Etiqueta
                           texto={String(f.tramo_antiguedad)}

@@ -16,6 +16,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { revisarTipoCambio } from '@/lib/moneda';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 import { columnasContacto, type ContactoDocumento } from '@/lib/contactoDocumento';
 import { puedeVender, type Rol } from '@/lib/navegacion';
@@ -122,8 +123,15 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
   if (datos.validez_dias < 1 || datos.validez_dias > 365) {
     return { ok: false, mensaje: 'La validez debe estar entre 1 y 365 días.', campo: 'validez' };
   }
-  if (datos.tipo_cambio <= 0) {
-    return { ok: false, mensaje: 'El tipo de cambio debe ser mayor que cero.', campo: 'tipo_cambio' };
+  /*
+   * El tipo de cambio son soles por dólar, siempre. Un documento en soles con
+   * un «1» aquí no se puede convertir después, y de ahí salían totales que
+   * mezclaban monedas. La base lo rechaza igual, pero su mensaje no le sirve a
+   * un comercial.
+   */
+  const problemaTc = revisarTipoCambio(datos.tipo_cambio);
+  if (problemaTc) {
+    return { ok: false, mensaje: problemaTc, campo: 'tipo_cambio' };
   }
 
   for (const [i, l] of datos.lineas.entries()) {

@@ -589,10 +589,29 @@ async function CuerpoPedido({
           <div className="rejilla-2">
             <Panel titulo="Resultado del pedido">
               <dl className="ficha">
-                <div><dt>Venta</dt><dd>{dinero(rentabilidad?.venta, moneda, 2)}</dd></div>
-                <div><dt>Costo estimado</dt><dd>{dinero(rentabilidad?.costo_estimado, moneda, 2)}</dd></div>
-                <div><dt>Costo real de los lotes despachados</dt><dd>{dinero(rentabilidad?.costo_real, moneda, 2)}</dd></div>
-                <div><dt>Margen</dt><dd><strong>{dinero(rentabilidad?.margen, moneda, 2)}</strong></dd></div>
+                {/*
+                  TODO este bloque va en dólares, incluso si la proforma está en
+                  soles. El costo de un lote se registra en dólares al entrar a
+                  cámara, así que restarle una venta en soles daría un margen sin
+                  sentido. Debajo se indica el importe original.
+                */}
+                <div><dt>Venta</dt><dd>{dinero(rentabilidad?.venta, 'USD', 2)}</dd></div>
+                <div><dt>Costo estimado</dt><dd>{dinero(rentabilidad?.costo_estimado, 'USD', 2)}</dd></div>
+                <div><dt>Costo real de los lotes despachados</dt><dd>{dinero(rentabilidad?.costo_real, 'USD', 2)}</dd></div>
+                <div><dt>Margen</dt><dd><strong>{dinero(rentabilidad?.margen, 'USD', 2)}</strong></dd></div>
+                {moneda !== 'USD' && (
+                  <div>
+                    <dt>Venta según la proforma</dt>
+                    <dd>
+                      {dinero(rentabilidad?.venta_documento, moneda, 2)}
+                      <br />
+                      <small style={{ color: 'var(--tinta-3)' }}>
+                        convertida a {dinero(rentabilidad?.venta, 'USD', 2)} con el tipo de cambio
+                        del pedido ({num(Number(rentabilidad?.tipo_cambio ?? 0), 3)})
+                      </small>
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt>Margen %</dt>
                   <dd>

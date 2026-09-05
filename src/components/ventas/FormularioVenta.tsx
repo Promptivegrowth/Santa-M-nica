@@ -40,6 +40,7 @@ import { crearPedidoDirecto } from '@/app/(erp)/ventas/pedidos/acciones';
 import { detalleProductos, type DetalleProducto } from '@/app/(erp)/ventas/productos/acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, tm } from '@/lib/formato';
+import { revisarTipoCambio, TIPO_CAMBIO_MINIMO, TIPO_CAMBIO_MAXIMO } from '@/lib/moneda';
 import type { ContactoDocumento } from '@/lib/contactoDocumento';
 
 export type Modo = 'cotizacion' | 'pedido';
@@ -697,13 +698,28 @@ export function FormularioVenta({
             </select>
           </label>
 
+          {/*
+            El tipo de cambio es SIEMPRE soles por dólar, esté el documento en
+            la moneda que esté. Antes la etiqueta no lo decía y el campo se
+            llenaba con un 1 en los documentos en soles, lo que hacía imposible
+            convertirlos: el importe salía en soles rotulado como dólares.
+          */}
           <label className="form-campo">
-            <span className="etiqueta">Tipo de cambio</span>
+            <span className="etiqueta">Tipo de cambio (S/ por US$)</span>
             <input
-              className="campo" type="number" step="0.001" min="0.001"
+              className="campo" type="number" step="0.001"
+              min={TIPO_CAMBIO_MINIMO} max={TIPO_CAMBIO_MAXIMO}
               value={tipoCambio}
               onChange={(e) => setTipoCambio(Number(e.target.value))}
             />
+            {revisarTipoCambio(tipoCambio) ? (
+              <span className="form-aviso-campo">{revisarTipoCambio(tipoCambio)}</span>
+            ) : (
+              <small>
+                La cotización del día. Se usa para expresar este documento en dólares
+                {moneda === 'PEN' ? ' en los reportes y comparaciones' : ' y en soles cuando haga falta'}.
+              </small>
+            )}
           </label>
 
           <label className="form-campo">

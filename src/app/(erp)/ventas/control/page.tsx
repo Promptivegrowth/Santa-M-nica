@@ -98,7 +98,7 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                 <tr>
                   <th>Estado</th><th>Proforma</th><th>Cliente</th>
                   <th className="num">Pedido</th><th className="num">Avance</th><th className="num">Falta</th>
-                  <th className="num">Venta</th><th className="num">Compromiso</th><th>Prioridad</th>
+                  <th className="num">Venta US$</th><th className="num">Compromiso</th><th>Prioridad</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -117,7 +117,9 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                       <Barra porcentaje={Number(p.avance_pct)} tono={Number(p.avance_pct) >= 100 ? 'ok' : 'atencion'} />
                     </td>
                     <td className="num">{Number(p.tm_faltantes) > 0 ? `${num(p.tm_faltantes, 1)} TM` : '—'}</td>
-                    <td className="num">{dinero(p.venta, p.moneda as 'USD' | 'PEN', 0)}</td>
+                    {/* En dólares: esta columna se compara entre pedidos de
+                        distinta moneda, así que tiene que estar en una sola. */}
+                    <td className="num">{dinero(p.venta_usd, 'USD', 0)}</td>
                     <td className="num" style={{ color: p.atrasado ? 'var(--critico)' : undefined }}>
                       {fecha(p.fecha_comprometida as string)}
                     </td>
