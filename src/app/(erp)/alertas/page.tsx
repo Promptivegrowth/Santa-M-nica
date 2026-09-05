@@ -30,17 +30,23 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
   const pagina = Math.max(1, Number(q.pagina ?? 1));
   const severidad = (q.severidad as string) ?? '';
   const entidad = (q.entidad as string) ?? '';
+  // El panel agrupa las alertas por tipo y enlaza aquí con el tipo ya puesto:
+  // sin este filtro, «43 productos con vida útil vencida» llevaba al listado
+  // entero y había que buscarlos entre las trescientas restantes.
+  const titulo = (q.titulo as string) ?? '';
 
   let consulta = supabase.from('alertas').select('*', { count: 'exact' }).eq('atendida', false);
   if (severidad) consulta = consulta.eq('severidad', severidad);
   if (entidad) consulta = consulta.eq('entidad', entidad);
+  if (titulo) consulta = consulta.eq('titulo', titulo);
 
-  const [{ data: filas, count }, { data: todas }] = await Promise.all([
+  const [{ data: filas, count }, { data: todas }, { data: tipos }] = await Promise.all([
     consulta
       .order('severidad', { ascending: false })
       .order('generada_en', { ascending: false })
       .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
     supabase.from('alertas').select('severidad, entidad').eq('atendida', false),
+    supabase.from('v_alertas_resumen').select('titulo, cuantas').order('cuantas', { ascending: false }),
   ]);
 
   const criticas = (todas ?? []).filter((a) => a.severidad === 'critica').length;
@@ -91,6 +97,13 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
             {
               tipo: 'select', clave: 'entidad', etiqueta: 'Sobre qué',
               opciones: entidades.map((e) => ({ valor: e, texto: nombreEntidad(e) })),
+            },
+            {
+              tipo: 'select', clave: 'titulo', etiqueta: 'Tipo de alerta',
+              opciones: (tipos ?? []).map((t) => ({
+                valor: t.titulo as string,
+                texto: `${t.titulo} (${num(Number(t.cuantas))})`,
+              })),
             },
           ]}
         />

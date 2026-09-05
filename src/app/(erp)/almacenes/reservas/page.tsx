@@ -22,6 +22,7 @@ import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { BotonLiberar, BotonExpirar } from './Liberar';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
+import { traerTodo } from '@/lib/traerTodo';
 import { type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
@@ -93,11 +94,17 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
     }
   }
 
-  const [{ data: filas, count }, { data: todas }, { data: yaVencidas }] = await Promise.all([
+  const [{ data: filas, count }, todas, { data: yaVencidas }] = await Promise.all([
     consulta
       .order('creado_en', { ascending: false })
       .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
-    supabase.from('reservas').select('estado, peso_neto_kg'),
+    /*
+     * Por páginas: hay 1 195 reservas y la API devuelve mil como mucho, sin
+     * avisar de que cortó. Las tarjetas de arriba contaban de menos.
+     */
+    traerTodo<{ estado: string; peso_neto_kg: number }>(
+      (d, h) => supabase.from('reservas').select('estado, peso_neto_kg').range(d, h)
+    ),
     /*
      * Quién está vencida lo decide la BASE DE DATOS, con su propio reloj.
      *

@@ -27,6 +27,7 @@ import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { BotonesReporte } from '@/components/ui/BotonesReporte';
 import { GraficoBarras } from '@/components/graficos/Graficos';
 import { tm, num, dinero, fecha } from '@/lib/formato';
+import { traerTodo } from '@/lib/traerTodo';
 import { veCostos, type Rol } from '@/lib/navegacion';
 
 export const metadata: Metadata = { title: 'Inventario valorizado' };
@@ -81,11 +82,25 @@ export default async function PaginaValorizado(props: PageProps<'/almacenes/valo
     return c;
   }
 
-  const [{ data: filas, count }, { data: universo }, { data: almacenes }, { data: especies }] =
+  const [{ data: filas, count }, universo, { data: almacenes }, { data: especies }] =
     await Promise.all([
       base().order('valor', { ascending: false })
         .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
-      base().select('fisico_kg, valor, almacen, rango, lote_id'),
+      /*
+       * EL UNIVERSO SE TRAE POR PÁGINAS, NO DE UNA VEZ.
+       *
+       * La API de Supabase devuelve como mucho mil filas y no avisa de que
+       * cortó. Aquí hay 1 519 lotes en cámara: el valor del inventario se
+       * estaba calculando sobre mil de ellos y salía un tercio corto, con una
+       * cifra perfectamente creíble. En una pantalla que dice cuánto capital
+       * hay parado, eso es lo peor que puede pasar.
+       *
+       * No se puede usar una vista agregada porque el total depende de los
+       * filtros que elija el usuario, así que se pagina.
+       */
+      traerTodo<{ fisico_kg: number; valor: number; almacen: string; rango: string; lote_id: number }>(
+        (d, h) => base().select('fisico_kg, valor, almacen, rango, lote_id').range(d, h)
+      ),
       supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
       supabase.from('especies').select('nombre').eq('activo', true).order('nombre'),
     ]);

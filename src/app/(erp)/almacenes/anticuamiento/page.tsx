@@ -44,6 +44,7 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
   const pagina = Math.max(1, Number(q.pagina ?? 1));
   const rango = (q.rango as string) ?? '';
   const soloAlerta = (q.alerta as string) === 'si';
+  const situacion = (q.situacion as string) ?? '';
 
   const [{ data: resumen }, { data: umbral }] = await Promise.all([
     supabase.from('v_anticuamiento_resumen').select('*').order('orden'),
@@ -53,10 +54,48 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
   let consulta = supabase.from('v_anticuamiento').select('*', { count: 'exact' }).gt('fisico_kg', 0);
   if (rango) consulta = consulta.eq('rango', rango);
   if (soloAlerta) consulta = consulta.eq('en_alerta', true);
+  /*
+   * El filtro que se pidió: separar lo que YA venció de lo que está POR
+   * vencer. No es lo mismo y no se hace lo mismo con cada uno: lo vencido hay
+   * que darlo de baja o mandarlo a harina, y lo que está por vencer todavía
+   * se puede vender.
+   */
+  if (situacion) consulta = consulta.eq('situacion_vida_util', situacion);
 
   const { data: filas, count } = await consulta
-    .order('meses_almacenado', { ascending: false })
+    /*
+     * Se ordena por los días que le QUEDAN, no por los meses que lleva. Es lo
+     * que preguntó Oliver: lo primero que tiene que aparecer es lo que está a
+     * punto de perderse, y el pallet más viejo no siempre es el más urgente
+     * —un producto de doce meses de vida útil vence antes que uno de
+     * veinticuatro producido el mismo día—.
+     */
+    .order('dias_para_vencer', { ascending: true })
     .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
+
+  /*
+   * Los tres grupos, CONTADOS EN LA BASE.
+   *
+   * Antes se traían las filas y se contaban aquí, y las tarjetas decían «26
+   * vencidos» cuando había 47: la API devuelve como mucho mil filas por
+   * consulta, y con 1 519 lotes en cámara el corte se comía un tercio del
+   * inventario sin avisar. Un error de los peores, porque la cifra sale y
+   * parece razonable.
+   */
+  const { data: porSituacion } = await supabase
+    .from('v_anticuamiento_situacion')
+    .select('*');
+
+  const grupo = (nombre: string) => {
+    const f = (porSituacion ?? []).find((x) => x.situacion === nombre);
+    return {
+      lotes: Number(f?.lotes ?? 0),
+      kg: Number(f?.fisico_kg ?? 0),
+      valor: Number(f?.valor ?? 0),
+    };
+  };
+  const yaVencido = grupo('vencido');
+  const porVencer = grupo('por_vencer');
 
   const total = (resumen ?? []).reduce((s, r) => s + Number(r.fisico_kg ?? 0), 0);
   const sobreUmbral = (resumen ?? []).filter((r) => r.rango !== '<12');
@@ -95,6 +134,54 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
           nota="Requieren disposición"
         />
       </RejillaKpi>
+
+      {/*
+        LAS DOS SITUACIONES QUE EXIGEN UNA DECISIÓN.
+        Van antes que el gráfico de antigüedad porque son lo accionable: los
+        meses en cámara describen, el vencimiento obliga.
+      */}
+      <RejillaKpi>
+        <Kpi
+          etiqueta="Ya vencido"
+          valor={num(yaVencido.lotes)}
+          sufijo="pallets"
+          tono={yaVencido.lotes > 0 ? 'critico' : 'ok'}
+          nota={`${tm(yaVencido.kg)} TM${puedeVerCostos ? ` · ${dinero(yaVencido.valor, 'USD', 0)}` : ''}`}
+          href="/almacenes/anticuamiento?situacion=vencido"
+        />
+        <Kpi
+          etiqueta="Por vencer"
+          valor={num(porVencer.lotes)}
+          sufijo="pallets"
+          tono={porVencer.lotes > 0 ? 'atencion' : 'ok'}
+          nota={`${tm(porVencer.kg)} TM · todavía se pueden colocar`}
+          href="/almacenes/anticuamiento?situacion=por_vencer"
+        />
+        <Kpi
+          etiqueta="Sobre el umbral"
+          valor={tm(tmSobre)}
+          sufijo="TM"
+          nota={`más de ${umbral?.valor ?? 12} meses en cámara`}
+        />
+        {puedeVerCostos && (
+          <Kpi
+            etiqueta="Capital en riesgo"
+            valor={dinero(yaVencido.valor + porVencer.valor, 'USD', 0)}
+            tono={yaVencido.valor + porVencer.valor > 0 ? 'atencion' : 'ok'}
+            nota="vencido y por vencer"
+          />
+        )}
+      </RejillaKpi>
+
+      <div className="atajos-fecha">
+        <span>Rápido:</span>
+        <Link href="/almacenes/anticuamiento?situacion=vencido">Ya vencido</Link>
+        <Link href="/almacenes/anticuamiento?situacion=por_vencer">Por vencer</Link>
+        <Link href="/almacenes/anticuamiento?alerta=si">Sobre el umbral de meses</Link>
+        {(rango || soloAlerta || situacion) && (
+          <Link href="/almacenes/anticuamiento" className="atajo-limpiar">Quitar filtros</Link>
+        )}
+      </div>
 
       <Panel titulo="Distribución por antigüedad" className="mb-espacio">
         {/*
@@ -140,6 +227,7 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
                     <th>Producto</th>
                     <th>Almacén</th>
                     <th className="num">Producción</th>
+                    <th className="num">Vence</th>
                     <th className="num">Meses</th>
                     <th className="num">Físico</th>
                     <th className="num">Disponible</th>
@@ -164,17 +252,37 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
                       </td>
                       <td>{f.almacen}</td>
                       <td className="num">{fecha(f.fecha_produccion as string)}</td>
+                      {/*
+                        Cuándo vence y cuánto le queda. El signo importa: «−40»
+                        y «40 d» son situaciones opuestas y tienen que leerse
+                        distinto de un vistazo.
+                      */}
+                      <td className="num" style={{ fontSize: '.76rem' }}>
+                        {fecha(f.fecha_vencimiento as string)}
+                        <br />
+                        <span style={{
+                          fontSize: '.68rem',
+                          color: Number(f.dias_para_vencer) < 0 ? 'var(--critico)'
+                            : Number(f.dias_para_vencer) <= 90 ? 'var(--atencion)' : 'var(--tinta-3)',
+                        }}>
+                          {Number(f.dias_para_vencer) < 0
+                            ? `venció hace ${Math.abs(Number(f.dias_para_vencer))} d`
+                            : `quedan ${num(f.dias_para_vencer)} d`}
+                        </span>
+                      </td>
                       <td className="num"><strong>{num(f.meses_almacenado, 1)}</strong></td>
                       <td className="num">{tm(f.fisico_kg)}</td>
                       <td className="num">{tm(f.disponible_kg)}</td>
                       {puedeVerCostos && <td className="num">{num(f.valor, 0)}</td>}
                       <td>
-                        {f.vencido ? (
+                        {f.situacion_vida_util === 'vencido' ? (
                           <Etiqueta texto="Vencido" tono="critico" />
+                        ) : f.situacion_vida_util === 'por_vencer' ? (
+                          <Etiqueta texto="Por vencer" tono="atencion" />
                         ) : f.en_alerta ? (
-                          <Etiqueta texto="En alerta" tono="atencion" />
+                          <Etiqueta texto="Antiguo" tono="atencion" />
                         ) : (
-                          <Etiqueta texto="Normal" tono="ok" />
+                          <Etiqueta texto="Vigente" tono="ok" />
                         )}
                       </td>
                       <td>

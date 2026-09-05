@@ -20,6 +20,7 @@ import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/compo
 import { PanelGraficos } from './PanelGraficos';
 import { tm, dinero, num, fecha, haceTiempo } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
+import { enlaceEntidad } from '@/lib/enlaces';
 
 export const metadata: Metadata = { title: 'Control Tower' };
 
@@ -51,9 +52,12 @@ export default async function PaginaPanel() {
     // Usamos la vista RESUMIDA: la detallada trae una fila por lote y la API
     // corta en 1.000 filas, lo que daría un total incompleto.
     supabase.from('v_anticuamiento_resumen').select('*').order('orden'),
-    supabase.from('alertas').select('id, severidad, titulo, mensaje, entidad, entidad_id, generada_en')
-      .eq('atendida', false).order('severidad', { ascending: false })
-      .order('generada_en', { ascending: false }).limit(8),
+    // Agrupadas POR TIPO, no una por una. Hay una alerta por lote, así que las
+    // ocho más graves eran ocho veces el mismo problema y escondían los otros
+    // nueve tipos —incluido el aviso de stock por vencer que pidió el cliente—.
+    supabase.from('v_alertas_resumen').select('titulo, severidad, entidad, cuantas, mensaje, entidad_id, ultima')
+      .order('severidad', { ascending: false })
+      .order('cuantas', { ascending: false }).limit(10),
     supabase.from('v_pedidos_tablero').select('id, numero_proforma, cliente, venta, moneda, tm_pedidas, tm_faltantes, fecha_comprometida, semaforo, prioridad')
       .in('semaforo', ['riesgo', 'bloqueado']).order('fecha_comprometida').limit(8),
     supabase.from('v_rentabilidad_pedido').select('cliente, venta').in('ciclo', ['despachado', 'cerrado']),
@@ -203,19 +207,39 @@ export default async function PaginaPanel() {
             <Vacio titulo="Todo en orden" mensaje="No hay alertas pendientes en este momento." />
           ) : (
             <ul className="lista-alertas">
-              {(alertas ?? []).map((a) => (
-                <li key={a.id}>
-                  <Etiqueta
-                    texto={a.severidad === 'critica' ? 'Crítica' : a.severidad === 'advertencia' ? 'Atención' : 'Info'}
-                    tono={a.severidad === 'critica' ? 'critico' : a.severidad === 'advertencia' ? 'atencion' : 'info'}
-                  />
-                  <div className="lista-alertas-texto">
-                    <strong>{a.titulo}</strong>
-                    <span>{a.mensaje}</span>
-                  </div>
-                  <time>{haceTiempo(a.generada_en as string)}</time>
-                </li>
-              ))}
+              {(alertas ?? []).map((a) => {
+                const cuantas = Number(a.cuantas ?? 0);
+                // Con una sola alerta se lleva al registro que la provocó; con
+                // varias, al listado ya filtrado por ese tipo.
+                // `enlaceEntidad` devuelve null si esa entidad no tiene ficha
+                // propia; en ese caso se cae al listado filtrado, que siempre
+                // existe. Nunca se queda sin destino.
+                const destino =
+                  (cuantas === 1 && Number(a.entidad_id) > 0
+                    ? enlaceEntidad(a.entidad as string, Number(a.entidad_id))
+                    : null)
+                  ?? `/alertas?titulo=${encodeURIComponent(a.titulo as string)}`;
+                return (
+                  <li key={`${a.titulo}-${a.severidad}`}>
+                    <Etiqueta
+                      texto={a.severidad === 'critica' ? 'Crítica' : a.severidad === 'advertencia' ? 'Atención' : 'Info'}
+                      tono={a.severidad === 'critica' ? 'critico' : a.severidad === 'advertencia' ? 'atencion' : 'info'}
+                    />
+                    <div className="lista-alertas-texto">
+                      <strong>
+                        <Link href={destino}>{a.titulo}</Link>
+                        {cuantas > 1 && <span className="contador-alerta">{num(cuantas)}</span>}
+                      </strong>
+                      <span>
+                        {/* Con muchas, el mensaje de una sola engañaría: la vista
+                            lo deja vacío a propósito y aquí se dice cuántas son. */}
+                        {a.mensaje ?? `${num(cuantas)} casos sin atender. Toque para verlos uno por uno.`}
+                      </span>
+                    </div>
+                    <time>{haceTiempo(a.ultima as string)}</time>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Panel>

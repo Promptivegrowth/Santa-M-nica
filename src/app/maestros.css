@@ -1199,3 +1199,13 @@ table.datos thead th small {
   .composicion-fila { grid-template-columns: 1fr 5rem; }
   .composicion-barra { grid-column: 1 / -1; }
 }
+
+
+/* Pestañas dentro de la cabecera de un panel, para cambiar cómo se agrupa un
+   gráfico sin sacarlo de su sitio ni recargar la pantalla entera. */
+.pestanas-linea { display: flex; gap: .15rem; flex-wrap: wrap; }
+.pestanas-linea .pestana {
+  padding: .2rem .55rem;
+  font-size: .74rem;
+  border-radius: var(--radio);
+}
