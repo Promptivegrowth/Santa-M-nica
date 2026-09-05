@@ -1018,3 +1018,87 @@ table.datos thead th small {
 /* Un pedido con fechas imposibles: se ve, pero no cuenta para los promedios. */
 .fila-incoherente { background: var(--critico-suave) !important; }
 .fila-incoherente td { opacity: .85; }
+
+/* ---------------------------------------------------------------------------
+   PLANIFICADOR · producto, topes de peso y nota de Comercial
+   --------------------------------------------------------------------------- */
+
+/* Los códigos de producto de la salida. Se pidió verlos en la tarjeta: el
+   calendario decía que había un embarque, pero no de qué. */
+.cal-tarjeta-skus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem;
+  margin-block: .35rem .2rem;
+}
+.cal-sku, .cal-sku-mas {
+  font-family: var(--font-mono);
+  font-size: .66rem;
+  padding: .05rem .3rem;
+  border-radius: 2px;
+  background: var(--acento-suave);
+  color: var(--acento);
+  white-space: nowrap;
+}
+.cal-sku-mas { background: var(--superficie-2); color: var(--tinta-3); }
+
+/* El aviso de tope. El ámbar —«cerca»— es el que de verdad sirve: cuando el
+   rojo aparece, el contenedor ya está cargado. */
+.cal-tarjeta-alerta {
+  margin: .4rem 0 0;
+  padding: .3rem .45rem;
+  border-radius: 2px;
+  font-size: .72rem;
+  line-height: 1.35;
+}
+.cal-tarjeta-alerta[data-tono='critico']  { background: var(--critico-suave); color: var(--critico); }
+.cal-tarjeta-alerta[data-tono='atencion'] { background: var(--atencion-suave); color: var(--atencion); }
+.cal-tarjeta-alerta[data-tono='ok']       { background: var(--ok-suave); color: var(--ok); }
+
+.cal-tarjeta-nota-comercial {
+  margin: .4rem 0 0;
+  padding: .3rem .45rem;
+  border-inline-start: 2px solid var(--acento);
+  background: var(--acento-suave);
+  font-size: .72rem;
+  line-height: 1.4;
+  color: var(--tinta-2);
+}
+
+.cal-tope-abrir { margin-block-start: .4rem; }
+
+/* El formulario, plegado por defecto: un embarque normal no necesita tope y
+   desplegarlo en cada tarjeta convertiría el calendario en un muro de campos. */
+.cal-topes {
+  margin-block-start: .5rem;
+  padding: .55rem;
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  background: var(--superficie-2);
+}
+.cal-topes > strong { font-size: .78rem; display: block; }
+.cal-topes-ayuda {
+  display: block;
+  font-size: .68rem;
+  color: var(--tinta-3);
+  line-height: 1.4;
+  margin-block: .1rem .45rem;
+}
+.cal-topes-campos { display: flex; gap: .5rem; }
+.cal-topes-campos label,
+.cal-topes-nota { display: block; flex: 1; }
+.cal-topes-nota { margin-block-start: .45rem; }
+.cal-topes label span {
+  display: block;
+  font-size: .68rem;
+  color: var(--tinta-2);
+  margin-block-end: .15rem;
+}
+.cal-topes label small {
+  display: block;
+  font-size: .64rem;
+  color: var(--tinta-3);
+  margin-block-start: .1rem;
+}
+.cal-topes .campo { font-size: .76rem; padding: .25rem .4rem; }
+.cal-topes-acciones { display: flex; gap: .4rem; margin-block-start: .5rem; }

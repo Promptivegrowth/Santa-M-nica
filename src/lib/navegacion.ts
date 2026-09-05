@@ -74,7 +74,13 @@ export const NAVEGACION: Grupo[] = [
   {
     grupo: 'Logística',
     entradas: [
-      { titulo: 'Planificador',     ruta: '/logistica/planificador', icono: 'planificador', ayuda: 'Calendario de embarques', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
+      /*
+       * COMERCIAL entra aquí, y no por comodidad: se pidió que sea Comercial
+       * quien deje el peso máximo que admite el contenedor y la nota para
+       * Almacén, y el sitio acordado es esta pantalla. Sin acceso, la persona
+       * que tiene el dato no podría escribirlo.
+       */
+      { titulo: 'Planificador',     ruta: '/logistica/planificador', icono: 'planificador', ayuda: 'Calendario de embarques', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Embarques',        ruta: '/logistica/embarques',    icono: 'embarques',    ayuda: 'Programación de salidas', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Packing y estiba', ruta: '/logistica/packing',      icono: 'packing',      ayuda: 'La carga del contenedor', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Despachos',        ruta: '/logistica/despachos',    icono: 'despachos',    ayuda: 'Lo que ya salió', roles: TODOS },

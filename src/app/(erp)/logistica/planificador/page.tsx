@@ -22,7 +22,7 @@
  */
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { hoyEnLima } from '@/lib/fechas';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel } from '@/components/ui/Pagina';
 import { CalendarioEmbarques, type EmbarqueCalendario } from './Calendario';
@@ -31,6 +31,16 @@ import { uno, campo } from '@/lib/relaciones';
 
 export const metadata: Metadata = { title: 'Planificador' };
 export const dynamic = 'force-dynamic';
+
+/*
+ * Quién puede fijar el tope de peso de una salida.
+ *
+ * Comercial en primer lugar, porque el dato es suyo: lo conoce por el destino
+ * del cliente y hoy lo comunica por correo. Comex y las jefaturas también,
+ * porque son quienes reciben el aviso de la naviera cuando llega tarde.
+ * Almacén no: lo consume, no lo decide.
+ */
+const PUEDEN_FIJAR_TOPES = ['gerencia', 'operaciones', 'comercial', 'comex'];
 
 /**
  * Interpreta el parámetro `mes` ('AAAA-MM'). Si no viene o viene mal, se
@@ -50,6 +60,7 @@ function mesPedido(valor: string | undefined, hoy: string): { anio: number; mes:
 export default async function PaginaPlanificador(props: PageProps<'/logistica/planificador'>) {
   const q = await props.searchParams;
   const supabase = await crearClienteServidor();
+  const usuario = await obtenerUsuarioActual();
 
   const hoy = hoyEnLima();
   const { anio, mes } = mesPedido(q.mes as string | undefined, hoy);
@@ -72,7 +83,7 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
       // deduce los tipos de la consulta leyendo ese texto en tiempo de
       // compilación, y una suma de cadenas le impide hacerlo.
       .select(
-        'id, numero, fecha_programada, estado, booking, naviera, almacenes(nombre), destinos(puerto, pais), packing_lists(contenedor, packing_lineas(bultos, peso_neto_kg)), embarque_pedidos(pedidos(clientes(razon_social), pedido_lineas(cantidad_tm)))'
+        'id, numero, fecha_programada, estado, booking, naviera, peso_neto_max_kg, peso_bruto_max_kg, nota_comercial, almacenes(nombre), destinos(puerto, pais, peso_neto_max_kg, peso_bulto_max_kg), packing_lists(contenedor, packing_lineas(bultos, peso_neto_kg)), embarque_pedidos(pedidos(clientes(razon_social), pedido_lineas(cantidad_tm, sku_presentaciones(skus(codigo, corte)))))'
       )
       .gte('fecha_programada', desde)
       .lte('fecha_programada', hasta)
@@ -136,6 +147,41 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
 
     const dst = uno<Record<string, unknown>>(e.destinos);
 
+    /*
+     * QUÉ PRODUCTO VA EN ESTA SALIDA.
+     *
+     * Se pidió en la reunión: «que salga el SKU [...] en esa tarjeta». Sin él
+     * el calendario dice que hay un embarque a Tailandia pero no de qué, y esa
+     * es justamente la pregunta que se hace quien mira la agenda de la semana.
+     *
+     * Se acumulan las toneladas por código para poder enseñar primero el que
+     * más pesa: si van tres productos, el que identifica la salida es el que
+     * llena el contenedor.
+     */
+    const tmPorSku = new Map<string, number>();
+    for (const ped of pedidos) {
+      for (const l of (ped.pedido_lineas ?? []) as Record<string, unknown>[]) {
+        const sp = uno<Record<string, unknown>>(l.sku_presentaciones);
+        const sku = uno<Record<string, unknown>>(sp?.skus);
+        const codigo = String(sku?.codigo ?? '').trim();
+        if (!codigo) continue;
+        tmPorSku.set(codigo, (tmPorSku.get(codigo) ?? 0) + Number(l.cantidad_tm ?? 0));
+      }
+    }
+    const skus = [...tmPorSku.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([codigo]) => codigo);
+
+    /*
+     * EL TOPE QUE RIGE.
+     * Manda el que Comercial confirmó para esta salida; si no lo hay, el del
+     * destino. La pantalla dice cuál de los dos está aplicando, porque no es
+     * lo mismo un tope confirmado por correo que la regla general del mercado.
+     */
+    const topePropio = e.peso_neto_max_kg === null ? null : Number(e.peso_neto_max_kg);
+    const topeDestino = dst?.peso_neto_max_kg == null ? null : Number(dst.peso_neto_max_kg);
+    const topeNeto = topePropio ?? topeDestino;
+
     return {
       id: e.id as number,
       numero: e.numero as string,
@@ -155,6 +201,17 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
       bultos: hayPacking ? bultos : 0,
       cargaReal: hayPacking,
       pedidos: pedidos.length,
+      skus,
+      topeNetoKg: topeNeto,
+      topeDeDestino: topePropio === null && topeDestino !== null,
+      topeBrutoKg: e.peso_bruto_max_kg === null ? null : Number(e.peso_bruto_max_kg),
+      topeBultoKg: dst?.peso_bulto_max_kg == null ? null : Number(dst.peso_bulto_max_kg),
+      notaComercial: (e.nota_comercial as string) ?? null,
+      // Solo se compara con la carga REAL: contrastar un tope contra una
+      // previsión daría avisos que no significan nada.
+      excedeTope: hayPacking && topeNeto !== null ? kg > topeNeto : false,
+      cercaDelTope: hayPacking && topeNeto !== null ? kg >= topeNeto * 0.95 : false,
+      cargadoKg: kg,
     };
   });
 
@@ -222,7 +279,8 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
           anio={anio}
           mes={mes}
           hoy={hoy}
-          topeSimultaneo={topeSimultaneo}
+          puedeFijarTopes={PUEDEN_FIJAR_TOPES.includes(usuario?.rol ?? '')}
+        topeSimultaneo={topeSimultaneo}
           recargoDomingo={recargoDomingo}
         />
       </Panel>

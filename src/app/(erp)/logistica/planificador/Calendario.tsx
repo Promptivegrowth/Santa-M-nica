@@ -28,6 +28,7 @@
 import { useState, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
+import { TopesEmbarque } from './TopesEmbarque';
 
 export type EmbarqueCalendario = {
   id: number;
@@ -46,6 +47,22 @@ export type EmbarqueCalendario = {
   /** true si las TM salen del packing real; false si son las comprometidas. */
   cargaReal: boolean;
   pedidos: number;
+
+  /** Los códigos de producto de la salida, del que más pesa al que menos. */
+  skus: string[];
+
+  /* ---- Los topes de peso ---- */
+  /** El que rige: el confirmado para esta salida o, si no hay, el del destino. */
+  topeNetoKg: number | null;
+  /** true si el tope que rige es la regla general del destino, no uno confirmado. */
+  topeDeDestino: boolean;
+  topeBrutoKg: number | null;
+  /** Máximo por bulto que admite el mercado de destino. */
+  topeBultoKg: number | null;
+  notaComercial: string | null;
+  excedeTope: boolean;
+  cercaDelTope: boolean;
+  cargadoKg: number;
 };
 
 const DIAS_CORTOS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
@@ -100,11 +117,14 @@ export function CalendarioEmbarques({
   hoy,
   topeSimultaneo,
   recargoDomingo,
+  puedeFijarTopes,
 }: {
   embarques: EmbarqueCalendario[];
   anio: number;
   mes: number;
   hoy: string;
+  /** ¿El usuario puede escribir los topes de peso? Comercial, Comex y jefaturas. */
+  puedeFijarTopes: boolean;
   topeSimultaneo: number;
   recargoDomingo: number;
 }) {
@@ -219,6 +239,11 @@ export function CalendarioEmbarques({
                         type="button"
                         ref={(n) => { celdas.current.set(dia, n); }}
                         className="cal-dia"
+                        // La fecha completa en el propio elemento: la usan las
+                        // pruebas para abrir un día concreto sin adivinar por
+                        // el número, que se repite entre el relleno del mes
+                        // anterior y el del siguiente.
+                        data-dia={dia}
                         data-fuera={delMes ? 'no' : 'si'}
                         data-hoy={dia === hoy ? 'si' : 'no'}
                         data-elegido={dia === elegido ? 'si' : 'no'}
@@ -351,6 +376,22 @@ export function CalendarioEmbarques({
                       {e.pais ? `, ${e.pais}` : ''}
                     </div>
                     {e.cliente && <div className="cal-tarjeta-cliente">{e.cliente}</div>}
+
+                    {/*
+                      QUÉ PRODUCTO VA. Se pidió expresamente: el calendario
+                      decía que había una salida, pero no de qué. Se enseñan
+                      hasta tres códigos, empezando por el que más pesa.
+                    */}
+                    {e.skus.length > 0 && (
+                      <div className="cal-tarjeta-skus">
+                        {e.skus.slice(0, 3).map((s) => (
+                          <span key={s} className="cal-sku">{s}</span>
+                        ))}
+                        {e.skus.length > 3 && (
+                          <span className="cal-sku-mas">+{e.skus.length - 3}</span>
+                        )}
+                      </div>
+                    )}
                     {!e.cargaReal && (
                       <p className="cal-tarjeta-nota">
                         {e.pedidos === 0
@@ -370,7 +411,61 @@ export function CalendarioEmbarques({
                       {e.contenedor && <div><dt>Contenedor</dt><dd className="mono">{e.contenedor}</dd></div>}
                       {e.booking && <div><dt>Booking</dt><dd className="mono">{e.booking}</dd></div>}
                       {e.naviera && <div><dt>Naviera</dt><dd>{e.naviera}</dd></div>}
+                      {e.topeNetoKg !== null && (
+                        <div>
+                          <dt>Tope neto</dt>
+                          <dd>
+                            {(e.topeNetoKg / 1000).toFixed(1)} TM
+                            <br />
+                            <small style={{ color: 'var(--tinta-3)' }}>
+                              {e.topeDeDestino ? `regla de ${e.pais || 'destino'}` : 'confirmado por Comercial'}
+                            </small>
+                          </dd>
+                        </div>
+                      )}
+                      {e.topeBultoKg !== null && (
+                        <div>
+                          <dt>Máx. por bulto</dt>
+                          <dd>{e.topeBultoKg} kg</dd>
+                        </div>
+                      )}
                     </dl>
+
+                    {/*
+                      EL AVISO QUE HACE ÚTIL EL TOPE.
+                      Guardar el dato no sirve de nada si nadie lo compara. El
+                      aviso de «cerca» es el que de verdad ayuda: cuando ya se
+                      excedió, el contenedor está cargado y hay que bajar
+                      pallets.
+                    */}
+                    {e.excedeTope && (
+                      <p className="cal-tarjeta-alerta" data-tono="critico">
+                        Va {((e.cargadoKg - (e.topeNetoKg ?? 0)) / 1000).toFixed(2)} TM por encima
+                        del tope. No puede salir así.
+                      </p>
+                    )}
+                    {!e.excedeTope && e.cercaDelTope && (
+                      <p className="cal-tarjeta-alerta" data-tono="atencion">
+                        Al {((e.cargadoKg / (e.topeNetoKg ?? 1)) * 100).toFixed(0)} % del tope.
+                        Quedan {(((e.topeNetoKg ?? 0) - e.cargadoKg) / 1000).toFixed(2)} TM.
+                      </p>
+                    )}
+
+                    {e.notaComercial && (
+                      <p className="cal-tarjeta-nota-comercial">
+                        <strong>Comercial:</strong> {e.notaComercial}
+                      </p>
+                    )}
+
+                    <TopesEmbarque
+                      embarqueId={e.id}
+                      numero={e.numero}
+                      netoKg={e.topeDeDestino ? null : e.topeNetoKg}
+                      brutoKg={e.topeBrutoKg}
+                      nota={e.notaComercial}
+                      puede={puedeFijarTopes}
+                      yaSalio={e.estado === 'despachado'}
+                    />
                   </li>
                 ))}
               </ul>
