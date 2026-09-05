@@ -157,7 +157,15 @@ export function FormularioProducto({
             <input className="campo mono" value={d.codigo} data-error={error('codigo')}
                    onChange={(e) => campo('codigo', e.target.value)}
                    maxLength={20} required />
-            <small>No se repite. Es el que se busca al cotizar.</small>
+            {/*
+              Se escribe a mano y no lo genera el sistema: la empresa ya maneja
+              su propio código en otros dos sistemas, y que aquí sea el mismo es
+              lo que permite cruzar la información entre los tres.
+            */}
+            <small>
+              Escriba <b>el mismo código que ya usa la empresa</b>. No se repite, y es el que se
+              busca al cotizar y el que sale en la lista de productos.
+            </small>
           </label>
 
           <label className="form-campo">
