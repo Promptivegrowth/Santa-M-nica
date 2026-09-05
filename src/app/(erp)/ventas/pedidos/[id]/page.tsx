@@ -198,6 +198,7 @@ async function CuerpoPedido({
     { data: reservas },
     { data: embarques },
     { data: facturas },
+    { data: contenedores },
     { data: rentabilidad },
   ] = await Promise.all([
     supabase
@@ -216,6 +217,16 @@ async function CuerpoPedido({
       .from('facturas')
       .select('id, numero, total, moneda, fecha_emision, fecha_vencimiento, estado')
       .eq('pedido_id', pedidoId).order('fecha_emision', { ascending: false }),
+    /*
+     * Los contenedores de ESTE pedido, numerados dentro de él: 338-1, 338-2…
+     * Se pidió expresamente en la reunión, porque es la referencia que maneja
+     * todo el mundo y con la que se evitan las confusiones.
+     */
+    supabase
+      .from('v_pedido_contenedores')
+      .select('*')
+      .eq('pedido_id', pedidoId)
+      .order('secuencia'),
     supabase
       .from('v_rentabilidad_pedido').select('*').eq('pedido_id', pedidoId).single(),
   ]);
@@ -530,8 +541,103 @@ async function CuerpoPedido({
         </Panel>
       )}
 
-      {/* ══════ EMBARQUES ══════ */}
+      {/* ══════ EMBARQUES Y CONTENEDORES ══════ */}
       {pestana === 'embarques' && (
+        <>
+          {/*
+            LOS CONTENEDORES, NUMERADOS DENTRO DE LA PROFORMA.
+            Es lo que se pidió: «el 338 segundo contenedor, 338 tercer
+            contenedor». El código propio del packing —PL POT405— se mantiene
+            porque es el que va en los documentos; lo que se añade es la
+            referencia con la que habla todo el mundo.
+          */}
+          {(contenedores ?? []).length > 0 && (
+            <Panel
+              titulo={`${(contenedores ?? []).length} contenedor${(contenedores ?? []).length === 1 ? '' : 'es'} de esta proforma`}
+              className="mb-espacio"
+            >
+              <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+                <table className="datos">
+                  <thead>
+                    <tr>
+                      <th>Referencia</th>
+                      <th>Packing</th>
+                      <th>Contenedor</th>
+                      <th className="num">Bultos</th>
+                      <th className="num">TM</th>
+                      <th className="num">Salida</th>
+                      <th>Despacho</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(contenedores ?? []).map((c) => (
+                      <tr key={c.packing_list_id as number}>
+                        <td className="mono">
+                          <strong>{c.referencia as string}</strong>
+                          <br />
+                          <span style={{ color: 'var(--tinta-3)', fontSize: '.68rem' }}>
+                            contenedor {c.secuencia as number} de {c.total_contenedores as number}
+                          </span>
+                        </td>
+                        <td className="mono">
+                          <Link href={`/logistica/packing/${c.packing_list_id}`} className="enlace-dato">
+                            {c.packing_codigo as string}
+                          </Link>
+                          {/*
+                            Si el contenedor lleva otra proforma dentro, hay que
+                            decirlo: sus bultos y sus toneladas son los del
+                            contenedor entero, no solo los de este pedido.
+                          */}
+                          {Number(c.proformas_dentro) > 1 && (
+                            <>
+                              <br />
+                              <span style={{ color: 'var(--atencion)', fontSize: '.68rem' }}>
+                                comparte con otra proforma
+                              </span>
+                            </>
+                          )}
+                        </td>
+                        <td className="mono" style={{ fontSize: '.76rem' }}>
+                          {(c.contenedor as string) ?? '—'}
+                        </td>
+                        <td className="num">{num(c.bultos as number)}</td>
+                        <td className="num">{num(c.tm as number, 2)} TM</td>
+                        <td className="num" style={{ fontSize: '.76rem' }}>
+                          {fecha((c.fecha_salida ?? c.fecha_programada) as string)}
+                        </td>
+                        <td className="mono" style={{ fontSize: '.76rem' }}>
+                          {c.despacho ? (c.despacho as string) : <span style={{ color: 'var(--tinta-3)' }}>sin despachar</span>}
+                        </td>
+                        <td>
+                          <Etiqueta
+                            texto={etiquetaEstado(c.estado_packing as string)}
+                            tono={c.estado_packing === 'cerrado' ? 'ok' : 'atencion'}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="pie-explicativo">
+                La <strong>referencia</strong> numera el contenedor dentro de esta proforma, que es
+                como se le nombra en el almacén y con el cliente. El código del packing
+                (<span className="mono">PL POT…</span>) es su identificador propio y es el que va en
+                los documentos.
+                {(contenedores ?? []).some((c) => Number(c.proformas_dentro) > 1) && (
+                  <>
+                    <br /><br />
+                    Los bultos y las toneladas son los del <strong>contenedor completo</strong>. Los
+                    marcados comparten espacio con otra proforma, así que no todo lo que va dentro
+                    es de este pedido.
+                  </>
+                )}
+              </p>
+            </Panel>
+          )}
+
         <Panel titulo={`${(embarques ?? []).length} embarques asociados`}>
           {(embarques ?? []).length === 0 ? (
             <Vacio titulo="Sin embarques" mensaje="Este pedido aún no está programado en ningún embarque." />
@@ -566,6 +672,7 @@ async function CuerpoPedido({
             </div>
           )}
         </Panel>
+        </>
       )}
 
       {/* ══════ FACTURAS y COBRANZA ══════ */}

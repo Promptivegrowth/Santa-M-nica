@@ -166,6 +166,55 @@ try {
     const t = await p.locator('body').innerText();
     ok(r.ok() && !/Application error/i.test(t), `«${nombre}» responde`);
   }
+  console.log('\n─── 8 · Los contenedores, numerados dentro de la proforma ───');
+  {
+    const [caso] = await consultar(`
+      select pedido_id, numero_proforma
+        from v_pedido_contenedores
+       where total_contenedores > 1
+       order by pedido_id limit 1`);
+    ok(Boolean(caso), 'hay algún pedido repartido en varios contenedores');
+
+    const filas = await consultar(
+      `select referencia, secuencia, total_contenedores, packing_codigo, proformas_dentro
+         from v_pedido_contenedores where pedido_id = ${caso.pedido_id} order by secuencia`);
+
+    ok(filas.every((f, i) => Number(f.secuencia) === i + 1),
+       'la secuencia va 1, 2, 3… sin saltos',
+       filas.map((f) => f.secuencia).join(', '));
+    ok(filas.every((f) => f.referencia === `${caso.numero_proforma}-${f.secuencia}`),
+       'la referencia es la proforma más el número de contenedor',
+       filas.map((f) => f.referencia).join(' · '));
+    ok(new Set(filas.map((f) => f.packing_codigo)).size === filas.length,
+       'cada referencia apunta a un packing distinto');
+
+    await p.goto(`${BASE}/ventas/pedidos/${caso.pedido_id}?t=embarques`, { waitUntil: 'networkidle' });
+    await p.waitForTimeout(2000);
+    const ficha = await p.locator('body').innerText();
+    ok(ficha.includes(filas[0].referencia), 'la ficha del pedido muestra la referencia',
+       filas[0].referencia);
+    ok(/CONTENEDOR 1 DE \d/i.test(ficha), 'y dice «contenedor 1 de N»');
+    ok(/PL POT/i.test(ficha), 'sin perder el código propio del packing');
+
+    // Un contenedor compartido tiene que avisarlo: sus toneladas no son todas
+    // de este pedido.
+    if (filas.some((f) => Number(f.proformas_dentro) > 1)) {
+      ok(/comparte con otra proforma/i.test(ficha),
+         'avisa cuando el contenedor lleva otra proforma dentro');
+    }
+  }
+
+  console.log('\n─── 9 · El producto en Control de pedidos ───');
+  {
+    await p.goto(`${BASE}/ventas/control`, { waitUntil: 'networkidle' });
+    await p.waitForTimeout(2000);
+    const cabC = (await p.locator('table.datos thead th').allInnerTexts()).map((t) => t.trim());
+    ok(cabC.includes('PRODUCTO'), 'la tabla trae la columna Producto', cabC.join(' · '));
+
+    const prods = await p.locator('table.datos tbody tr td:nth-child(4)').allInnerTexts();
+    const llenos = prods.filter((t) => t.trim() && t.trim() !== '—').length;
+    ok(llenos > 0, 'y las filas la traen llena', `${llenos} de ${prods.length}`);
+  }
 } finally {
   await nav.close();
 }

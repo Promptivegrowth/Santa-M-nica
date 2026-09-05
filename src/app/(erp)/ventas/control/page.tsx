@@ -16,6 +16,7 @@ import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta, Semaforo, Barra } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
 import { num, fecha, dinero } from '@/lib/formato';
+import { uno } from '@/lib/relaciones';
 
 export const metadata: Metadata = { title: 'Control de pedidos' };
 export const dynamic = 'force-dynamic';
@@ -43,6 +44,41 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
     .in('ciclo', ['confirmado', 'pendiente_validacion']);
 
   const lista = todos ?? [];
+
+  /*
+   * QUÉ PRODUCTO ES CADA PEDIDO.
+   *
+   * Se pidió en la reunión: «aquí querían que salga el producto por cliente».
+   * Sin él, esta pantalla dice que hay un problema pero no con qué: para saber
+   * si el faltante es de filete o de anillas había que abrir el pedido uno por
+   * uno, que es justo lo que esta pantalla existe para evitar.
+   *
+   * La vista del tablero es un resumen por pedido y no los trae, así que se
+   * consultan aparte para los que están abiertos.
+   */
+  const ids = lista.map((p) => Number(p.id));
+  const { data: lineas } = ids.length
+    ? await supabase
+        .from('pedido_lineas')
+        .select('pedido_id, cantidad_tm, sku_presentaciones(skus(codigo, corte, especies(nombre)))')
+        .in('pedido_id', ids)
+        .order('cantidad_tm', { ascending: false })
+    : { data: [] };
+
+  const productoDe = new Map<number, { texto: string; cuantos: number }>();
+  for (const l of lineas ?? []) {
+    const sp = uno<Record<string, unknown>>(l.sku_presentaciones);
+    const sku = uno<Record<string, unknown>>(sp?.skus);
+    const id = Number(l.pedido_id);
+    const previo = productoDe.get(id);
+    if (previo) { previo.cuantos += 1; continue; }
+    // El primero es el de MÁS toneladas: si el pedido lleva varios, ese es el
+    // que lo identifica.
+    productoDe.set(id, {
+      texto: `${sku?.codigo ?? ''} · ${sku?.corte ?? ''}`.trim(),
+      cuantos: 1,
+    });
+  }
 
   /** Aplica el criterio de cada vista sobre los pedidos abiertos. */
   function filtrar(v: string) {
@@ -96,7 +132,7 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
             <table className="datos">
               <thead>
                 <tr>
-                  <th>Estado</th><th>Proforma</th><th>Cliente</th>
+                  <th>Estado</th><th>Proforma</th><th>Cliente</th><th>Producto</th>
                   <th className="num">Pedido</th><th className="num">Avance</th><th className="num">Falta</th>
                   <th className="num">Venta US$</th><th className="num">Compromiso</th><th>Prioridad</th>
                   <th>Acciones</th>
@@ -110,7 +146,26 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                       <Link href={`/ventas/pedidos/${p.id}`} className="enlace-dato">{p.numero_proforma as string}</Link>
                     </td>
                     <td title={p.cliente as string}>
-                      {(p.cliente as string).length > 26 ? (p.cliente as string).slice(0, 25) + '…' : p.cliente as string}
+                      {(p.cliente as string).length > 24 ? (p.cliente as string).slice(0, 23) + '…' : p.cliente as string}
+                    </td>
+                    <td style={{ fontSize: '.76rem' }}>
+                      {(() => {
+                        const prod = productoDe.get(p.id as number);
+                        if (!prod) return <span style={{ color: 'var(--tinta-3)' }}>—</span>;
+                        return (
+                          <>
+                            {prod.texto.length > 28 ? prod.texto.slice(0, 27) + '…' : prod.texto}
+                            {prod.cuantos > 1 && (
+                              <>
+                                <br />
+                                <span style={{ color: 'var(--tinta-3)', fontSize: '.68rem' }}>
+                                  y {prod.cuantos - 1} más
+                                </span>
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="num">{num(p.tm_pedidas, 1)} TM</td>
                     <td className="num" style={{ minWidth: '5rem' }}>
