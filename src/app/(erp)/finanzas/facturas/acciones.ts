@@ -211,7 +211,13 @@ export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
       pedido_id: pedidoId,
       cliente_id: pedido.cliente_id,
       moneda: pedido.moneda,
-      tipo_cambio: pedido.tipo_cambio ?? 1,
+      /*
+       * El tipo de cambio se hereda del pedido, que es donde se pactó. El
+       * antiguo «?? 1» de respaldo ya no vale: la base rechaza cualquier valor
+       * por debajo de 1,5 porque no puede ser una cotización del dólar, y una
+       * factura en soles con un 1 era justamente lo que impedía convertirla.
+       */
+      tipo_cambio: Number(pedido.tipo_cambio),
       subtotal: previa.subtotal,
       igv: previa.igv,
       total: previa.total,

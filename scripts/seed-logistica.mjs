@@ -363,7 +363,14 @@ export async function sembrarLogistica(ctx) {
     const cliente = clientesDb.find((c) => c.id === pedido.cliente_id);
     nFac++;
 
-    const subtotal = decimal(35000, 320000, 2);
+    /*
+     * El importe va EN LA MONEDA DE LA FACTURA. Se generaba el mismo rango
+     * para las dos, así que las facturas en soles llevaban cifras con
+     * magnitud de dólares y la cartera no se podía totalizar.
+     */
+    const subtotal = Number(
+      (decimal(35000, 320000, 2) * (pedido.moneda === 'PEN' ? Number(pedido.tipo_cambio) : 1)).toFixed(2)
+    );
     const impuesto = Number((subtotal * (igv / 100)).toFixed(2));
     const emision = String(d.fecha_salida).slice(0, 10);
     const venc = fechaMas(cliente ? cliente.dias_credito : 30, new Date(emision));

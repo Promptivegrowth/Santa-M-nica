@@ -24,6 +24,7 @@ import { Historial } from '@/components/ui/Historial';
 import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
+import { aDolares, aSoles } from '@/lib/moneda';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { campo } from '@/lib/relaciones';
 import { AccionesMaestro } from '@/components/ui/AccionesMaestro';
@@ -154,7 +155,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
         .limit(15),
       supabase
         .from('facturas')
-        .select('id, numero, fecha_emision, fecha_vencimiento, total, moneda, estado, cobranzas(monto)')
+        .select('id, numero, fecha_emision, fecha_vencimiento, total, moneda, tipo_cambio, estado, cobranzas(monto)')
         .eq('cliente_id', cliId)
         .order('fecha_emision', { ascending: false })
         .limit(25),
@@ -165,10 +166,27 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
   const saldoDe = (f: (typeof vivas)[number]) =>
     Number(f.total ?? 0) - ((f.cobranzas ?? []) as { monto: number }[]).reduce((s, x) => s + Number(x.monto ?? 0), 0);
 
-  const deuda = vivas.reduce((s, f) => s + Math.max(0, saldoDe(f)), 0);
+  /*
+   * Todo lo que se suma aquí se lleva a LA MONEDA DEL CLIENTE, que es en la
+   * que está su línea de crédito: comparar una deuda en dólares contra una
+   * línea en soles no significaría nada.
+   *
+   * Hoy ningún cliente tiene facturas en dos monedas, así que esto no cambia
+   * ninguna cifra. Se pone porque nada lo impide: el día que a un cliente
+   * peruano se le facture una exportación en dólares, la suma sería falsa y
+   * nadie se daría cuenta.
+   */
+  const aMonedaDelCliente = (f: Record<string, unknown>, importe: number) =>
+    f.moneda === c.moneda
+      ? importe
+      : c.moneda === 'USD'
+        ? aDolares(importe, f.moneda as string, f.tipo_cambio as number)
+        : aSoles(importe, f.moneda as string, f.tipo_cambio as number);
+
+  const deuda = vivas.reduce((s, f) => s + Math.max(0, aMonedaDelCliente(f, saldoDe(f))), 0);
   const vencido = vivas
     .filter((f) => saldoDe(f) > 0.01 && diasDesdeHoy(f.fecha_vencimiento as string) < 0)
-    .reduce((s, f) => s + saldoDe(f), 0);
+    .reduce((s, f) => s + aMonedaDelCliente(f, saldoDe(f)), 0);
 
   const linea = Number(c.linea_credito ?? 0);
   const disponible = Math.max(0, linea - deuda);
@@ -179,7 +197,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
     (s, p) => s + ((p.pedido_lineas ?? []) as { cantidad_tm: number }[]).reduce((x, l) => x + Number(l.cantidad_tm ?? 0), 0),
     0
   );
-  const facturadoTotal = vivas.reduce((s, f) => s + Number(f.total ?? 0), 0);
+  const facturadoTotal = vivas.reduce((s, f) => s + aMonedaDelCliente(f, Number(f.total ?? 0)), 0);
   const abiertos = (pedidos ?? []).filter((p) => !['cerrado', 'cancelado'].includes(p.ciclo as string));
 
   return (

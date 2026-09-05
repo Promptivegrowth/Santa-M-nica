@@ -353,10 +353,14 @@ const REPORTES: Record<string, DefinicionReporte> = {
       { titulo: 'TM reservadas', clave: 'tm_reservadas', ancho: 14, formato: FORMATO.toneladas },
       { titulo: 'TM faltantes', clave: 'tm_faltantes', ancho: 13, formato: FORMATO.toneladas },
       { titulo: 'Avance %', clave: 'avance_pct', ancho: 11, formato: FORMATO.porcentaje },
+      // En dólares: es la única forma de que la fila de totales signifique algo
+      // cuando en la lista conviven proformas en soles y en dólares.
+      { titulo: 'Moneda', clave: 'moneda', ancho: 10, alineacion: 'center' },
+      { titulo: 'Venta US$', clave: 'venta_usd', ancho: 16, formato: FORMATO.dolares },
       { titulo: 'Estado', clave: 'semaforo', ancho: 13, alineacion: 'center' },
       { titulo: 'Ciclo', clave: 'ciclo', ancho: 16 },
     ],
-    totalizar: ['tm_pedidas', 'tm_reservadas', 'tm_faltantes'],
+    totalizar: ['tm_pedidas', 'tm_reservadas', 'tm_faltantes', 'venta_usd'],
   },
 
   cuentas_cobrar: {
@@ -372,12 +376,20 @@ const REPORTES: Record<string, DefinicionReporte> = {
       { titulo: 'Emisión', clave: 'fecha_emision', ancho: 13, formato: FORMATO.fecha },
       { titulo: 'Vencimiento', clave: 'fecha_vencimiento', ancho: 13, formato: FORMATO.fecha },
       { titulo: 'Días vencida', clave: 'dias_vencida', ancho: 12, formato: FORMATO.entero },
-      { titulo: 'Total', clave: 'total', ancho: 15, formato: FORMATO.dolares },
-      { titulo: 'Cobrado', clave: 'cobrado', ancho: 15, formato: FORMATO.dolares },
-      { titulo: 'Saldo', clave: 'saldo', ancho: 15, formato: FORMATO.dolares },
+      /*
+       * Las columnas _usd, no las de la moneda del documento.
+       * `total`, `cobrado` y `saldo` están cada una en la moneda de SU
+       * factura, así que la fila de totales sumaba soles con dólares y el
+       * formato los rotulaba en dólares. Para poder totalizar hace falta una
+       * sola moneda; la moneda original queda a la vista en su columna.
+       */
+      { titulo: 'Moneda', clave: 'moneda', ancho: 10, alineacion: 'center' },
+      { titulo: 'Total US$', clave: 'total_usd', ancho: 15, formato: FORMATO.dolares },
+      { titulo: 'Cobrado US$', clave: 'cobrado_usd', ancho: 15, formato: FORMATO.dolares },
+      { titulo: 'Saldo US$', clave: 'saldo_usd', ancho: 15, formato: FORMATO.dolares },
       { titulo: 'Antigüedad', clave: 'tramo_antiguedad', ancho: 16 },
     ],
-    totalizar: ['total', 'cobrado', 'saldo'],
+    totalizar: ['total_usd', 'cobrado_usd', 'saldo_usd'],
   },
 
   rentabilidad: {

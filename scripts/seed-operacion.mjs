@@ -19,6 +19,15 @@ export async function sembrarOperacion(ctx) {
     entero, elegir, decimal, suerte, fechaMenos, fechaMas, paso, ok,
   } = ctx;
 
+  /*
+   * SOLES POR DÓLAR. Un solo número para todo el sembrado, y con ese
+   * significado: no es «soles por unidad de la moneda del documento». Un
+   * documento en soles con tipo_cambio = 1 —que es lo que generaba este
+   * script— hace imposible convertirlo después, y la base ya no lo admite:
+   * hay un CHECK que exige un valor entre 1,5 y 100.
+   */
+  const TIPO_CAMBIO = 3.75;
+
   // Atajos a los usuarios por rol, para asignar responsables coherentes
   const porRol = Object.fromEntries(usuarios.map((u) => [u.rol, u.id]));
   const uAlmacen = porRol.almacen;
@@ -393,7 +402,7 @@ export async function sembrarOperacion(ctx) {
                      tm_desde: e.desde, tm_hasta: e.hasta, precio_tm: Number((base * e.factor * 1.08).toFixed(2)) });
     }
     precios.push({ lista_id: listaNac, sku_presentacion_id: u.sku_presentacion_id, cliente_id: null,
-                   tm_desde: 0, tm_hasta: null, precio_tm: Number((base * 3.75 * 0.85).toFixed(2)) });
+                   tm_desde: 0, tm_hasta: null, precio_tm: Number((base * TIPO_CAMBIO * 0.85).toFixed(2)) });
   }
 
   // Precios pactados con los clientes más grandes
@@ -427,7 +436,8 @@ export async function sembrarOperacion(ctx) {
       vendedor_id: elegir(vendDb).id,
       estado: elegir(['borrador', 'enviada', 'enviada', 'aceptada', 'aceptada', 'aceptada', 'rechazada', 'vencida']),
       moneda: nac ? 'PEN' : 'USD',
-      tipo_cambio: nac ? 1 : 3.75,
+      // Soles por dólar, SIEMPRE, sea cual sea la moneda del documento.
+      tipo_cambio: TIPO_CAMBIO,
       incoterm: nac ? 'EXW' : elegir(['FOB', 'FOB', 'CFR', 'CIF']),
       destino_id: elegir(destinosDb).id,
       lista_id: nac ? listaNac : listaFob,
@@ -446,7 +456,15 @@ export async function sembrarOperacion(ctx) {
     for (let k = 0; k < entero(1, 4); k++) {
       const u = elegir(unidades);
       const cant = decimal(8, 140, 3);
-      const pl = decimal(1900, 4200, 2);
+      /*
+       * El precio va EN LA MONEDA DEL DOCUMENTO. Antes se generaba el mismo
+       * rango de números para las dos, así que los documentos en soles
+       * llevaban importes con magnitud de dólares. Mientras nadie convertía no
+       * se notaba; en cuanto la conversión fue correcta, la mitad de la
+       * cartera pasó a margen negativo. La lista de precios nacional ya lo
+       * hacía bien (base × TIPO_CAMBIO); las líneas, no.
+       */
+      const pl = decimal(1900, 4200, 2) * (c.moneda === 'PEN' ? TIPO_CAMBIO : 1);
       const desc = suerte(0.25) ? decimal(0.5, 5, 2) : 0;
       cotLineas.push({
         cotizacion_id: c.id, sku_presentacion_id: u.sku_presentacion_id,
@@ -491,7 +509,7 @@ export async function sembrarOperacion(ctx) {
       vendedor_id: elegir(vendDb).id,
       oc_cliente: suerte(0.6) ? `PO-${entero(10000, 99999)}` : null,
       moneda: nac ? 'PEN' : 'USD',
-      tipo_cambio: nac ? 1 : 3.75,
+      tipo_cambio: TIPO_CAMBIO,
       incoterm: nac ? 'EXW' : elegir(['FOB', 'FOB', 'CFR', 'CIF']),
       destino_id: elegir(destinosDb).id,
       tipo_despacho: nac ? 'mercado_nacional' : 'exportacion',
@@ -520,7 +538,8 @@ export async function sembrarOperacion(ctx) {
     for (let k = 0; k < entero(1, 4); k++) {
       const u = elegir(unidades);
       const cant = decimal(10, 150, 3);
-      const pl = decimal(1900, 4200, 2);
+      // En la moneda del pedido. El costo, en cambio, siempre en dólares.
+      const pl = decimal(1900, 4200, 2) * (p.moneda === 'PEN' ? TIPO_CAMBIO : 1);
       const desc = suerte(0.2) ? decimal(0.5, 6, 2) : 0;
       pedLineas.push({
         pedido_id: p.id, sku_presentacion_id: u.sku_presentacion_id,

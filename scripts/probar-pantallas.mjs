@@ -103,8 +103,21 @@ async function principal() {
   console.log('\n── Detalle de un pedido y su plano de estiba ────────────────────');
   const cli = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
-  const { data: ped } = await cli.from('pedidos').select('id').limit(1).single();
-  const { data: pk } = await cli.from('packing_lists').select('id').limit(1).single();
+  /*
+   * Con `.limit(1)` y sin `.order()`, PostgreSQL devuelve una fila cualquiera
+   * —puede cambiar entre dos ejecuciones seguidas—. Esta prueba fallaba de
+   * forma intermitente por eso: de los 106 packings hay 2 que todavía no
+   * tienen plano de estiba (un contenedor recién creado y sin estibar es un
+   * estado perfectamente válido), y cuando le tocaba uno de esos, la matriz
+   * no estaba y el fallo parecía del sistema.
+   *
+   * Se fija el orden y se elige uno que SÍ tenga plano, que es lo que esta
+   * prueba quiere comprobar.
+   */
+  const { data: ped } = await cli.from('pedidos').select('id').order('id').limit(1).single();
+  const { data: conPlano } = await cli
+    .from('plano_estiba').select('packing_list_id').order('packing_list_id').limit(1).single();
+  const pk = { id: conPlano.packing_list_id };
 
   for (const t of ['general', 'productos', 'reservas', 'rentabilidad', 'historial']) {
     const r = await fetch(`${BASE}/ventas/pedidos/${ped.id}?t=${t}`, { headers: { cookie } });

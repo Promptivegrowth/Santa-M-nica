@@ -22,6 +22,7 @@ import { Historial } from '@/components/ui/Historial';
 import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
+import { aDolares } from '@/lib/moneda';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
 import { NuevoPacking } from './NuevoPacking';
@@ -141,7 +142,7 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
   const [{ data: vinculos }, { data: packings }] = await Promise.all([
     supabase
       .from('embarque_pedidos')
-      .select('pedidos(id, numero_proforma, ciclo, cobertura, situacion, moneda, fecha_comprometida, clientes(id, razon_social, pais), pedido_lineas(cantidad_tm, precio_tm, descuento_pct))')
+      .select('pedidos(id, numero_proforma, ciclo, cobertura, situacion, moneda, tipo_cambio, fecha_comprometida, clientes(id, razon_social, pais), pedido_lineas(cantidad_tm, precio_tm, descuento_pct))')
       .eq('embarque_id', embId),
     supabase
       .from('packing_lists')
@@ -158,11 +159,23 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
     (s, p) => s + ((p.pedido_lineas ?? []) as { cantidad_tm: number }[]).reduce((x, l) => x + Number(l.cantidad_tm ?? 0), 0),
     0
   );
-  const valorTotal = pedidos.reduce(
-    (s, p) => s + ((p.pedido_lineas ?? []) as { cantidad_tm: number; precio_tm: number; descuento_pct: number }[])
-      .reduce((x, l) => x + Number(l.cantidad_tm) * Number(l.precio_tm) * (1 - Number(l.descuento_pct) / 100), 0),
-    0
-  );
+  /*
+   * El valor del embarque, en dólares.
+   *
+   * Un embarque agrupa pedidos que pueden estar en monedas distintas —hoy hay
+   * 22 así—, de modo que sumar los importes tal cual y rotular el resultado en
+   * dólares daba una cifra que no era ninguna de las dos cosas. Cada pedido se
+   * convierte con SU tipo de cambio antes de entrar en la suma.
+   */
+  const valorTotal = pedidos.reduce((s, p) => {
+    const enSuMoneda = ((p.pedido_lineas ?? []) as
+      { cantidad_tm: number; precio_tm: number; descuento_pct: number }[])
+      .reduce((x, l) => x + Number(l.cantidad_tm) * Number(l.precio_tm) * (1 - Number(l.descuento_pct) / 100), 0);
+    return s + aDolares(enSuMoneda, p.moneda as string, p.tipo_cambio as number);
+  }, 0);
+
+  /* Si el embarque mezcla monedas, el indicador tiene que decirlo. */
+  const monedasDelEmbarque = [...new Set(pedidos.map((p) => String(p.moneda)))];
 
   // Pedidos que van en este embarque pero todavía no tienen stock apartado.
   const sinCobertura = pedidos.filter(
@@ -205,7 +218,15 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
       <RejillaKpi>
         <Kpi etiqueta="Pedidos" valor={num(pedidos.length)} tono="marca" />
         <Kpi etiqueta="Volumen" valor={tm(totalTm * 1000)} />
-        {puedeVerImportes && <Kpi etiqueta="Valor embarcado" valor={dinero(valorTotal, 'USD', 0)} />}
+        {puedeVerImportes && (
+          <Kpi
+            etiqueta="Valor embarcado"
+            valor={dinero(valorTotal, 'USD', 0)}
+            nota={monedasDelEmbarque.length > 1
+              ? `Convertido a dólares · lleva pedidos en ${monedasDelEmbarque.join(' y ')}`
+              : undefined}
+          />
+        )}
         <Kpi
           etiqueta="Packing lists"
           valor={num((packings ?? []).length)}
