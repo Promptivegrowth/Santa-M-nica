@@ -92,6 +92,7 @@ export const NAVEGACION: Grupo[] = [
     entradas: [
       { titulo: 'Facturación',        ruta: '/finanzas/facturas',     icono: 'facturas',     ayuda: 'Comprobantes emitidos', roles: ['gerencia', 'comercial', 'comex', 'consulta'] },
       { titulo: 'Cuentas por cobrar', ruta: '/finanzas/cobrar',       icono: 'cobrar',       ayuda: 'Quién debe y desde cuándo', roles: ['gerencia', 'comercial', 'consulta'] },
+      { titulo: 'Costos de producción', ruta: '/finanzas/costos',    icono: 'valorizado',   ayuda: 'Materia prima, conversión y variable, mes a mes', roles: ['gerencia', 'operaciones', 'comercial'] },
       { titulo: 'Rentabilidad',       ruta: '/finanzas/rentabilidad', icono: 'rentabilidad', ayuda: 'Margen por pedido y cliente', roles: ['gerencia', 'operaciones', 'comercial'] },
     ],
   },

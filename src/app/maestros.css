@@ -1102,3 +1102,100 @@ table.datos thead th small {
 }
 .cal-topes .campo { font-size: .76rem; padding: .25rem .4rem; }
 .cal-topes-acciones { display: flex; gap: .4rem; margin-block-start: .5rem; }
+
+/* ---------------------------------------------------------------------------
+   COSTOS DE PRODUCCIÓN
+   Se edita en la propia tabla: son 191 productos por tres campos, y abrir un
+   formulario por cada uno convertiría la carga mensual en media mañana de
+   trabajo — que es como se consigue que los costos no se carguen nunca.
+   --------------------------------------------------------------------------- */
+.costos-periodo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-block-end: 1rem;
+}
+.costos-periodo strong { font-size: 1.05rem; color: var(--tinta); min-width: 12rem; text-align: center; }
+
+.costos-copiar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: .7rem .9rem;
+  margin-block-end: 1rem;
+  border: 1px solid var(--atencion);
+  border-radius: var(--radio);
+  background: var(--atencion-suave);
+}
+.costos-copiar strong { display: block; font-size: .86rem; color: var(--atencion); }
+.costos-copiar span {
+  display: block;
+  font-size: .76rem;
+  color: var(--tinta-2);
+  line-height: 1.45;
+  max-width: 58ch;
+  margin-block-start: .1rem;
+}
+.costos-copiar .ficha-aviso { flex-basis: 100%; margin: .4rem 0 0; }
+
+.tabla-costos td { padding-block: .25rem; }
+.costo-campo {
+  width: 6.2rem;
+  padding: .2rem .35rem;
+  font-size: .78rem;
+  text-align: right;
+}
+/* Un producto sin costo se distingue de un vistazo: es lo que hay que llenar. */
+.tabla-costos tr[data-sin-costo='si'] td:first-child { border-inline-start: 2px solid var(--atencion); }
+.costo-error {
+  font-size: .74rem;
+  color: var(--critico);
+  background: var(--critico-suave);
+  padding: .3rem .6rem;
+}
+
+
+/* ---------------------------------------------------------------------------
+   DE QUÉ SE COMPONE EL COSTO
+   Las cuatro partes suman el 100 % de la venta. Es la pregunta que hay detrás
+   de pedir los tres costos por separado: no cuánto se gana, sino en qué se va.
+   --------------------------------------------------------------------------- */
+.composicion { display: flex; flex-direction: column; gap: .6rem; padding: 1rem; }
+.composicion-fila {
+  display: grid;
+  grid-template-columns: 15rem 1fr 8rem 4rem;
+  align-items: center;
+  gap: .7rem;
+}
+.composicion-nombre { font-size: .82rem; color: var(--tinta); }
+.composicion-barra {
+  height: .7rem;
+  background: var(--superficie-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.composicion-barra i { display: block; height: 100%; border-radius: 2px; }
+.composicion-barra i[data-tono='marca']    { background: var(--acento); }
+.composicion-barra i[data-tono='atencion'] { background: var(--atencion); }
+.composicion-barra i[data-tono='critico']  { background: var(--critico); }
+.composicion-barra i[data-tono='ok']       { background: var(--ok); }
+.composicion-cifra {
+  font-family: var(--font-mono);
+  font-size: .82rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.composicion-pct {
+  font-family: var(--font-mono);
+  font-size: .74rem;
+  color: var(--tinta-3);
+  text-align: right;
+}
+
+@media (max-width: 800px) {
+  .composicion-fila { grid-template-columns: 1fr 5rem; }
+  .composicion-barra { grid-column: 1 / -1; }
+}
