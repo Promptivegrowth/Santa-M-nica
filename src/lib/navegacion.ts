@@ -54,6 +54,7 @@ export const NAVEGACION: Grupo[] = [
       { titulo: 'Disponibilidad',     ruta: '/ventas/disponibilidad', icono: 'disponibilidad', ayuda: 'Cuánto se puede vender de verdad', roles: TODOS },
       { titulo: 'Control de pedidos', ruta: '/ventas/control',        icono: 'control',        ayuda: 'Los que están en riesgo', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
       { titulo: 'Necesidades',        ruta: '/ventas/necesidades',    icono: 'necesidades',    ayuda: 'Qué falta producir o comprar', roles: ['gerencia', 'operaciones', 'comercial', 'consulta'] },
+      { titulo: 'Tiempos del flujo',  ruta: '/ventas/tiempos',        icono: 'planificador',   ayuda: 'Cuánto tarda cada paso, de la oferta al cobro', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
     ],
   },
   {

@@ -42,10 +42,44 @@ export async function sembrarLogistica(ctx) {
   const embarques = [];
   const NAVIERAS = ['COSCO', 'Maersk', 'Hapag-Lloyd', 'MSC', 'CMA CGM', 'Evergreen'];
 
+  /*
+   * QUÉ PEDIDOS LLEVA CADA EMBARQUE SE DECIDE ANTES QUE SU FECHA.
+   *
+   * Antes era al revés: se sorteaba la fecha del embarque —entre 25 días en el
+   * futuro y 200 en el pasado— y después se repartían los pedidos en rueda.
+   * Con eso, 38 de los 92 pedidos despachados aparecían saliendo ANTES de
+   * haberse pedido; el peor, 178 días antes. Mientras nadie restaba fechas no
+   * se notaba, pero la pantalla de tiempos lo dejó al descubierto.
+   *
+   * Ahora se eligen primero los pedidos y la salida se programa DESPUÉS del
+   * último de ellos.
+   */
+  const cargaDe = [];
+  for (let i = 0; i < 190; i++) {
+    const cuantos = suerte(0.25) ? 2 : 1;   // algunos embarques consolidan dos
+    const suyos = [];
+    for (let k = 0; k < cuantos; k++) {
+      suyos.push(pedidosEmbarcables[(i * 2 + k) % pedidosEmbarcables.length]);
+    }
+    cargaDe.push(suyos);
+  }
+
   for (let i = 1; i <= 190; i++) {
     const alm = elegir(almDb);
-    const dias = entero(-25, 200); // algunos futuros: el planificador debe tener agenda
-    // Estado coherente con la fecha: lo pasado ya salió, lo futuro está planificado
+    const suyos = cargaDe[i - 1];
+
+    /* Cuántos días atrás quedó el pedido más reciente de este embarque. */
+    const masReciente = Math.min(
+      ...suyos.map((p) => Math.round(
+        (new Date('2026-08-25') - new Date(p.fecha_solicitada)) / 86400000
+      ))
+    );
+
+    /*
+     * La salida va entre 5 y 25 días DESPUÉS del último pedido. Si eso cae en
+     * el futuro, mejor: el planificador necesita agenda por delante.
+     */
+    const dias = masReciente - entero(5, 25);
     const estado = dias > 0
       ? elegir(['despachado', 'despachado', 'despachado', 'confirmado'])
       : elegir(['planificado', 'planificado', 'confirmado', 'en_preparacion']);
@@ -73,12 +107,12 @@ export async function sembrarLogistica(ctx) {
   ok(`${embDb.length} embarques programados`);
 
   // Relación embarque ↔ pedido (permite agrupar y consolidar)
+  /* El vínculo ya se decidió arriba: aquí solo se escribe, con los mismos
+     pedidos que sirvieron para calcular la fecha de cada embarque. */
   const embPed = [];
   const usados = new Set();
   embDb.forEach((e, i) => {
-    const cuantos = suerte(0.25) ? 2 : 1; // algunos embarques consolidan 2 pedidos
-    for (let k = 0; k < cuantos; k++) {
-      const p = pedidosEmbarcables[(i * 2 + k) % pedidosEmbarcables.length];
+    for (const p of cargaDe[i] ?? []) {
       const clave = `${e.id}-${p.id}`;
       if (usados.has(clave)) continue;
       usados.add(clave);

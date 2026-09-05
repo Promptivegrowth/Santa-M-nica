@@ -941,3 +941,80 @@ table.datos thead th small {
   gap: .6rem;
   margin-block-end: 1rem;
 }
+
+/* ---------------------------------------------------------------------------
+   TIEMPOS DEL FLUJO
+   Un tramo por fila, con su barra. El ancho es proporcional al tramo más
+   lento, no al total: lo que interesa es comparar los pasos entre sí, que es
+   la pregunta que se hace quien abre esta pantalla.
+   --------------------------------------------------------------------------- */
+.tramos {
+  display: flex;
+  flex-direction: column;
+  gap: .95rem;
+  padding: 1rem;
+}
+.tramo-cab {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .8rem;
+}
+.tramo-cab strong { font-size: .86rem; color: var(--tinta); }
+.tramo-cifra {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tramo-cifra[data-tono='marca']    { color: var(--acento); }
+.tramo-cifra[data-tono='ok']       { color: var(--ok); }
+.tramo-cifra[data-tono='atencion'] { color: var(--atencion); }
+.tramo-cifra[data-tono='critico']  { color: var(--critico); }
+.tramo-cifra[data-tono='neutro']   { color: var(--tinta-3); }
+
+.tramo-barra {
+  display: block;
+  height: .5rem;
+  margin-block: .35rem .3rem;
+  background: var(--superficie-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.tramo-barra i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  transition: width .3s ease;
+}
+.tramo-barra i[data-tono='marca']    { background: var(--acento); }
+.tramo-barra i[data-tono='ok']       { background: var(--ok); }
+.tramo-barra i[data-tono='atencion'] { background: var(--atencion); }
+.tramo-barra i[data-tono='critico']  { background: var(--critico); }
+.tramo-barra i[data-tono='neutro']   { background: var(--linea-2); }
+
+.tramo-pie {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .8rem;
+  flex-wrap: wrap;
+  font-size: .74rem;
+  color: var(--tinta-3);
+  line-height: 1.4;
+}
+/* Sobre cuántos pedidos se calculó. Va en monoespaciado para que se lea como
+   un dato y no como parte de la explicación. */
+.tramo-n {
+  font-family: var(--font-mono);
+  font-size: .7rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .tramo-pie { flex-direction: column; gap: .15rem; }
+}
+
+/* Un pedido con fechas imposibles: se ve, pero no cuenta para los promedios. */
+.fila-incoherente { background: var(--critico-suave) !important; }
+.fila-incoherente td { opacity: .85; }
