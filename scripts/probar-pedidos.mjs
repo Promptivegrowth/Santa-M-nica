@@ -182,7 +182,8 @@ try {
     ok(filas.every((f, i) => Number(f.secuencia) === i + 1),
        'la secuencia va 1, 2, 3… sin saltos',
        filas.map((f) => f.secuencia).join(', '));
-    ok(filas.every((f) => f.referencia === `${caso.numero_proforma}-${f.secuencia}`),
+    // Con BARRA, como en el maestro del cliente: «SM26-225/1».
+    ok(filas.every((f) => f.referencia === `${caso.numero_proforma}/${f.secuencia}`),
        'la referencia es la proforma más el número de contenedor',
        filas.map((f) => f.referencia).join(' · '));
     ok(new Set(filas.map((f) => f.packing_codigo)).size === filas.length,

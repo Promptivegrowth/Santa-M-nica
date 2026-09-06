@@ -19,6 +19,7 @@ import { GraficoBarras } from '@/components/graficos/Graficos';
 import { AccionesLista } from '@/components/ui/Acciones';
 import { num, fecha, tm, dinero } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
+import { traerTodo } from '@/lib/traerTodo';
 
 export const metadata: Metadata = { title: 'Existencias' };
 export const dynamic = 'force-dynamic';
@@ -35,12 +36,54 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
   const buscar = (q.buscar as string) ?? '';
   const almacenId = (q.almacen as string) ?? '';
   const rango = (q.rango as string) ?? '';
+  /* Los tres que pidió Oliver: «agregarle filtro de formato y filtro de corte».
+     Va también especie, que es lo que encadena a los otros dos. */
+  const especie = (q.especie as string) ?? '';
+  const formato = (q.formato as string) ?? '';
+  const corte = (q.corte as string) ?? '';
   /* Cómo se agrupa el gráfico de arriba. Por formato es lo que se pidió
      —«filete 300 toneladas, aleta 200»— y los otros dos ejes salen gratis. */
   const eje = (q.eje as string) || 'formato';
 
-  const { data: almacenes } = await supabase
-    .from('almacenes').select('id, nombre').eq('activo', true).order('nombre');
+  const [{ data: almacenes }, { data: catalogo }] = await Promise.all([
+    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+    /*
+     * Solo lo que TIENE STOCK. Ofrecer los 179 cortes del maestro llenaría el
+     * desplegable de opciones que devuelven una pantalla vacía, y ante una
+     * pantalla vacía nadie sabe si es que no hay producto o si el filtro está
+     * roto. La vista agrupa en la base: leer los 1 519 lotes para sacar los
+     * valores distintos chocaría con el tope de mil filas de la API.
+     */
+    /*
+     * Son ~1 043 filas: JUSTO por encima del tope de mil de la API. Con una
+     * consulta normal se perderían las últimas cuarenta y pico sin ningún
+     * aviso, y con ellas los cortes que solo aparecen ahí. Se pagina.
+     */
+    traerTodo<{ especie: string; formato: string; corte: string; familia: string;
+                almacen_id: number; rango: string; fisico_kg: number; valor: number }>(
+      (d, h) => supabase.from('v_stock_catalogo')
+        .select('especie, formato, corte, familia, almacen_id, rango, fisico_kg, valor')
+        .range(d, h)
+    ).then((data) => ({ data })),
+  ]);
+
+  /*
+   * Los desplegables se encadenan, igual que en Productos: al elegir una
+   * especie, «Formato» solo ofrece los suyos, y «Corte» solo los que quedan.
+   * Son 178 cortes con stock; sin encadenar, esa lista no se puede usar.
+   */
+  const cat = catalogo ?? [];
+  const unicos = (xs: (string | null)[]) =>
+    [...new Set(xs.filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, 'es'));
+
+  const opcionesEspecie = unicos(cat.map((c) => c.especie as string));
+  const opcionesFormato = unicos(
+    cat.filter((c) => !especie || c.especie === especie).map((c) => c.formato as string)
+  );
+  const opcionesCorte = unicos(
+    cat.filter((c) => (!especie || c.especie === especie) && (!formato || c.formato === formato))
+       .map((c) => c.corte as string)
+  );
 
   // v_anticuamiento ya reúne lote + producto + almacén + antigüedad en una vista
   let consulta = supabase.from('v_anticuamiento').select('*', { count: 'exact' }).gt('fisico_kg', 0);
@@ -52,6 +95,9 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
   }
   if (almacenId) consulta = consulta.eq('almacen_id', Number(almacenId));
   if (rango) consulta = consulta.eq('rango', rango);
+  if (especie) consulta = consulta.eq('especie', especie);
+  if (formato) consulta = consulta.eq('formato', formato);
+  if (corte) consulta = consulta.eq('corte', corte);
 
   const { data: filas, count } = await consulta
     .order('fisico_kg', { ascending: false })
@@ -70,19 +116,39 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
    * devuelve mil igual—. Con 1 519 lotes en cámara, el gráfico se pintaba con
    * dos tercios del inventario y con cifras que parecían razonables.
    */
-  const campoEje = eje === 'especie' ? 'especie' : eje === 'familia' ? 'familia' : 'formato';
+  const campoEje: 'especie' | 'familia' | 'formato' =
+    eje === 'especie' ? 'especie' : eje === 'familia' ? 'familia' : 'formato';
 
-  const { data: paraGrafico } = await supabase
-    .from('v_stock_distribucion')
-    .select('grupo, fisico_kg, valor')
-    .eq('eje', campoEje)
-    .order('fisico_kg', { ascending: false });
+  /*
+   * El gráfico responde a LOS MISMOS FILTROS que la tabla.
+   *
+   * Antes no lo hacía: leía una vista con la distribución global, así que al
+   * filtrar por «Cámara 01» la tabla enseñaba esa cámara y el gráfico seguía
+   * pintando el inventario entero. Dos cifras distintas en la misma pantalla,
+   * y la de arriba —la grande, la que se mira primero— era la que no
+   * correspondía a lo que se estaba consultando.
+   *
+   * Se agrupa sobre el catálogo, que ya viene resumido: mil filas en vez de
+   * mil quinientos lotes, y sin traerse ni un kilo de más.
+   */
+  const acumulado = new Map<string, { kg: number; valor: number }>();
+  for (const c of cat) {
+    if (especie && c.especie !== especie) continue;
+    if (formato && c.formato !== formato) continue;
+    if (corte && c.corte !== corte) continue;
+    if (almacenId && String(c.almacen_id) !== almacenId) continue;
+    if (rango && c.rango !== rango) continue;
 
-  const porGrupo = (paraGrafico ?? []).map((g) => ({
-    etiqueta: String(g.grupo ?? 'Sin clasificar'),
-    kg: Number(g.fisico_kg ?? 0),
-    valor: Number(g.valor ?? 0),
-  }));
+    const clave = String(c[campoEje] ?? '') || 'Sin clasificar';
+    const a = acumulado.get(clave) ?? { kg: 0, valor: 0 };
+    a.kg += Number(c.fisico_kg ?? 0);
+    a.valor += Number(c.valor ?? 0);
+    acumulado.set(clave, a);
+  }
+
+  const porGrupo = [...acumulado.entries()]
+    .map(([etiqueta, v]) => ({ etiqueta, kg: v.kg, valor: v.valor }))
+    .sort((a, b) => b.kg - a.kg);
 
   const kgTotal = porGrupo.reduce((t, g) => t + g.kg, 0);
 
@@ -110,6 +176,9 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
     if (buscar) p.set('buscar', buscar);
     if (almacenId) p.set('almacen', almacenId);
     if (rango) p.set('rango', rango);
+    if (especie) p.set('especie', especie);
+    if (formato) p.set('formato', formato);
+    if (corte) p.set('corte', corte);
     if (clave !== 'formato') p.set('eje', clave);
     const t = p.toString();
     return `/almacenes/existencias${t ? '?' + t : ''}`;
@@ -178,10 +247,12 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
         )}
 
         <p className="pie-explicativo">
-          El reparto se calcula sobre <strong>todo el stock que cumple los filtros</strong>, no
-          sobre la página que se está viendo: un gráfico que cambiara al pasar de hoja no diría
-          nada. El gráfico enseña los diez grupos mayores y agrupa el resto; la tabla los lista
-          todos.
+          El reparto se calcula sobre <strong>todo el stock que cumplen los desplegables</strong>,
+          no sobre la página que se está viendo: un gráfico que cambiara al pasar de hoja no
+          diría nada. El buscador de arriba{' '}
+          <strong>no reordena el gráfico</strong>, solo acota la tabla: busca por pallet y por
+          SKU, que no son formas de agrupar el inventario. El gráfico enseña los diez grupos
+          mayores y agrupa el resto; la tabla los lista todos.
         </p>
       </Panel>
 
@@ -192,6 +263,18 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
             {
               tipo: 'select', clave: 'almacen', etiqueta: 'Almacén',
               opciones: (almacenes ?? []).map((a) => ({ valor: String(a.id), texto: a.nombre as string })),
+            },
+            {
+              tipo: 'select', clave: 'especie', etiqueta: 'Especie',
+              opciones: opcionesEspecie.map((e) => ({ valor: e, texto: e })),
+            },
+            {
+              tipo: 'select', clave: 'formato', etiqueta: 'Formato',
+              opciones: opcionesFormato.map((f) => ({ valor: f, texto: f })),
+            },
+            {
+              tipo: 'select', clave: 'corte', etiqueta: 'Corte',
+              opciones: opcionesCorte.map((c) => ({ valor: c, texto: c })),
             },
             {
               tipo: 'select', clave: 'rango', etiqueta: 'Antigüedad',

@@ -530,7 +530,15 @@ export async function sembrarOperacion(ctx) {
     else if (ciclo === 'despachado') situacion = elegir(['facturado', 'facturado', 'parcialmente_cobrado', 'vencido']);
 
     pedidos.push({
-      numero_proforma: `SM26-${String(100 + i)}${suerte(0.3) ? '/' + entero(1, 6) : ''}`,
+      /*
+       * SIN barra. La semilla le pegaba «/n» al 30 % de las proformas y eso
+       * era un invento: en el maestro real del cliente la columna PROFORMA no
+       * lleva barra en ninguna de sus 20 342 filas. La barra es lo que separa
+       * el CONTENEDOR —SM26-225/1, /2— y confundir las dos cosas hacía que la
+       * referencia del contenedor se escribiera distinto aquí y en el correo
+       * del cliente, que es justo el error que se quería evitar.
+       */
+      numero_proforma: `SM26-${String(100 + i)}`,
       cotizacion_id: desdeCot ? desdeCot.id : null,
       cliente_id: c.id,
       vendedor_id: elegir(vendDb).id,

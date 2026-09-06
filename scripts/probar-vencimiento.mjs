@@ -23,6 +23,10 @@ const consultar = async (sql) => {
   return Array.isArray(r) ? r : [];
 };
 
+/** Titulo de seccion: evita renumerar a mano al intercalar una nueva. */
+const SECCION = (n, t) => `
+─── ${n} · ${t} ───`;
+
 const fallos = [];
 const ok = (cond, texto, detalle = '') => {
   console.log(`${cond ? '  ok  ' : ' FALLA'} ${texto}${detalle ? ' · ' + detalle : ''}`);
@@ -165,7 +169,48 @@ try {
        `${suma.toFixed(1)} vs ${base.tm} TM`);
   }
 
-  console.log('\n─── 7 · El inventario valorizado, entero ───');
+  console.log(SECCION(7, 'Los filtros de formato y corte que pidio Oliver'));
+  {
+    const [c] = await consultar(`
+      select formato,
+             (select round(sum(fisico_kg)/1000, 1) from v_anticuamiento v
+               where v.fisico_kg > 0 and v.formato = t.formato) as tm
+        from v_stock_catalogo t
+       order by fisico_kg desc limit 1`);
+
+    await p.goto(`${BASE}/almacenes/existencias`, { waitUntil: 'networkidle' });
+    await p.waitForTimeout(2000);
+    const texto = (await p.locator('label').allInnerTexts()).join(' | ').toUpperCase();
+    for (const f of ['ESPECIE', 'FORMATO', 'CORTE']) {
+      ok(texto.includes(f), `existe el filtro «${f.toLowerCase()}»`);
+    }
+
+    /*
+     * Los desplegables solo ofrecen lo que TIENE STOCK. Un corte del maestro
+     * sin existencias devolveria una pantalla vacia, y ante una pantalla vacia
+     * nadie sabe si es que no hay producto o si el filtro esta roto.
+     */
+    const [m] = await consultar(`
+      select count(distinct corte) as en_maestro,
+             (select count(distinct corte) from v_stock_catalogo) as con_stock
+        from skus`);
+    ok(Number(m.con_stock) < Number(m.en_maestro),
+       'hay cortes en el maestro que no tienen stock: por eso se filtra el desplegable',
+       `${m.con_stock} con stock de ${m.en_maestro}`);
+
+    // Y el filtro tiene que mover la tabla Y el grafico a la vez.
+    await p.goto(`${BASE}/almacenes/existencias?formato=${encodeURIComponent(c.formato)}`,
+                 { waitUntil: 'networkidle' });
+    await p.waitForTimeout(2000);
+    const grafico = await p.locator('table.datos').first()
+      .locator('tbody tr td:nth-child(2)').allInnerTexts();
+    const suma = grafico.map((t) => numero(t)).filter(Number.isFinite).reduce((s, n) => s + n, 0);
+    ok(Math.abs(suma - Number(c.tm)) < 0.5,
+       'al filtrar, el grafico ensena lo filtrado y no el inventario entero',
+       `${suma.toFixed(1)} vs ${c.tm} TM de ${c.formato}`);
+  }
+
+  console.log('\n─── 8 · El inventario valorizado, entero ───');
   {
     const [base] = await consultar(
       `select round(sum(valor)) as valor, round(sum(fisico_kg)/1000,1) as tm
