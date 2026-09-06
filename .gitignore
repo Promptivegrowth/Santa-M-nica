@@ -48,3 +48,16 @@ capturas/
 
 # Documentos generados por las pruebas
 documentos-prueba/
+
+# ---------------------------------------------------------------------------
+# Documentos comerciales REALES que manda el cliente como modelo
+# ---------------------------------------------------------------------------
+# La proforma SM26-312 lleva el nombre, la dirección y el identificador fiscal
+# de un comprador de verdad, sus precios negociados y la cuenta bancaria de la
+# empresa. Sirve de modelo para programar, no para publicarla en un
+# repositorio: una vez subida queda en el historial aunque se borre después.
+#
+# Si algún día hace falta versionarla, que sea una decisión de quien la firma,
+# no un descuido.
+SM26-312*.pdf
+*Proforma DALIAN*

@@ -45,6 +45,64 @@ export type LineaDocumento = {
   precioTm: number;
   descuentoPct: number;
   importe: number;
+
+  /*
+   * ---- Lo que además necesita una proforma de exportación ----
+   * El comercio internacional de congelados no habla en toneladas: habla en
+   * KILOS y en precio por kilo, y describe cada línea por cuántos sacos van,
+   * cómo viene partido cada saco y de qué talla es el producto. Son los
+   * mismos números mirados con otra unidad, así que se derivan aquí y no se
+   * vuelven a calcular en el dibujo.
+   */
+  pesoNetoKg: number;
+  precioKg: number;
+  /** Cuántos sacos. Es lo primero que cuenta el almacén del comprador. */
+  bultos: number;
+  pesoBultoKg: number;
+  /** Cómo viene partido el saco por dentro. Puede faltar. */
+  bloques: number | null;
+  pesoBloqueKg: number | null;
+  /** Talla en gramos: «1000-UP». Define el precio, así que va aparte. */
+  talla: string | null;
+  /** El mismo producto en los tres idiomas que entiende una aduana. */
+  cientifico: string;
+  ingles: string;
+  espanol: string;
+};
+
+/**
+ * Todo lo que una proforma de exportación lleva y una factura local no.
+ *
+ * No es adorno: sin el CEU de la planta el banco del comprador no acepta el
+ * documento, sin la zona FAO no se certifica el origen y sin la tolerancia
+ * cualquier embarque incumple el contrato, porque la pesca no da kilos
+ * exactos.
+ */
+export type ProformaExportacion = {
+  fda: string;
+  ceu: string;
+  telefono: string;
+  fax: string;
+  web: string;
+
+  paisOrigen: string;
+  zonaPesca: string;
+  puertoEmbarque: string;
+  puertoDescarga: string;
+
+  /** «CFR DALIAN, CHINA»: el incoterm no se entiende sin su destino. */
+  incotermCompleto: string;
+  contenedorTipo: string;
+  contenedores: number;
+  toleranciaPct: number;
+  /** «AUGUST 2026». El comprador acepta el mes, no el día. */
+  mesEmbarque: string;
+
+  /** Qué parte se cobra por adelantado; el resto va contra documentos. */
+  adelantoPct: number;
+
+  documentos: string[];
+  condiciones: string[];
 };
 
 /** La persona del cliente a la que va dirigido el documento. */
@@ -63,6 +121,10 @@ export type CuentaImpresa = {
   numero: string;
   cci: string;
   swift: string;
+  /** A nombre de quién está la cuenta. El banco emisor lo compara. */
+  titular: string;
+  /** Dirección de la sucursal: sin ella no se completa una transferencia internacional. */
+  direccionBanco: string;
 };
 
 export type Documento = {
@@ -76,6 +138,8 @@ export type Documento = {
   emisor: { razonSocial: string; ruc: string; direccion: string; marca: string };
   receptor: {
     razonSocial: string;
+    /** Dirección fiscal completa: la aduana de destino la compara con el B/L. */
+    direccion: string;
     identificacion: string;
     etiquetaIdentificacion: string;
     pais: string;
@@ -103,6 +167,13 @@ export type Documento = {
    * observación para que alguien lo mire antes de enviarlo.
    */
   cuentas: CuentaImpresa[];
+
+  /**
+   * Los datos de exportación. Solo lo llevan las proformas que salen del país:
+   * cuando está, el documento se dibuja con la estructura del contrato de
+   * venta internacional; cuando falta, con la del documento local.
+   */
+  exportacion: ProformaExportacion | null;
 
   /** Texto legal y condiciones que van al pie. */
   notas: string[];
@@ -152,16 +223,121 @@ async function cargarEmisor() {
   };
 }
 
-/** Arma la descripción del producto tal como debe leerla el cliente. */
-function describirProducto(sp: Record<string, unknown> | undefined) {
+/**
+ * Los parámetros que solo necesita una proforma de exportación.
+ *
+ * Se leen aparte y no junto al emisor porque un comprobante local no los
+ * necesita: no tiene sentido consultarlos para emitir una boleta.
+ */
+async function cargarParametrosExportacion() {
+  const supabase = await crearClienteServidor();
+  const { data } = await supabase
+    .from('parametros')
+    .select('clave, valor')
+    .in('clave', ['empresa_fda', 'empresa_ceu', 'empresa_telefono', 'empresa_fax',
+                  'empresa_web', 'pais_origen', 'zona_pesca', 'puerto_embarque',
+                  'proforma_documentos', 'proforma_condiciones']);
+  return new Map((data ?? []).map((x) => [x.clave as string, String(x.valor ?? '')]));
+}
+
+/** Los meses en inglés: la proforma dice «AUGUST 2026», no «08/2026». */
+const MESES_EN = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+                  'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+
+function mesEnIngles(v: string | null | undefined): string {
+  if (!v) return '';
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? '' : `${MESES_EN[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/**
+ * Una lista guardada como texto separado por barras. Se usa para los
+ * documentos que se emiten y para las condiciones del contrato: son listas que
+ * el cliente edita desde Configuración, y una tabla entera para cinco líneas
+ * de texto sería más ceremonia que dato.
+ */
+const listaDeParametro = (v: string | undefined) =>
+  (v ?? '').split('|').map((x) => x.trim()).filter(Boolean);
+
+/**
+ * Las columnas del producto que necesitan los documentos. Se escribe una sola
+ * vez porque las tres consultas —cotización, proforma y comprobante— tienen
+ * que pedir EXACTAMENTE lo mismo: si una se queda corta, su documento sale sin
+ * el nombre científico y nadie lo nota hasta que la aduana lo devuelve.
+ *
+ * Va como constante y no concatenada dentro de cada `.select()` porque
+ * Supabase deduce los tipos del literal: partirlo rompe la inferencia.
+ */
+export const CAMPOS_PRODUCTO =
+  'sku_presentaciones(skus(codigo, corte, talla, especies(nombre, nombre_cientifico, nombre_ingles), formatos(nombre, nombre_ingles, descripcion_es, descripcion_en)), presentaciones(descripcion, peso_bulto_kg, bloques_por_bulto, peso_bloque_kg))';
+
+/**
+ * Arma una línea completa a partir de la fila de la base.
+ *
+ * Aquí se hace la conversión que separa un documento local de uno de
+ * exportación: el sistema guarda TONELADAS y precio por tonelada, porque así
+ * se planifica la producción; el comercio internacional trabaja en KILOS y
+ * precio por kilo, porque así se pactan los contratos y así lo pide el banco.
+ *
+ * Son el mismo número —mil kilos por tonelada— pero convertirlo en el sitio
+ * donde se dibuja sería repetirlo tres veces y equivocarse en una.
+ */
+function construirLinea(
+  fila: { cantidad_tm: unknown; precio_tm: unknown; descuento_pct?: unknown; sku_presentaciones?: unknown },
+  n: number
+): LineaDocumento {
+  const sp = uno<Record<string, unknown>>(fila.sku_presentaciones);
   const sku = uno<Record<string, unknown>>(sp?.skus);
   const pres = uno<Record<string, unknown>>(sp?.presentaciones);
   const especie = uno<Record<string, unknown>>(sku?.especies);
   const formato = uno<Record<string, unknown>>(sku?.formatos);
+
+  const cantidadTm = Number(fila.cantidad_tm ?? 0);
+  const precioTm = Number(fila.precio_tm ?? 0);
+  const descuentoPct = Number(fila.descuento_pct ?? 0);
+
+  const pesoNetoKg = redondear(cantidadTm * 1000);
+  const pesoBultoKg = Number(pres?.peso_bulto_kg ?? 0);
+
+  /*
+   * Los sacos se redondean HACIA ARRIBA: no existe medio saco. Un pedido de
+   * 161 910 kg en sacos de 21 son 7 710 sacos exactos, pero cuando no dan
+   * exactos el que sobra viaja igual, así que se cuenta.
+   */
+  const bultos = pesoBultoKg > 0 ? Math.ceil(pesoNetoKg / pesoBultoKg) : 0;
+
+
   return {
+    n,
     codigo: String(sku?.codigo ?? '—'),
     descripcion: [especie?.nombre, formato?.nombre, sku?.corte].filter(Boolean).join(' · '),
     presentacion: String(pres?.descripcion ?? '—'),
+    cantidadTm,
+    precioTm,
+    descuentoPct,
+    importe: redondear(cantidadTm * precioTm * (1 - descuentoPct / 100)),
+
+    pesoNetoKg,
+    // El precio por kilo se redondea a cuatro decimales, no a dos: a 1,70
+    // US$/kg, dos decimales en el precio se convierten en cientos de dólares
+    // de diferencia sobre un contenedor.
+    precioKg: Math.round((precioTm / 1000) * (1 - descuentoPct / 100) * 10000) / 10000,
+    bultos,
+    pesoBultoKg,
+    bloques: pres?.bloques_por_bulto == null ? null : Number(pres.bloques_por_bulto),
+    pesoBloqueKg: pres?.peso_bloque_kg == null ? null : Number(pres.peso_bloque_kg),
+    talla: (sku?.talla as string) || null,
+    cientifico: String(especie?.nombre_cientifico ?? ''),
+    /*
+     * El nombre comercial se lee TAL COMO ESTÁ ESCRITO en el maestro, no se
+     * arma pegando especie y formato. Armarlo daba «POTA LAMINADO CONGELADAS»:
+     * el castellano concuerda, y además el nombre comercial no siempre es la
+     * suma de sus partes —el laminado de pota se vende como GIANT SQUID
+     * SHEETS—. Se escribe una vez, bien, y el cliente lo corrige si su
+     * comprador lo llama de otra manera.
+     */
+    ingles: String(formato?.descripcion_en ?? '').toUpperCase(),
+    espanol: String(formato?.descripcion_es ?? '').toUpperCase(),
   };
 }
 
@@ -196,6 +372,8 @@ function cuentasDe(filas: unknown): CuentaImpresa[] {
       numero: String(c!.numero ?? ''),
       cci: String(c!.cci ?? ''),
       swift: String(c!.swift ?? ''),
+      titular: String(c!.titular ?? ''),
+      direccionBanco: String(c!.direccion_banco ?? ''),
     }))
     // La de detracción va siempre al final: es la excepción, no la principal.
     .sort((a, b) => Number(a.tipo === 'detraccion') - Number(b.tipo === 'detraccion'));
@@ -361,18 +539,18 @@ async function cargarCotizacion(id: number): Promise<Documento> {
     cargarEmisor(),
     supabase
       .from('cotizaciones')
-      .select('*, clientes(razon_social, ruc_tax_id, pais, contacto, email), vendedores(nombre), destinos(puerto, pais), listas_precio(nombre, incoterm)')
+      .select('*, clientes(razon_social, ruc_tax_id, etiqueta_tax_id, direccion, pais, contacto, email), vendedores(nombre), destinos(puerto, pais), listas_precio(nombre, incoterm)')
       .eq('id', id)
       .single(),
     supabase
       .from('cotizacion_lineas')
-      .select('cantidad_tm, precio_tm, descuento_pct, orden, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
+      .select(`cantidad_tm, precio_tm, descuento_pct, orden, ${CAMPOS_PRODUCTO}`)
       .eq('cotizacion_id', id)
       .order('orden'),
     supabase.from('parametros').select('clave, valor').eq('clave', 'igv_porcentaje'),
     supabase
       .from('cotizacion_cuentas')
-      .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift)')
+      .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift, titular, direccion_banco)')
       .eq('cotizacion_id', id),
   ]);
 
@@ -382,20 +560,7 @@ async function cargarCotizacion(id: number): Promise<Documento> {
   const moneda = cot.moneda as 'USD' | 'PEN';
   const igvPct = Number(parametros?.[0]?.valor ?? 18);
 
-  const filas: LineaDocumento[] = (lineas ?? []).map((l, i) => {
-    const p = describirProducto(uno<Record<string, unknown>>(l.sku_presentaciones));
-    const cantidad = Number(l.cantidad_tm);
-    const precio = Number(l.precio_tm);
-    const desc = Number(l.descuento_pct ?? 0);
-    return {
-      n: i + 1,
-      ...p,
-      cantidadTm: cantidad,
-      precioTm: precio,
-      descuentoPct: desc,
-      importe: redondear(cantidad * precio * (1 - desc / 100)),
-    };
-  });
+  const filas: LineaDocumento[] = (lineas ?? []).map((l, i) => construirLinea(l, i + 1));
 
   const subtotal = redondear(filas.reduce((s, l) => s + l.importe, 0));
   const bruto = redondear((lineas ?? []).reduce((s, l) => s + Number(l.cantidad_tm) * Number(l.precio_tm), 0));
@@ -419,8 +584,12 @@ async function cargarCotizacion(id: number): Promise<Documento> {
     emisor,
     receptor: {
       razonSocial: String(cliente?.razon_social ?? ''),
+      direccion: String(cliente?.direccion ?? ''),
       identificacion: String(cliente?.ruc_tax_id ?? '—'),
-      etiquetaIdentificacion: esExportacion ? 'Tax ID' : 'RUC',
+      // La etiqueta la manda el cliente: en China el identificador se llama
+      // USCI y en Estados Unidos EIN. «Tax ID» para todo es lo que pone un
+      // sistema que no sabe a dónde exporta.
+      etiquetaIdentificacion: String(cliente?.etiqueta_tax_id ?? (esExportacion ? 'TAX ID' : 'RUC')),
       pais: String(cliente?.pais ?? '—'),
       contacto: String(cliente?.contacto ?? ''),
       email: String(cliente?.email ?? ''),
@@ -438,6 +607,9 @@ async function cargarCotizacion(id: number): Promise<Documento> {
     moneda,
     contacto: contactoDe(cot),
     cuentas: cuentasDe(cuentasCot),
+    // La cotización no es un contrato de venta: se dibuja con el formato
+    // local aunque el cliente sea extranjero.
+    exportacion: null,
     notas: [
       `Esta cotización es una oferta y tiene una validez de ${validez} días desde su emisión.`,
       'Los precios están sujetos a disponibilidad al momento de confirmar el pedido.',
@@ -454,47 +626,36 @@ async function cargarCotizacion(id: number): Promise<Documento> {
 
 async function cargarProforma(id: number): Promise<Documento> {
   const supabase = await crearClienteServidor();
-  const [emisor, { data: ped }, { data: lineas }, { data: parametros }, { data: cuentasPed }] =
+  const [emisor, expo, { data: ped }, { data: lineas }, { data: parametros }, { data: cuentasPed }] =
     await Promise.all([
     cargarEmisor(),
+    cargarParametrosExportacion(),
     supabase
       .from('pedidos')
-      .select('*, clientes(razon_social, ruc_tax_id, pais, contacto, email), vendedores(nombre), destinos(puerto, pais)')
+      .select('*, clientes(razon_social, ruc_tax_id, etiqueta_tax_id, direccion, pais, contacto, email), vendedores(nombre), destinos(puerto, pais)')
       .eq('id', id)
       .single(),
     supabase
       .from('pedido_lineas')
-      .select('cantidad_tm, precio_tm, descuento_pct, orden, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
+      .select(`cantidad_tm, precio_tm, descuento_pct, orden, ${CAMPOS_PRODUCTO}`)
       .eq('pedido_id', id)
       .order('orden'),
     supabase.from('parametros').select('clave, valor').eq('clave', 'igv_porcentaje'),
     supabase
       .from('pedido_cuentas')
-      .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift)')
+      .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift, titular, direccion_banco)')
       .eq('pedido_id', id),
   ]);
 
   if (!ped) throw new Error('El pedido no existe.');
 
   const cliente = uno<Record<string, unknown>>(ped.clientes);
+  const destino = uno<Record<string, unknown>>(ped.destinos);
   const moneda = ped.moneda as 'USD' | 'PEN';
   const igvPct = Number(parametros?.[0]?.valor ?? 18);
   const esExportacion = String(cliente?.pais ?? '') !== 'Perú';
 
-  const filas: LineaDocumento[] = (lineas ?? []).map((l, i) => {
-    const p = describirProducto(uno<Record<string, unknown>>(l.sku_presentaciones));
-    const cantidad = Number(l.cantidad_tm);
-    const precio = Number(l.precio_tm);
-    const desc = Number(l.descuento_pct ?? 0);
-    return {
-      n: i + 1,
-      ...p,
-      cantidadTm: cantidad,
-      precioTm: precio,
-      descuentoPct: desc,
-      importe: redondear(cantidad * precio * (1 - desc / 100)),
-    };
-  });
+  const filas: LineaDocumento[] = (lineas ?? []).map((l, i) => construirLinea(l, i + 1));
 
   const subtotal = redondear(filas.reduce((s, l) => s + l.importe, 0));
   const bruto = redondear((lineas ?? []).reduce((s, l) => s + Number(l.cantidad_tm) * Number(l.precio_tm), 0));
@@ -508,8 +669,12 @@ async function cargarProforma(id: number): Promise<Documento> {
     emisor,
     receptor: {
       razonSocial: String(cliente?.razon_social ?? ''),
+      direccion: String(cliente?.direccion ?? ''),
       identificacion: String(cliente?.ruc_tax_id ?? '—'),
-      etiquetaIdentificacion: esExportacion ? 'Tax ID' : 'RUC',
+      // La etiqueta la manda el cliente: en China el identificador se llama
+      // USCI y en Estados Unidos EIN. «Tax ID» para todo es lo que pone un
+      // sistema que no sabe a dónde exporta.
+      etiquetaIdentificacion: String(cliente?.etiqueta_tax_id ?? (esExportacion ? 'TAX ID' : 'RUC')),
       pais: String(cliente?.pais ?? '—'),
       contacto: String(cliente?.contacto ?? ''),
       email: String(cliente?.email ?? ''),
@@ -528,6 +693,42 @@ async function cargarProforma(id: number): Promise<Documento> {
     moneda,
     contacto: contactoDe(ped),
     cuentas: cuentasDe(cuentasPed),
+
+    /*
+     * El bloque de exportación solo existe cuando la mercadería sale del país.
+     * Una venta a un cliente peruano no lleva zona FAO ni puerto de descarga,
+     * y ponérselos sería llenar el documento de campos vacíos.
+     */
+    exportacion: !esExportacion ? null : {
+      fda: expo.get('empresa_fda') ?? '',
+      ceu: expo.get('empresa_ceu') ?? '',
+      telefono: expo.get('empresa_telefono') ?? '',
+      fax: expo.get('empresa_fax') ?? '',
+      web: expo.get('empresa_web') ?? '',
+
+      paisOrigen: expo.get('pais_origen') ?? '',
+      zonaPesca: expo.get('zona_pesca') ?? '',
+      // El puerto del pedido manda sobre el de configuración: casi siempre es
+      // Paita, pero «casi siempre» no es «siempre».
+      puertoEmbarque: String(ped.puerto_embarque ?? expo.get('puerto_embarque') ?? ''),
+      puertoDescarga: [destino?.puerto, destino?.pais].filter(Boolean).join(', ').toUpperCase(),
+
+      // El incoterm no significa nada suelto: CFR sin destino no dice hasta
+      // dónde paga el flete el vendedor.
+      incotermCompleto: [String(ped.incoterm ?? ''),
+                         [destino?.puerto, destino?.pais].filter(Boolean).join(', ')]
+                        .filter(Boolean).join(' ').toUpperCase(),
+      contenedorTipo: String(ped.contenedor_tipo ?? ''),
+      contenedores: Number(ped.contenedores ?? 0),
+      toleranciaPct: Number(ped.tolerancia_pct ?? 0),
+      mesEmbarque: mesEnIngles(ped.mes_embarque as string),
+
+      adelantoPct: Number(ped.pago_adelanto_pct ?? 0),
+
+      documentos: listaDeParametro(expo.get('proforma_documentos')),
+      condiciones: listaDeParametro(expo.get('proforma_condiciones')),
+    },
+
     notas: [
       'Documento proforma emitido para trámites de importación y apertura de crédito documentario.',
       esExportacion
@@ -548,12 +749,12 @@ async function cargarComprobante(id: number): Promise<Documento> {
     cargarEmisor(),
     supabase
       .from('facturas')
-      .select('*, clientes(razon_social, ruc_tax_id, pais, contacto, email, dias_credito), pedidos(id, numero_proforma, incoterm, oc_cliente, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, destinos(puerto, pais))')
+      .select('*, clientes(razon_social, ruc_tax_id, etiqueta_tax_id, direccion, pais, contacto, email, dias_credito), pedidos(id, numero_proforma, incoterm, oc_cliente, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, destinos(puerto, pais))')
       .eq('id', id)
       .single(),
     supabase
       .from('factura_lineas')
-      .select('cantidad_tm, precio_tm, importe, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
+      .select(`cantidad_tm, precio_tm, importe, ${CAMPOS_PRODUCTO}`)
       .eq('factura_id', id),
   ]);
 
@@ -572,26 +773,19 @@ async function cargarComprobante(id: number): Promise<Documento> {
   const { data: cuentasFac } = pedido?.id
     ? await supabase
         .from('pedido_cuentas')
-        .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift)')
+        .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift, titular, direccion_banco)')
         .eq('pedido_id', pedido.id)
     : { data: null };
   const esBoleta = fac.tipo_comprobante === 'boleta';
   const esExportacion = String(cliente?.pais ?? '') !== 'Perú';
 
-  const filas: LineaDocumento[] = (lineas ?? []).map((l, i) => {
-    const p = describirProducto(uno<Record<string, unknown>>(l.sku_presentaciones));
-    return {
-      n: i + 1,
-      ...p,
-      cantidadTm: Number(l.cantidad_tm),
-      precioTm: Number(l.precio_tm),
-      descuentoPct: 0,
-      // El importe se toma TAL COMO ESTÁ GUARDADO, no recalculado: es lo que
-      // se contabilizó. Si no cuadra, la verificación lo dirá; corregirlo por
-      // nuestra cuenta escondería el problema.
-      importe: Number(l.importe),
-    };
-  });
+  const filas: LineaDocumento[] = (lineas ?? []).map((l, i) => ({
+    ...construirLinea(l, i + 1),
+    // El importe se toma TAL COMO ESTÁ GUARDADO, no recalculado: es lo que se
+    // contabilizó. Si no cuadra, la verificación lo dirá; corregirlo por
+    // nuestra cuenta escondería el problema.
+    importe: Number(l.importe),
+  }));
 
   const subtotalGuardado = Number(fac.subtotal);
   const igvGuardado = Number(fac.igv);
@@ -610,6 +804,7 @@ async function cargarComprobante(id: number): Promise<Documento> {
     emisor,
     receptor: {
       razonSocial: String(cliente?.razon_social ?? ''),
+      direccion: String(cliente?.direccion ?? ''),
       identificacion: String(cliente?.ruc_tax_id ?? '—'),
       etiquetaIdentificacion: esBoleta ? 'DNI' : esExportacion ? 'Tax ID' : 'RUC',
       pais: String(cliente?.pais ?? '—'),
@@ -637,6 +832,9 @@ async function cargarComprobante(id: number): Promise<Documento> {
     moneda,
     contacto: pedido ? contactoDe(pedido) : null,
     cuentas: cuentasDe(cuentasFac),
+    // La factura de exportación es un comprobante fiscal, no un contrato: su
+    // formato lo manda SUNAT, no el comprador.
+    exportacion: null,
     notas: [
       esBoleta
         ? 'Representación impresa de la boleta de venta electrónica.'

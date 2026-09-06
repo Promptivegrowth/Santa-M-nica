@@ -25,6 +25,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { cargarDocumento, nombreArchivo, type TipoDocumento } from '@/lib/documentos';
 import { generarPdf } from '@/lib/pdf';
+import { generarProformaExportacion } from '@/lib/pdfProforma';
 import { generarDocumentoExcel } from '@/lib/excelDocumento';
 
 const TIPOS: TipoDocumento[] = ['cotizacion', 'proforma', 'factura', 'boleta'];
@@ -109,7 +110,17 @@ export async function GET(
       tipoMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       extension = 'xlsx';
     } else {
-      archivo = await generarPdf(documento);
+      /*
+       * La proforma de exportación se dibuja con su propio diseño porque no es
+       * el mismo documento: es un CONTRATO DE VENTA internacional, bilingüe, en
+       * kilos, con las condiciones del embarque y dos firmas. Se decide por el
+       * dato y no por el tipo —una proforma a un cliente peruano sigue saliendo
+       * con el formato local— porque lo que cambia la estructura es que la
+       * mercadería salga del país, no cómo se llame el documento.
+       */
+      archivo = documento.exportacion
+        ? await generarProformaExportacion(documento)
+        : await generarPdf(documento);
       tipoMime = 'application/pdf';
       extension = 'pdf';
     }

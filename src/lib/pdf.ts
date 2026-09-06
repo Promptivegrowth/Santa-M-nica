@@ -278,9 +278,29 @@ function totales(doc: Lienzo, d: Documento, y: number): number {
     if (destacado) {
       doc.rect(x, yy - 3, anchoCaja, 20).fill(MARCA.azulProfundo);
       doc.fillColor(MARCA.blanco).font('Helvetica-Bold').fontSize(9)
-        .text(etiqueta, x + 8, yy + 3, { width: 90 });
-      doc.font('Courier-Bold').fontSize(11)
-        .text(valor, x + 98, yy + 2, { width: anchoCaja - 106, align: 'right' });
+        .text(etiqueta, x + 8, yy + 3, { width: 44 });
+
+      /*
+       * EL TOTAL SE SALÍA DE LA BANDA.
+       *
+       * A 11 puntos en monoespaciada, «US$ 1,341,198.73» mide más que el hueco
+       * que le quedaba, así que se partía en dos líneas y la segunda caía FUERA
+       * del rectángulo azul: el importe del documento, cortado por la mitad.
+       *
+       * Se corrige dando más sitio y, si aun así no cabe, encogiendo la letra
+       * hasta que quepa. Un total ilegible es peor que un total pequeño, y
+       * pasaba justo con las cifras grandes, que son las que más importan.
+       */
+      const anchoValor = anchoCaja - 60;
+      let cuerpo = 11;
+      doc.font('Courier-Bold');
+      while (cuerpo > 6.5 && doc.fontSize(cuerpo).widthOfString(valor) > anchoValor) {
+        cuerpo -= 0.5;
+      }
+      doc.fillColor(MARCA.blanco).fontSize(cuerpo)
+        .text(valor, x + 52, yy + 2 + (11 - cuerpo) / 2, {
+          width: anchoValor, align: 'right', lineBreak: false,
+        });
       yy += 22;
     } else {
       doc.fillColor(MARCA.tintaSuave).font('Helvetica').fontSize(8)

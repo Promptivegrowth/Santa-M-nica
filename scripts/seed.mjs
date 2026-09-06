@@ -325,6 +325,33 @@ async function sembrarMaestros(catalogo, _usuarios) {
   await insertarLote('vendedores', ['nombre', 'tipo'], vendedores);
   const vendDb = await consultar('select id from vendedores order by id');
 
+  /*
+   * Cómo se llama el identificador fiscal en cada país. Va aquí y no en el
+   * código de la proforma porque es un dato del cliente, no del documento: el
+   * día que un comprador use otro, se le corrige el suyo sin tocar a nadie más.
+   */
+  const ETIQUETA_FISCAL = {
+    'Perú': 'RUC', 'China': 'USCI', 'Estados Unidos': 'EIN', 'Rusia': 'INN',
+    'Japón': 'CORPORATE NUMBER', 'España': 'VAT', 'Tailandia': 'TIN',
+    'Emiratos Árabes Unidos': 'TRN',
+  };
+
+  /** Una dirección verosímil del país del cliente. Los datos son de demostración. */
+  const direccionDe = (pais, n) => {
+    const ciudad = {
+      'China': ['DALIAN, LIAONING', 'QINGDAO, SHANDONG', 'ZHOUSHAN, ZHEJIANG', 'FUZHOU, FUJIAN'],
+      'Estados Unidos': ['LOS ANGELES, CA 90731', 'SEATTLE, WA 98104', 'MIAMI, FL 33122'],
+      'España': ['36202 VIGO', '08039 BARCELONA', '04002 ALMERIA'],
+      'Rusia': ['VLADIVOSTOK 690003', 'MURMANSK 183038'],
+      'Japón': ['SHIMONOSEKI, YAMAGUCHI', 'YAIZU, SHIZUOKA'],
+      'Tailandia': ['SAMUT SAKHON 74000', 'BANGKOK 10120'],
+      'Emiratos Árabes Unidos': ['DEIRA, DUBAI'],
+      'Perú': ['CALLAO', 'PAITA, PIURA', 'CHIMBOTE, ANCASH', 'LIMA'],
+    }[pais] ?? ['PORT AREA'];
+    const via = pais === 'Perú' ? 'AV. NESTOR GAMBETTA NRO.' : 'NO.';
+    return `${via} ${100 + (n * 7) % 800}, ${ciudad[n % ciudad.length]}, ${pais.toUpperCase()}`;
+  };
+
   // --- Clientes (nombres consolidados del catálogo real) --------------------
   const clientes = catalogo.clientes.slice(0, 90).map((c, i) => {
     const pais = /QINGDAO|SHENZHEN|ZHOUSHAN|WEIHAI|SUQIAN|WUHAN|DALIAN|YANTAI|CHINA|HONGKONG|HONG KONG|CMCC|MERMAID|GIANT/i.test(c.razon_social) ? 'China'
@@ -348,11 +375,23 @@ async function sembrarMaestros(catalogo, _usuarios) {
       dias_credito: elegir([0, 15, 30, 30, 45, 60]),
       bloqueado: suerte(0.04),
       motivo_bloqueo: null,
+
+      /*
+       * La proforma de exportación necesita la dirección del comprador y el
+       * nombre que recibe su identificador fiscal en su país —USCI en China,
+       * EIN en Estados Unidos—. Sin la dirección, la aduana de destino no
+       * puede consignar la carga; sin el nombre correcto, nadie sabe qué
+       * número está mirando.
+       */
+      direccion: direccionDe(pais, i + 1),
+      etiqueta_tax_id: ETIQUETA_FISCAL[pais] ?? 'TAX ID',
     };
   });
   clientes.forEach((c) => { if (c.bloqueado) c.motivo_bloqueo = elegir(['Línea de crédito excedida', 'Documentos vencidos sin regularizar', 'Pendiente de revisión comercial']); });
   await insertarLote('clientes',
-    ['codigo', 'razon_social', 'nombre_corto', 'tipo', 'pais', 'vendedor_id', 'moneda', 'linea_credito', 'dias_credito', 'bloqueado', 'motivo_bloqueo'],
+    ['codigo', 'razon_social', 'nombre_corto', 'tipo', 'pais', 'vendedor_id', 'moneda',
+     'linea_credito', 'dias_credito', 'bloqueado', 'motivo_bloqueo',
+     'direccion', 'etiqueta_tax_id'],
     clientes);
   ok(`${clientes.length} clientes`);
 

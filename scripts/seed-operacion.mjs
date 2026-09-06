@@ -516,6 +516,10 @@ export async function sembrarOperacion(ctx) {
     const c = desdeCot ? clientesDb.find((x) => x.id === desdeCot.cliente_id) : elegir(clientesDb);
     const nac = c.pais === 'Perú';
     const dias = entero(1, 210);
+    // La fecha comprometida se calcula UNA vez: el mes de embarque que imprime
+    // la proforma se deriva de ella, y volver a llamar a `fechaMenos` con un
+    // aleatorio dentro daría dos fechas distintas.
+    const comprometida = fechaMenos(dias - entero(5, 20));
 
     // Los tres ejes de estado, coherentes entre sí
     const ciclo = elegir(['borrador', 'pendiente_validacion', 'confirmado', 'confirmado',
@@ -541,18 +545,33 @@ export async function sembrarOperacion(ctx) {
       prioridad: elegir(['baja', 'normal', 'normal', 'normal', 'alta', 'urgente']),
       fecha_solicitada: fechaMenos(dias),
       fecha_posible: fechaMenos(dias - entero(3, 12)),
-      fecha_comprometida: fechaMenos(dias - entero(5, 20)),
+      // Se guarda en una variable porque el mes de embarque se deriva de ella:
+      // llamar dos veces a `fechaMenos` con un aleatorio dentro daría dos
+      // fechas distintas y la proforma diría un mes que no es.
+      fecha_comprometida: comprometida,
       ciclo,
       cobertura: 'pendiente_stock',
       situacion,
       creado_por: uComercial,
+
+      /*
+       * Las condiciones del embarque que imprime la proforma de exportación.
+       * Se pactan por pedido —el número de contenedores y el reparto del pago
+       * son lo que más se negocia—, así que viven aquí y no en parámetros.
+       */
+      contenedor_tipo: '40 HC REEFER',
+      tolerancia_pct: 10,
+      pago_adelanto_pct: elegir([20, 20, 20, 30, 100]),
+      puerto_embarque: 'PAITA, PERU',
+      mes_embarque: String(comprometida).slice(0, 8) + '01',
     });
   }
   await insertarLote('pedidos',
     ['numero_proforma', 'cotizacion_id', 'cliente_id', 'vendedor_id', 'oc_cliente', 'moneda',
      'tipo_cambio', 'incoterm', 'destino_id', 'tipo_despacho', 'condicion_pago', 'dias_credito',
      'prioridad', 'fecha_solicitada', 'fecha_posible', 'fecha_comprometida',
-     'ciclo', 'cobertura', 'situacion', 'creado_por'],
+     'ciclo', 'cobertura', 'situacion', 'creado_por',
+     'contenedor_tipo', 'tolerancia_pct', 'pago_adelanto_pct', 'puerto_embarque', 'mes_embarque'],
     pedidos, 300);
   const pedDb = await consultar('select id, numero_proforma, cliente_id, ciclo, situacion, moneda, tipo_cambio, fecha_solicitada, dias_credito from pedidos order by id');
 

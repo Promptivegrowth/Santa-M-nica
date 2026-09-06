@@ -105,12 +105,20 @@ try {
 
   console.log('\n─── 4 · La alerta a Comercial ───');
   {
-    const [r] = await consultar(`select stock_avisar_por_vencer() as n`);
+    /*
+     * Se ejecuta TRES veces a propósito. El aviso es de resumen —dice cómo
+     * está el stock hoy—, así que solo debe quedar uno abierto por muchas
+     * veces que se ejecute. Antes se acumulaba uno por día mientras nadie lo
+     * atendiera, que es como se llega a treinta alertas iguales.
+     */
+    for (let i = 0; i < 3; i++) await consultar(`select stock_avisar_por_vencer()`);
     const [a] = await consultar(`
       select count(*) as n, max(mensaje) as mensaje from alertas
        where titulo = 'Stock por vencer' and not atendida`);
     ok(Number(a.n) >= 1, 'existe la alerta de stock por vencer');
-    ok(Number(a.n) === 1, 'y solo una: no se duplica al volver a ejecutarla', `${a.n}`);
+    ok(Number(a.n) === 1,
+       'y solo UNA por muchas veces que se ejecute: es un estado, no un evento',
+       `${a.n} tras tres ejecuciones`);
     ok(/pallets/.test(String(a.mensaje)) && /TM/.test(String(a.mensaje)),
        'con el resumen de cuántos pallets y cuántas toneladas',
        String(a.mensaje).slice(0, 70));
