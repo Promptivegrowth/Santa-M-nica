@@ -47,8 +47,36 @@ export async function guardarParametro(
   }
 
   const limpio = valor.trim();
-  if (limpio === '') {
+
+  /*
+   * Ningún parámetro puede quedarse vacío salvo la firma escaneada: vacía
+   * significa «se firma a mano», que es una opción legítima y la que tiene una
+   * empresa que aún no ha digitalizado la firma. Sin esta excepción, quitarla
+   * sería imposible una vez subida.
+   */
+  if (limpio === '' && clave !== 'firmante_firma') {
     return { ok: false, mensaje: `${parametro.etiqueta} no puede quedar vacío.` };
+  }
+
+  /*
+   * La firma viaja incrustada como texto. Se comprueba aquí también, no solo
+   * en la pantalla: el navegador es del usuario y lo que llega al servidor
+   * puede no ser lo que el formulario envió.
+   */
+  if (clave === 'firmante_firma' && limpio !== '') {
+    if (!/^data:image\/(png|jpeg);base64,/.test(limpio)) {
+      return {
+        ok: false,
+        mensaje: 'La firma debe ser una imagen PNG o JPG. Otros formatos se ven en pantalla pero salen en blanco en el PDF.',
+      };
+    }
+    // 512 KB de archivo son unos 700 KB ya codificados en texto.
+    if (limpio.length > 720_000) {
+      return {
+        ok: false,
+        mensaje: 'La imagen de la firma es demasiado grande. Recórtela dejando solo el trazo: no hace falta más resolución.',
+      };
+    }
   }
 
   if (parametro.tipo_dato === 'numero') {

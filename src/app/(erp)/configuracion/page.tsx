@@ -20,6 +20,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { EditorParametro } from './EditorParametro';
+import { SubirFirma } from './SubirFirma';
 import { InterruptorRegla } from './InterruptorRegla';
 import { ContactosYCuentas } from './ContactosYCuentas';
 import { Icono } from '@/components/estructura/Icono';
@@ -291,6 +292,17 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                           {(p.descripcion as string) ?? '—'}
                         </td>
                         <td>
+                          {/*
+                            La firma escaneada no se teclea: se sube. Un campo
+                            de texto con treinta kilobytes de imagen dentro no
+                            se puede ni leer ni corregir.
+                          */}
+                          {p.clave === 'firmante_firma' ? (
+                            <SubirFirma
+                              valorInicial={String(p.valor ?? '')}
+                              editable={rol === 'gerencia'}
+                            />
+                          ) : (
                           <EditorParametro
                             clave={p.clave as string}
                             valorInicial={String(p.valor)}
@@ -298,6 +310,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                             unidad={p.unidad as string | null}
                             editable={rol === 'gerencia' || p.editable_por === 'operaciones'}
                           />
+                          )}
                         </td>
                         <td style={{ fontSize: '.72rem', color: 'var(--tinta-3)' }}>
                           {fechaHora(p.actualizado_en as string)}

@@ -442,7 +442,9 @@ function total(doc: Lienzo, d: Documento, y: number): number {
    * siguiente. Repartirlos entre dos páginas dejaría una firma huérfana, que
    * en un contrato no es un detalle de maquetación.
    */
-  const ALTO_CIERRE = 88;
+  // Crece cuando hay firmante: la firma escaneada va encima de la raya y el
+  // nombre, el cargo y el RUC van debajo.
+  const ALTO_CIERRE = d.exportacion?.firmante ? 126 : 88;
   if (y + ALTO_CIERRE > ALTO_A4 - MARGEN) {
     doc.addPage();
     y = MARGEN;
@@ -507,18 +509,62 @@ function firmas(doc: Lienzo, d: Documento, y: number) {
   const ancho = (ANCHO_UTIL - 30) / 2;
   const xDer = MARGEN + ancho + 30;
   const fecha = d.datos.find((x) => x.etiqueta === 'Fecha')?.valor ?? '';
+  const firmante = d.exportacion?.firmante ?? null;
 
   // Sitio para firmar a mano: una raya pegada al texto no se puede usar.
   const yRaya = y + 34;
+
+  /*
+   * La firma escaneada, si la hay. Va ENCIMA de la raya, como en el original:
+   * la raya sigue estando para quien prefiera firmar el papel a mano.
+   *
+   * Si la imagen está mal —recortada, en un formato que pdfkit no entiende, a
+   * medio pegar— el documento sale igual, sin ella. Un contrato que no se
+   * puede emitir porque una firma escaneada está corrupta sería peor problema
+   * que el que resuelve.
+   */
+  if (firmante?.firma?.startsWith('data:image/')) {
+    try {
+      const base64 = firmante.firma.slice(firmante.firma.indexOf(',') + 1);
+      doc.image(Buffer.from(base64, 'base64'), MARGEN + 6, yRaya - 34, {
+        // `fit` ya coloca la imagen desde la esquina indicada; pdfkit solo
+        // admite centrar o alinear a la derecha, y aquí se quiere a la
+        // izquierda, que es el comportamiento por defecto.
+        fit: [150, 32],
+        valign: 'bottom',
+      });
+    } catch {
+      /* Sin firma escaneada: queda la raya, que es igual de válida. */
+    }
+  }
+
   doc.moveTo(MARGEN, yRaya).lineTo(MARGEN + ancho, yRaya)
     .lineWidth(0.8).strokeColor(MARCA.tinta).stroke();
   doc.moveTo(xDer, yRaya).lineTo(xDer + ancho, yRaya)
     .lineWidth(0.8).strokeColor(MARCA.tinta).stroke();
 
-  doc.fillColor(MARCA.tinta).font('Helvetica-Bold').fontSize(7.5)
-    .text(d.emisor.razonSocial.toUpperCase(), MARGEN, yRaya + 4, { width: ancho });
-  doc.font('Helvetica').fontSize(7)
-    .text(`DATE:  ${fecha}`, MARGEN, doc.y + 1, { width: ancho });
+  /*
+   * Quién firma. Va antes que la razón social porque es el dato nuevo: un
+   * contrato dice qué persona se obliga en nombre de la empresa, no solo qué
+   * empresa. El RUC va debajo porque es lo que el banco del comprador coteja.
+   */
+  if (firmante) {
+    doc.fillColor(MARCA.tinta).font('Helvetica-Bold').fontSize(7.5)
+      .text(firmante.nombre, MARGEN, yRaya + 4, { width: ancho });
+    if (firmante.cargo) {
+      doc.font('Helvetica').fontSize(7)
+        .text(firmante.cargo, MARGEN, doc.y + 1, { width: ancho });
+    }
+    doc.font('Helvetica').fontSize(7)
+      .text(d.emisor.razonSocial.toUpperCase(), MARGEN, doc.y + 1, { width: ancho })
+      .text(`RUC: ${d.emisor.ruc}`, MARGEN, doc.y + 1, { width: ancho })
+      .text(`DATE:  ${fecha}`, MARGEN, doc.y + 3, { width: ancho });
+  } else {
+    doc.fillColor(MARCA.tinta).font('Helvetica-Bold').fontSize(7.5)
+      .text(d.emisor.razonSocial.toUpperCase(), MARGEN, yRaya + 4, { width: ancho });
+    doc.font('Helvetica').fontSize(7)
+      .text(`DATE:  ${fecha}`, MARGEN, doc.y + 1, { width: ancho });
+  }
 
   doc.fillColor(MARCA.tinta).font('Helvetica-Bold').fontSize(7.5)
     .text(d.receptor.razonSocial.toUpperCase(), xDer, yRaya + 4, { width: ancho });

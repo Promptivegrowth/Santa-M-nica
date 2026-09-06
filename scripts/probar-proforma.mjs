@@ -24,6 +24,10 @@ const consultar = async (sql) => {
   return Array.isArray(r) ? r : [];
 };
 
+/** Titulo de seccion, para no renumerar a mano cuando se intercala una nueva. */
+const TITULO = (n, texto) => `
+─── ${n} · ${texto} ───`;
+
 const fallos = [];
 const ok = (cond, texto, detalle = '') => {
   console.log(`${cond ? '  ok  ' : ' FALLA'} ${texto}${detalle ? ' · ' + detalle : ''}`);
@@ -229,7 +233,49 @@ try {
     ok((texto.match(/DATE:/g) ?? []).length >= 2, 'con fecha para cada parte');
   }
 
-  console.log('\n─── 10 · No se rompe con pedidos grandes ───');
+  console.log(TITULO(10, 'Quien firma por la empresa'));
+  {
+    const [f] = await consultar(`
+      select max(valor) filter (where clave='firmante_nombre') as nombre,
+             max(valor) filter (where clave='firmante_cargo')  as cargo,
+             max(length(valor)) filter (where clave='firmante_firma') as firma_bytes,
+             max(valor) filter (where clave='empresa_ruc') as ruc
+        from parametros`);
+
+    ok(texto.includes(f.nombre), 'la proforma dice quien firma', f.nombre);
+    ok(texto.includes(f.cargo), 'y con que cargo lo hace', f.cargo);
+    ok(texto.includes('RUC: ' + f.ruc),
+       'y el RUC de la empresa, que es lo que coteja el banco del comprador');
+
+    /*
+     * La firma escaneada no deja texto en el PDF: es una imagen. Se comprueba
+     * que el generador la INCRUSTO mirando si el documento declara una imagen,
+     * que es lo que pdfkit escribe al colocarla.
+     */
+    if (Number(f.firma_bytes) > 0) {
+      const crudo = (await (await p.request.get(
+        `${BASE}/api/documentos/proforma/${ped.id}?formato=pdf`)).body()).toString('latin1');
+      ok(/\/Subtype\s*\/Image/.test(crudo),
+         'y la firma escaneada va incrustada como imagen',
+         Math.round(Number(f.firma_bytes) / 1024) + ' KB');
+    }
+
+    /*
+     * Y sin firma escaneada el documento tiene que salir IGUAL. Una empresa
+     * que aun firma a mano no puede quedarse sin poder emitir proformas.
+     */
+    const [antes] = await consultar(`select valor from parametros where clave='firmante_firma'`);
+    await consultar(`update parametros set valor = '' where clave='firmante_firma'`);
+    const rs = await p.request.get(`${BASE}/api/documentos/proforma/${ped.id}?formato=pdf`);
+    ok(rs.status() === 200, 'sin firma escaneada la proforma se emite igual');
+    const ts = (await textoDelPdf(await rs.body())).texto;
+    ok(ts.includes(f.nombre), 'y sigue diciendo quien firma, con su raya para hacerlo a mano');
+    await consultar(
+      "update parametros set valor = " +
+      "'" + String(antes.valor).split("'").join("''") + "' where clave='firmante_firma'");
+  }
+
+  console.log('\n─── 11 · No se rompe con pedidos grandes ───');
   {
     const [grande] = await consultar(`
       select p.id, count(pl.id) as lineas from pedidos p
@@ -263,7 +309,7 @@ try {
     }
   }
 
-  console.log('\n─── 11 · La venta local NO usa este formato ───');
+  console.log('\n─── 12 · La venta local NO usa este formato ───');
   {
     const [local] = await consultar(`
       select p.id from pedidos p join clientes c on c.id = p.cliente_id
@@ -276,7 +322,7 @@ try {
     ok(/IGV/.test(t), 'y con IGV, que una venta dentro del Perú sí lo lleva');
   }
 
-  console.log('\n─── 12 · El total de la factura ya no se desborda ───');
+  console.log('\n─── 13 · El total de la factura ya no se desborda ───');
   {
     const [f] = await consultar(`select id, total from facturas order by total desc limit 1`);
     const rf = await p.request.get(`${BASE}/api/documentos/factura/${f.id}?formato=pdf`);

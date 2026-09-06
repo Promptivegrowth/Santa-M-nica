@@ -103,6 +103,18 @@ export type ProformaExportacion = {
 
   documentos: string[];
   condiciones: string[];
+
+  /**
+   * Quién firma por la empresa. Un contrato de venta dice quién se obliga: el
+   * comprador y su banco necesitan saber que quien firmó tenía facultad para
+   * hacerlo, y una raya sin nombre no lo dice.
+   */
+  firmante: {
+    nombre: string;
+    cargo: string;
+    /** La firma escaneada, incrustada. Vacía significa «se firma a mano». */
+    firma: string;
+  } | null;
 };
 
 /** La persona del cliente a la que va dirigido el documento. */
@@ -236,7 +248,8 @@ async function cargarParametrosExportacion() {
     .select('clave, valor')
     .in('clave', ['empresa_fda', 'empresa_ceu', 'empresa_telefono', 'empresa_fax',
                   'empresa_web', 'pais_origen', 'zona_pesca', 'puerto_embarque',
-                  'proforma_documentos', 'proforma_condiciones']);
+                  'proforma_documentos', 'proforma_condiciones',
+                  'firmante_nombre', 'firmante_cargo', 'firmante_firma']);
   return new Map((data ?? []).map((x) => [x.clave as string, String(x.valor ?? '')]));
 }
 
@@ -727,6 +740,16 @@ async function cargarProforma(id: number): Promise<Documento> {
 
       documentos: listaDeParametro(expo.get('proforma_documentos')),
       condiciones: listaDeParametro(expo.get('proforma_condiciones')),
+
+      // Sin nombre no se imprime el bloque: mejor la raya sola que un cargo
+      // suelto debajo de una firma que no se sabe de quién es.
+      firmante: (expo.get('firmante_nombre') ?? '').trim()
+        ? {
+            nombre: (expo.get('firmante_nombre') ?? '').trim(),
+            cargo: (expo.get('firmante_cargo') ?? '').trim(),
+            firma: (expo.get('firmante_firma') ?? '').trim(),
+          }
+        : null,
     },
 
     notas: [
