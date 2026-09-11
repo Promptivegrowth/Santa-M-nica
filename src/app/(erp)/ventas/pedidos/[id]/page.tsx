@@ -34,6 +34,7 @@ import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { EsqueletoKpi, EsqueletoPestanas, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { tm, num, fecha, dinero, pct, etiquetaEstado } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
+import { RestriccionPeso } from './RestriccionPeso';
 import { uno, campo } from '@/lib/relaciones';
 import { BotonFacturar } from './Facturar';
 
@@ -166,7 +167,7 @@ async function CuerpoPedido({
        * y quien abre una proforma necesita poder volver a la oferta que la
        * originó —es donde está la negociación—.
        */
-      .select('contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, cotizacion_id, cotizaciones(numero, fecha, estado)')
+      .select('contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, cotizacion_id, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, restricciones_en, cotizaciones(numero, fecha, estado), usuarios!pedidos_restricciones_por_fkey(nombre)')
       .eq('id', pedidoId)
       .single(),
     supabase
@@ -179,6 +180,16 @@ async function CuerpoPedido({
   // se declara lo que de verdad llega.
   const contacto = (cabecera ?? {}) as Record<string, string | null>;
   const origen = uno<Record<string, unknown>>(cabecera?.cotizaciones);
+
+  /* La restricción de peso que el cliente comunicó a Comercial. */
+  const restriccionNeto =
+    cabecera?.peso_neto_max_kg == null ? null : Number(cabecera.peso_neto_max_kg);
+  const restriccionBruto =
+    cabecera?.peso_bruto_max_kg == null ? null : Number(cabecera.peso_bruto_max_kg);
+  const quienRestriccion =
+    (uno<Record<string, unknown>>(cabecera?.usuarios)?.nombre as string) ?? null;
+  const tieneRestriccion =
+    restriccionNeto !== null || restriccionBruto !== null || !!contacto.nota_restricciones;
   const cuentasDoc = (filasCuentas ?? [])
     .map((f) => uno<Record<string, unknown>>(f.cuentas_bancarias))
     .filter(Boolean)
@@ -338,6 +349,58 @@ async function CuerpoPedido({
                 <div><dt>Correo</dt><dd className="mono">{(contacto.contacto_email as string) ?? '—'}</dd></div>
               </dl>
             )}
+          </Panel>
+
+          {/*
+            LA RESTRICCIÓN DE PESO DEL CLIENTE.
+            Estaba en el planificador y se movió aquí: Oliver dijo que «esa
+            restricción debe registrarse en el pedido, ya que no hay un
+            maestro». Y un embarque puede llevar dos pedidos, así que anotarla
+            allí no decía a cuál de los dos clientes pertenecía.
+          */}
+          <Panel titulo="Restricción de peso">
+            {!tieneRestriccion ? (
+              <Vacio
+                titulo="Sin restricción anotada"
+                mensaje="Si el cliente indicó un peso máximo por contenedor, anótelo aquí: Almacén lo verá en el planificador antes de cargar."
+              />
+            ) : (
+              <dl className="ficha">
+                <div>
+                  <dt>Neto máximo</dt>
+                  <dd>{restriccionNeto === null ? '—' : `${(restriccionNeto / 1000).toFixed(1)} TM`}</dd>
+                </div>
+                <div>
+                  <dt>Bruto máximo</dt>
+                  <dd>{restriccionBruto === null ? '—' : `${(restriccionBruto / 1000).toFixed(1)} TM`}</dd>
+                </div>
+                {contacto.nota_restricciones && (
+                  <div><dt>Nota</dt><dd>{contacto.nota_restricciones as string}</dd></div>
+                )}
+                {contacto.restricciones_en && (
+                  <div>
+                    <dt>Anotada por</dt>
+                    <dd>
+                      {quienRestriccion ?? '—'}
+                      <br />
+                      <small style={{ color: 'var(--tinta-3)' }}>
+                        {fecha(contacto.restricciones_en as string)}
+                      </small>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            )}
+
+            <RestriccionPeso
+              pedidoId={pedidoId}
+              numero={String(pedido.numero_proforma)}
+              netoKg={restriccionNeto}
+              brutoKg={restriccionBruto}
+              nota={(contacto.nota_restricciones as string) ?? null}
+              puede={puedeReservar}
+              yaSalio={['despachado', 'cerrado', 'cancelado'].includes(String(pedido.ciclo))}
+            />
           </Panel>
 
           <Panel titulo={`Cuentas de cobro · ${cuentasDoc.length}`}>

@@ -15,7 +15,13 @@
 import { chromium } from 'playwright';
 import { ejecutarSQL } from './db.mjs';
 
-const BASE = 'http://localhost:3000';
+/*
+ * El puerto se puede cambiar con BASE_URL. En esta máquina conviven varios
+ * servidores de prueba a la vez y dar por supuesto el 3000 hacía que las
+ * pruebas se ejecutaran contra la aplicación equivocada — o peor, que alguien
+ * matara el proceso de otro para liberarlo.
+ */
+const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
 const CLAVE = 'SantaMonica2026';
 
 const consultar = async (sql) => {

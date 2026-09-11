@@ -18,7 +18,13 @@
 import { chromium } from 'playwright';
 import { ejecutarSQL } from './db.mjs';
 
-const BASE = 'http://localhost:3000';
+/*
+ * El puerto se puede cambiar con BASE_URL. En esta máquina conviven varios
+ * servidores de prueba a la vez y dar por supuesto el 3000 hacía que las
+ * pruebas se ejecutaran contra la aplicación equivocada — o peor, que alguien
+ * matara el proceso de otro para liberarlo.
+ */
+const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
 const consultar = async (sql) => {
   const r = await ejecutarSQL(sql);
   return Array.isArray(r) ? r : [];
@@ -29,14 +35,20 @@ const ok = (cond, texto, detalle = '') => {
   console.log(`${cond ? '  ok  ' : ' FALLA'} ${texto}${detalle ? ' · ' + detalle : ''}`);
   if (!cond) fallos.push(texto);
 };
-
-/* Todo lo que se toque se deja como estaba, pase lo que pase. */
+/*
+ * Todo lo que se toque se deja como estaba, pase lo que pase.
+ *
+ * Se restauran PEDIDOS y no embarques: la restriccion de peso se mudo al
+ * pedido, porque es donde le llega a Comercial y porque un embarque puede
+ * consolidar dos pedidos -y entonces el tope «del embarque» no dice de que
+ * cliente es-.
+ */
 let tocado = null;
 const restaurar = async () => {
   if (!tocado) return;
   await consultar(
-    `update embarques set peso_neto_max_kg = null, peso_bruto_max_kg = null,
-            nota_comercial = null, nota_comercial_por = null, nota_comercial_en = null
+    `update pedidos set peso_neto_max_kg = null, peso_bruto_max_kg = null,
+            nota_restricciones = null, restricciones_por = null, restricciones_en = null
       where id = ${tocado}`);
   tocado = null;
 };
@@ -83,21 +95,32 @@ async function abrirDia(p, dia) {
 const tarjetaDe = (p, numero) => p.locator('.cal-tarjeta').filter({ hasText: numero });
 
 try {
-  console.log('\n─── 1 · Los topes del destino se conocen solos ───');
+  console.log(`
+--- 1 - La restriccion vive en el pedido, no en un maestro ---`);
   {
-    const [tai] = await consultar(
-      `select count(*) as n from destinos where pais ilike '%Tailandia%' and peso_neto_max_kg = 26000`);
-    ok(Number(tai.n) > 0, 'Tailandia tiene su tope de 26 TM cargado', `${tai.n} puerto(s)`);
+    /*
+     * Oliver: «esa restriccion debe registrarse en el pedido, ya que no hay un
+     * maestro; el 90 % de las observaciones son que el cliente indica a
+     * Comercial». Antes estaba en un maestro por destino Y en el embarque; las
+     * dos cosas se quitaron.
+     */
+    const [viejo] = await consultar(`
+      select count(*) as n from information_schema.columns
+       where table_schema = 'public'
+         and (table_name = 'destinos'  and column_name like 'peso%'
+           or table_name = 'embarques' and column_name like 'peso%')`);
+    ok(Number(viejo.n) === 0,
+       'no quedan topes en destinos ni en embarques: un maestro que nadie mantiene miente');
 
-    const [eu] = await consultar(
-      `select count(*) as n from destinos where peso_bulto_max_kg = 30`);
-    ok(Number(eu.n) > 0, 'los destinos europeos llevan el máximo de 30 kg por bulto', `${eu.n}`);
+    const [nuevo] = await consultar(`
+      select count(*) as n from information_schema.columns
+       where table_schema = 'public' and table_name = 'pedidos'
+         and column_name in ('peso_neto_max_kg','peso_bruto_max_kg','nota_restricciones')`);
+    ok(Number(nuevo.n) === 3, 'y el pedido guarda neto, bruto y nota');
 
-    const [her] = await consultar(`
-      select count(*) as n from v_embarque_topes
-       where tope_neto_kg is not null and origen_tope = 'destino'`);
-    ok(Number(her.n) > 0,
-       'y los embarques a esos destinos heredan el tope sin reescribirlo', `${her.n} embarques`);
+    const [con] = await consultar(
+      `select count(*) as n from pedidos where peso_neto_max_kg is not null`);
+    ok(Number(con.n) > 0, 'hay pedidos con restriccion cargada', `${con.n} pedidos`);
   }
 
   console.log('\n─── 2 · El SKU sale en la tarjeta ───');
@@ -129,60 +152,49 @@ try {
     await p.context().close();
   }
 
-  console.log('\n─── 3 · Comercial fija el tope y la nota ───');
+  console.log(`
+--- 3 - Comercial fija la restriccion desde el pedido ---`);
   {
-    const [emb] = await consultar(`
-      select e.id, e.numero, to_char(e.fecha_programada,'YYYY-MM-DD') as dia
-        from embarques e
-        join packing_lists pk on pk.embarque_id = e.id
-        join packing_lineas pl on pl.packing_list_id = pk.id
-       where e.estado <> 'despachado'
-       group by e.id having sum(pl.peso_neto_kg) > 1000
-       order by e.fecha_programada desc limit 1`);
-    tocado = emb.id;
+    const [ped] = await consultar(`
+      select id, numero_proforma from pedidos
+       where ciclo not in ('despachado','cerrado','cancelado')
+         and peso_neto_max_kg is null
+       order by id limit 1`);
+    tocado = ped.id;
 
     const p = await entrar('comercial@santamonica.pe');
-    await abrirDia(p, emb.dia);
+    await p.goto(`${BASE}/ventas/pedidos/${ped.id}`, { waitUntil: 'networkidle' });
+    await p.waitForTimeout(1800);
 
-    const tarjeta = tarjetaDe(p, emb.numero);
-    ok(await tarjeta.count() === 1, 'se localizó la tarjeta de ' + emb.numero);
-
-    const boton = tarjeta.locator('button', { hasText: /Fijar topes de peso|Editar topes/ });
-    ok(await boton.count() > 0, 'Comercial ve el botón de fijar topes');
-    await boton.click();
+    const boton = p.locator('button', { hasText: /Fijar restricci|Editar restricci|topes de peso/i });
+    ok(await boton.count() > 0, 'Comercial ve el boton de fijar la restriccion');
+    await boton.first().click();
     await p.waitForTimeout(900);
 
-    const campos = tarjeta.locator('.cal-topes input[type="number"]');
-    ok(await campos.count() === 2, 'hay campo de peso neto y de peso bruto');
-
-    await campos.nth(0).fill('30');
-    await campos.nth(1).fill('32');
-    await tarjeta.locator('.cal-topes input[type="text"]')
+    const campos = p.locator('input[type="number"]');
+    ok(await campos.count() >= 2, 'hay campo de peso neto y de peso bruto');
+    await campos.nth(0).fill('26');
+    await campos.nth(1).fill('27.5');
+    await p.locator('input[type="text"]').last()
       .fill('Bultos de maximo 30 kg confirmado por la naviera');
-    await tarjeta.locator('.cal-topes button', { hasText: 'Guardar' }).click();
+    await p.locator('button', { hasText: 'Guardar' }).first().click();
     await p.waitForTimeout(3500);
 
-    const [tras] = await consultar(
-      `select peso_neto_max_kg, peso_bruto_max_kg, nota_comercial, nota_comercial_por
-         from embarques where id = ${emb.id}`);
-    ok(Number(tras.peso_neto_max_kg) === 30000,
+    const [tras] = await consultar(`
+      select peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, restricciones_por
+        from pedidos where id = ${ped.id}`);
+    ok(Number(tras.peso_neto_max_kg) === 26000,
        'el neto se guarda en kilos aunque se escriba en toneladas', `${tras.peso_neto_max_kg}`);
-    ok(Number(tras.peso_bruto_max_kg) === 32000, 'y el bruto también');
-    ok(/naviera/i.test(String(tras.nota_comercial)), 'la nota queda guardada');
-    ok(tras.nota_comercial_por !== null, 'y queda registrado quién la confirmó');
-
-    /* Se mira DENTRO de la tarjeta y por el texto exacto: buscar «naviera» en
-       toda la página daba positivo con el campo Naviera de la ficha. */
-    await abrirDia(p, emb.dia);
-    const texto = await tarjetaDe(p, emb.numero).innerText();
-    ok(/Comercial:/i.test(texto), 'la nota se ve en la tarjeta');
-    ok(/maximo 30 kg/i.test(texto), 'y es la que se acaba de escribir');
+    ok(Number(tras.peso_bruto_max_kg) === 27500, 'y el bruto tambien');
+    ok(/naviera/i.test(String(tras.nota_restricciones)), 'la nota queda guardada');
+    ok(tras.restricciones_por !== null, 'y queda registrado quien la anoto');
     await p.context().close();
   }
 
   console.log('\n─── 4 · El bruto no puede ser menor que el neto ───');
   {
-    const [r] = await consultar(`select id from embarques where estado <> 'despachado' limit 1`);
+    const [r] = await consultar(
+      `select id from pedidos where ciclo not in ('despachado','cerrado','cancelado') limit 1`);
     // Se comprueba por la vía del servidor: la validación tiene que estar ahí,
     // no solo en el formulario.
     const p = await entrar('comercial@santamonica.pe');
@@ -193,7 +205,7 @@ try {
     // La regla, comprobada contra la base: el CHECK impide un tope <= 0.
     let rechazado = false;
     try {
-      await consultar(`update embarques set peso_neto_max_kg = 0 where id = ${r.id}`);
+      await consultar(`update pedidos set peso_neto_max_kg = 0 where id = ${r.id}`);
     } catch { rechazado = true; }
     ok(rechazado, 'la base rechaza un tope de cero, que bloquearía cualquier carga');
   }
@@ -206,11 +218,17 @@ try {
         from v_embarque_topes
        where cargado_kg > 1000 order by cargado_kg desc limit 1`);
 
-    // Se le pone un tope JUSTO por debajo de lo que lleva: tiene que avisar.
-    tocado = emb.embarque_id;
+    /*
+     * El tope se pone en EL PEDIDO que lleva ese embarque, no en el embarque:
+     * ahí es donde vive ahora. La vista se encarga de traerlo y de quedarse
+     * con el mas estricto cuando hay varios.
+     */
+    const [dueno] = await consultar(
+      `select pedido_id from embarque_pedidos where embarque_id = ${emb.embarque_id} limit 1`);
+    tocado = dueno.pedido_id;
     await consultar(
-      `update embarques set peso_neto_max_kg = ${Math.round(Number(emb.cargado) * 0.9)}
-        where id = ${emb.embarque_id}`);
+      `update pedidos set peso_neto_max_kg = ${Math.round(Number(emb.cargado) * 0.9)}
+        where id = ${dueno.pedido_id}`);
 
     const [v] = await consultar(
       `select excede, cerca_del_tope, round(exceso_kg) as exceso, ocupacion_pct
@@ -225,8 +243,8 @@ try {
 
     // Ahora un tope al que se ACERCA, que es el aviso que llega a tiempo.
     await consultar(
-      `update embarques set peso_neto_max_kg = ${Math.round(Number(emb.cargado) / 0.97)}
-        where id = ${emb.embarque_id}`);
+      `update pedidos set peso_neto_max_kg = ${Math.round(Number(emb.cargado) / 0.97)}
+        where id = ${dueno.pedido_id}`);
     const [v2] = await consultar(
       `select excede, cerca_del_tope, ocupacion_pct
          from v_embarque_topes where embarque_id = ${emb.embarque_id}`);
@@ -250,8 +268,8 @@ try {
         where estado <> 'despachado' order by fecha_programada desc limit 1`);
     const p = await entrar('almacen@santamonica.pe');
     await abrirDia(p, emb.dia);
-    const botones = await p.locator('button', { hasText: /Fijar topes|Editar topes/ }).count();
-    ok(botones === 0, 'Almacén no puede fijar el tope: lo consume, no lo decide');
+    const botones = await p.locator('button, a', { hasText: /Fijar restricci|Cambiar la restricci/i }).count();
+    ok(botones === 0, 'Almacen no puede fijar la restriccion: la consume, no la decide');
     await p.context().close();
   }
 } finally {

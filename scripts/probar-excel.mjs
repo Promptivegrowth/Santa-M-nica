@@ -16,7 +16,7 @@ import ExcelJS from 'exceljs';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import './db.mjs'; // carga las variables de entorno
 
-const BASE = process.env.URL_PRUEBA ?? 'http://localhost:3000';
+const BASE = process.env.BASE_URL ?? process.env.URL_PRUEBA ?? 'http://localhost:3000';
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const REF = process.env.SUPABASE_PROJECT_REF;

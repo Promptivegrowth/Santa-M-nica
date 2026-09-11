@@ -122,7 +122,8 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
 
   const estado = cot.estado as string;
   const aprobada = Boolean(cot.aprobada_en);
-  const puedeAprobar = (usuario?.rol ?? '') === 'gerencia';
+  // Facultad de la PERSONA, no del cargo: la marca el maestro de usuarios.
+  const puedeAprobar = usuario?.aprueba_cotizaciones === true;
 
   return (
     <>

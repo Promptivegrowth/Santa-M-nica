@@ -2,27 +2,35 @@
 
 /**
  * ============================================================================
- *  LOS TOPES DE PESO, EDITABLES DESDE EL CALENDARIO
+ *  LA RESTRICCIÓN DE PESO QUE EL CLIENTE LE PONE AL PEDIDO
  * ============================================================================
  *  Oliver describió el problema así: el peso máximo que admite el contenedor
  *  llega por correo, a veces a última hora, y para entonces el contenedor ya
  *  se está cargando.
  *
- *  Por eso el formulario está AQUÍ, en el planificador, y no escondido en la
- *  ficha del embarque: es la pantalla que Comercial ya tiene abierta cuando
- *  llega ese correo, y el sitio donde Almacén va a mirar antes de cargar.
+ *  ESTE FORMULARIO ESTABA EN EL PLANIFICADOR Y SE MOVIÓ AQUÍ.
+ *  Se lo preguntamos y respondió: «esa restricción debe registrarse en el
+ *  pedido, ya que no hay un maestro; el 90 % de las observaciones son que el
+ *  cliente indica a Comercial».
  *
- *  Se abre plegado. Un embarque normal no necesita tope, y un formulario
- *  desplegado en cada tarjeta convertiría el calendario en un muro de campos.
+ *  Y tiene razón técnica además de operativa: un embarque puede consolidar dos
+ *  pedidos, y entonces escribir el tope «en el embarque» no dice a cuál de los
+ *  dos clientes pertenece. En el pedido no hay ambigüedad posible.
+ *
+ *  El planificador lo sigue enseñando —tomando el más estricto de los pedidos
+ *  que lleva cada salida— pero ya no lo edita: enlaza aquí.
+ *
+ *  Se abre plegado. La mayoría de los pedidos no lleva restricción, y un
+ *  formulario desplegado siempre llenaría la ficha de campos vacíos.
  * ============================================================================
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
-import { guardarTopeEmbarque } from './acciones';
+import { guardarRestriccionPedido } from './accionesRestriccion';
 
-export function TopesEmbarque({
-  embarqueId,
+export function RestriccionPeso({
+  pedidoId,
   numero,
   netoKg,
   brutoKg,
@@ -30,13 +38,14 @@ export function TopesEmbarque({
   puede,
   yaSalio,
 }: {
-  embarqueId: number;
+  pedidoId: number;
   numero: string;
-  /** Solo el tope PROPIO de este embarque. El heredado del destino no se edita aquí. */
+  /** El límite que indicó el cliente para este pedido. */
   netoKg: number | null;
   brutoKg: number | null;
   nota: string | null;
   puede: boolean;
+  /** Ya despachado o cerrado: cambiarlo no afectaría a nada de lo cargado. */
   yaSalio: boolean;
 }) {
   const router = useRouter();
@@ -60,11 +69,11 @@ export function TopesEmbarque({
   function guardar() {
     setAviso(null);
     iniciar(async () => {
-      const r = await guardarTopeEmbarque({
-        embarque_id: embarqueId,
+      const r = await guardarRestriccionPedido({
+        pedido_id: pedidoId,
         peso_neto_max_kg: neto.trim() === '' ? null : Number(neto) * 1000,
         peso_bruto_max_kg: bruto.trim() === '' ? null : Number(bruto) * 1000,
-        nota_comercial: texto.trim() || null,
+        nota_restricciones: texto.trim() || null,
       });
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (r.ok) {
@@ -91,7 +100,7 @@ export function TopesEmbarque({
 
   return (
     <div className="cal-topes">
-      <strong>Topes de {numero}</strong>
+      <strong>Restricción de peso de {numero}</strong>
       <span className="cal-topes-ayuda">
         Lo que confirme aquí manda sobre la regla del destino. Déjelo vacío para volver a ella.
       </span>

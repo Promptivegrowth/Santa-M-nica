@@ -266,8 +266,18 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
    existe. Es la razón de ser de una aprobación.
    ========================================================================== */
 
-/** Los roles que pueden dar el visto bueno a una oferta. */
-const PUEDEN_APROBAR = ['gerencia'];
+/*
+ * QUIÉN APRUEBA NO ES UN ROL, ES UNA PERSONA.
+ *
+ * Aquí decía `['gerencia']`. Se lo preguntamos a Oliver y respondió: «aprueba
+ * Gerente, Cathy Lee y Marco León» — tres personas concretas, y una de ellas
+ * es Jefe Comercial y Exportaciones.
+ *
+ * Abrir el permiso al rol «comercial» entero dejaría que cualquier vendedor
+ * aprobara sus propias ofertas, que es exactamente lo que se quería evitar.
+ * Dejarlo solo en Gerencia no es lo que él pidió. La facultad se marca
+ * PERSONA A PERSONA en el maestro de usuarios.
+ */
 
 /** ¿La aprobación es obligatoria? Lo decide Configuración, no el código. */
 export async function aprobacionObligatoria(): Promise<boolean> {
@@ -282,12 +292,13 @@ export async function aprobarCotizacion(id: number): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
 
-  if (!PUEDEN_APROBAR.includes(usuario.rol)) {
+  if (!usuario.aprueba_cotizaciones) {
     return {
       ok: false,
       mensaje:
-        `Su rol (${usuario.rol}) no puede aprobar cotizaciones. ` +
-        'La aprobación corresponde a Gerencia: si quien redacta la oferta fuera también quien la autoriza, el control no serviría de nada.',
+        `${usuario.nombre} no está autorizado a aprobar cotizaciones. ` +
+        'La facultad se otorga persona a persona desde el maestro de usuarios, no por cargo: ' +
+        'si cualquiera del área pudiera aprobar sus propias ofertas, el control no serviría de nada.',
     };
   }
 

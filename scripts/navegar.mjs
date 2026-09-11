@@ -26,7 +26,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import './db.mjs';
 
-const BASE = process.env.URL_PRUEBA ?? 'http://localhost:3000';
+const BASE = process.env.BASE_URL ?? process.env.URL_PRUEBA ?? 'http://localhost:3000';
 const VISIBLE = process.argv.includes('--ver');
 const SOLO = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const CAPTURAS = 'capturas';

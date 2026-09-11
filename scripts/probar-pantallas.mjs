@@ -13,7 +13,7 @@
 import { createClient } from '@supabase/supabase-js';
 import './db.mjs';
 
-const BASE = process.env.URL_PRUEBA ?? 'http://localhost:3000';
+const BASE = process.env.BASE_URL ?? process.env.URL_PRUEBA ?? 'http://localhost:3000';
 const REF = process.env.SUPABASE_PROJECT_REF;
 let ok = 0, fallo = 0; const errores = [];
 

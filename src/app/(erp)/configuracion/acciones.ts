@@ -146,3 +146,69 @@ export async function alternarRegla(id: number, activa: boolean): Promise<Result
   revalidatePath('/alertas');
   return { ok: true, mensaje: activa ? 'Regla activada.' : 'Regla desactivada.' };
 }
+
+/**
+ * Da o quita la facultad de aprobar cotizaciones.
+ *
+ * Es una facultad PERSONAL y no un permiso de rol: Oliver nombró a tres
+ * personas —«aprueba Gerente, Cathy Lee y Marco León»— y una de ellas es de
+ * Comercial. Abrirlo al rol entero dejaría que cualquier vendedor autorizara
+ * sus propias ofertas.
+ *
+ * Solo Gerencia la reparte: si quien vende pudiera darse el permiso a sí
+ * mismo, la marca no valdría nada.
+ */
+export async function alternarAprobador(
+  usuarioId: string,
+  aprueba: boolean
+): Promise<ResultadoAccion> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (usuario.rol !== 'gerencia') {
+    return {
+      ok: false,
+      mensaje: 'Solo Gerencia puede decidir quién aprueba cotizaciones.',
+    };
+  }
+
+  const supabase = await crearClienteServidor();
+
+  const { data: destino } = await supabase
+    .from('usuarios').select('nombre, rol, activo').eq('id', usuarioId).maybeSingle();
+  if (!destino) return { ok: false, mensaje: 'Ese usuario ya no existe.' };
+  if (aprueba && !destino.activo) {
+    return {
+      ok: false,
+      mensaje: `${destino.nombre} está inactivo: reactívelo antes de darle la facultad de aprobar.`,
+    };
+  }
+
+  const { error } = await supabase
+    .from('usuarios').update({ aprueba_cotizaciones: aprueba }).eq('id', usuarioId);
+
+  if (error) return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+
+  /*
+   * Se relee. Si una política lo rechaza, el update no da error: afecta a cero
+   * filas y devuelve éxito, y la pantalla se quedaría diciendo que sí.
+   */
+  const { data: verif } = await supabase
+    .from('usuarios').select('aprueba_cotizaciones').eq('id', usuarioId).maybeSingle();
+
+  if (verif?.aprueba_cotizaciones !== aprueba) {
+    return {
+      ok: false,
+      mensaje: 'El cambio no llegó a guardarse. Es un problema de permisos: avise a soporte.',
+    };
+  }
+
+  revalidatePath('/configuracion');
+  revalidatePath('/ventas/cotizaciones');
+
+  return {
+    ok: true,
+    mensaje: aprueba
+      ? `${destino.nombre} ya puede aprobar cotizaciones.`
+      : `${destino.nombre} ya no puede aprobar cotizaciones.`,
+  };
+}

@@ -83,7 +83,7 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
       // deduce los tipos de la consulta leyendo ese texto en tiempo de
       // compilación, y una suma de cadenas le impide hacerlo.
       .select(
-        'id, numero, fecha_programada, estado, booking, naviera, peso_neto_max_kg, peso_bruto_max_kg, nota_comercial, almacenes(nombre), destinos(puerto, pais, peso_neto_max_kg, peso_bulto_max_kg), packing_lists(contenedor, packing_lineas(bultos, peso_neto_kg)), embarque_pedidos(pedidos(clientes(razon_social), pedido_lineas(cantidad_tm, sku_presentaciones(skus(codigo, corte)))))'
+        'id, numero, fecha_programada, estado, booking, naviera, almacenes(nombre), destinos(puerto, pais), packing_lists(contenedor, packing_lineas(bultos, peso_neto_kg)), embarque_pedidos(pedidos(id, numero_proforma, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, clientes(razon_social), pedido_lineas(cantidad_tm, sku_presentaciones(skus(codigo, corte)))))'
       )
       .gte('fecha_programada', desde)
       .lte('fecha_programada', hasta)
@@ -175,12 +175,36 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
     /*
      * EL TOPE QUE RIGE.
      * Manda el que Comercial confirmó para esta salida; si no lo hay, el del
-     * destino. La pantalla dice cuál de los dos está aplicando, porque no es
-     * lo mismo un tope confirmado por correo que la regla general del mercado.
+     * pedidos que lleva: manda EL MÁS ESTRICTO. Basta que un cliente no
+     * admita más de veintiséis toneladas para que el contenedor no pueda
+     * llevar más, aunque el otro pedido admita treinta.
+     *
+     * Ya no hay tope por destino ni por embarque. Oliver fue claro: «esa
+     * restricción debe registrarse en el pedido, ya que no hay un maestro; el
+     * 90 % de las observaciones son que el cliente indica a Comercial».
      */
-    const topePropio = e.peso_neto_max_kg === null ? null : Number(e.peso_neto_max_kg);
-    const topeDestino = dst?.peso_neto_max_kg == null ? null : Number(dst.peso_neto_max_kg);
-    const topeNeto = topePropio ?? topeDestino;
+    const conTope = pedidos
+      .map((x) => ({
+        proforma: String(x?.numero_proforma ?? ''),
+        neto: x?.peso_neto_max_kg == null ? null : Number(x.peso_neto_max_kg),
+        bruto: x?.peso_bruto_max_kg == null ? null : Number(x.peso_bruto_max_kg),
+        nota: (x?.nota_restricciones as string) ?? null,
+      }))
+      .filter((x) => x.neto !== null || x.bruto !== null || x.nota);
+
+    const netos = conTope.map((x) => x.neto).filter((n): n is number => n !== null);
+    const brutos = conTope.map((x) => x.bruto).filter((n): n is number => n !== null);
+    const topeNeto = netos.length ? Math.min(...netos) : null;
+    const topeBruto = brutos.length ? Math.min(...brutos) : null;
+
+    // De qué proforma sale el límite que manda, para poder ir a corregirlo.
+    const proformaDelTope =
+      topeNeto === null ? null : (conTope.find((x) => x.neto === topeNeto)?.proforma ?? null);
+
+    const notas = conTope
+      .filter((x) => x.nota)
+      .map((x) => (pedidos.length > 1 ? `${x.proforma}: ${x.nota}` : x.nota))
+      .join(' · ') || null;
 
     return {
       id: e.id as number,
@@ -203,10 +227,12 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
       pedidos: pedidos.length,
       skus,
       topeNetoKg: topeNeto,
-      topeDeDestino: topePropio === null && topeDestino !== null,
-      topeBrutoKg: e.peso_bruto_max_kg === null ? null : Number(e.peso_bruto_max_kg),
-      topeBultoKg: dst?.peso_bulto_max_kg == null ? null : Number(dst.peso_bulto_max_kg),
-      notaComercial: (e.nota_comercial as string) ?? null,
+      topeBrutoKg: topeBruto,
+      proformaDelTope,
+      // Solo con UN pedido se puede enlazar sin ambigüedad al sitio donde se
+      // edita la restricción.
+      pedidoId: pedidos.length === 1 ? (Number(pedidos[0]?.id) || null) : null,
+      notaComercial: notas,
       // Solo se compara con la carga REAL: contrastar un tope contra una
       // previsión daría avisos que no significan nada.
       excedeTope: hayPacking && topeNeto !== null ? kg > topeNeto : false,

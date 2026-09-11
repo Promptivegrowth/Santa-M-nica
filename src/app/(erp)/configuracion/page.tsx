@@ -21,6 +21,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { EditorParametro } from './EditorParametro';
 import { SubirFirma } from './SubirFirma';
+import { InterruptorAprobador } from './InterruptorAprobador';
 import { InterruptorRegla } from './InterruptorRegla';
 import { ContactosYCuentas } from './ContactosYCuentas';
 import { Icono } from '@/components/estructura/Icono';
@@ -159,7 +160,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
       supabase.from('parametros').select('*').order('grupo').order('etiqueta'),
       supabase.from('reglas').select('*').order('severidad', { ascending: false }).order('nombre'),
       supabase.from('motivos').select('*').order('ambito').order('nombre'),
-      supabase.from('usuarios').select('id, nombre, email, rol, activo, creado_en').order('rol'),
+      supabase.from('usuarios').select('id, nombre, email, rol, activo, aprueba_cotizaciones, creado_en').order('rol'),
       Promise.all([
         supabase.from('almacenes').select('id', { count: 'exact', head: true }),
         supabase.from('skus').select('id', { count: 'exact', head: true }),
@@ -529,7 +530,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
           ) : (
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
               <table className="datos">
-                <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Alta</th></tr></thead>
+                <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Aprueba cotizaciones</th><th>Alta</th></tr></thead>
                 <tbody>
                   {(usuarios ?? []).map((u) => (
                     <tr key={u.id as string}>
@@ -537,6 +538,19 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                       <td className="mono">{u.email as string}</td>
                       <td><Etiqueta texto={u.rol as string} tono="info" /></td>
                       <td>{u.activo ? <Etiqueta texto="Activo" tono="ok" /> : <Etiqueta texto="Inactivo" tono="neutro" />}</td>
+                      <td>
+                        {/*
+                          Facultad PERSONAL, no del rol: Oliver nombró a tres
+                          personas concretas y una es de Comercial.
+                        */}
+                        <InterruptorAprobador
+                          id={u.id as string}
+                          nombre={u.nombre as string}
+                          rol={u.rol as string}
+                          aprueba={u.aprueba_cotizaciones === true}
+                          editable={rol === 'gerencia'}
+                        />
+                      </td>
                       <td style={{ fontSize: '.74rem', color: 'var(--tinta-3)' }}>{fechaHora(u.creado_en as string)}</td>
                     </tr>
                   ))}

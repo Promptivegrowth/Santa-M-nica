@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import './db.mjs';
 
-const BASE = process.env.URL_PRUEBA ?? 'http://localhost:3000';
+const BASE = process.env.BASE_URL ?? process.env.URL_PRUEBA ?? 'http://localhost:3000';
 const REF = process.env.SUPABASE_PROJECT_REF;
 const SALIDA = 'documentos-prueba';
 

@@ -28,7 +28,6 @@
 import { useState, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
-import { TopesEmbarque } from './TopesEmbarque';
 
 export type EmbarqueCalendario = {
   id: number;
@@ -54,11 +53,13 @@ export type EmbarqueCalendario = {
   /* ---- Los topes de peso ---- */
   /** El que rige: el confirmado para esta salida o, si no hay, el del destino. */
   topeNetoKg: number | null;
+  /** La proforma que impone el límite: es donde hay que ir a corregirlo. */
+  proformaDelTope: string | null;
+  /** Solo cuando el embarque lleva UN pedido se puede enlazar sin ambigüedad. */
+  pedidoId: number | null;
   /** true si el tope que rige es la regla general del destino, no uno confirmado. */
-  topeDeDestino: boolean;
   topeBrutoKg: number | null;
   /** Máximo por bulto que admite el mercado de destino. */
-  topeBultoKg: number | null;
   notaComercial: string | null;
   excedeTope: boolean;
   cercaDelTope: boolean;
@@ -418,15 +419,24 @@ export function CalendarioEmbarques({
                             {(e.topeNetoKg / 1000).toFixed(1)} TM
                             <br />
                             <small style={{ color: 'var(--tinta-3)' }}>
-                              {e.topeDeDestino ? `regla de ${e.pais || 'destino'}` : 'confirmado por Comercial'}
+                              {/*
+                                Se dice de qué proforma sale: cuando un embarque
+                                consolida dos pedidos, el tope que manda es el
+                                del cliente más estricto, y quien mira la
+                                tarjeta necesita saber a cuál ir si hay que
+                                cambiarlo.
+                              */}
+                              {e.proformaDelTope
+                                ? `lo pide ${e.proformaDelTope}`
+                                : 'indicado por el cliente'}
                             </small>
                           </dd>
                         </div>
                       )}
-                      {e.topeBultoKg !== null && (
+                      {e.topeBrutoKg !== null && (
                         <div>
-                          <dt>Máx. por bulto</dt>
-                          <dd>{e.topeBultoKg} kg</dd>
+                          <dt>Tope bruto</dt>
+                          <dd>{(e.topeBrutoKg / 1000).toFixed(1)} TM</dd>
                         </div>
                       )}
                     </dl>
@@ -457,15 +467,19 @@ export function CalendarioEmbarques({
                       </p>
                     )}
 
-                    <TopesEmbarque
-                      embarqueId={e.id}
-                      numero={e.numero}
-                      netoKg={e.topeDeDestino ? null : e.topeNetoKg}
-                      brutoKg={e.topeBrutoKg}
-                      nota={e.notaComercial}
-                      puede={puedeFijarTopes}
-                      yaSalio={e.estado === 'despachado'}
-                    />
+                    {/*
+                      La restricción ya NO se edita aquí.
+                      Vive en el PEDIDO, que es donde le llega a Comercial, y un
+                      embarque puede consolidar varios: no habría forma de saber
+                      a cuál de ellos se le está poniendo el tope. El
+                      planificador la enseña y lleva al sitio donde se cambia.
+                    */}
+                    {e.pedidos === 1 && !!e.pedidoId && puedeFijarTopes && (
+                      <Link href={`/ventas/pedidos/${e.pedidoId}#restricciones`}
+                            className="btn btn-sutil cal-tarjeta-enlace">
+                        {e.topeNetoKg === null ? 'Fijar restricción de peso' : 'Cambiar la restricción'}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
