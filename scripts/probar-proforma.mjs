@@ -267,6 +267,41 @@ try {
        `${t.n} cuenta(s) con otro nombre`);
   }
 
+  console.log(TITULO(9.7, 'Cada documento lleva SU direccion'));
+  {
+    /*
+     * La empresa tiene dos: el domicilio fiscal esta en Surco (Lima) y la
+     * planta en Paita. El sistema guardaba una sola y la factura salia con la
+     * de la planta, que SUNAT observa.
+     *
+     *   factura/boleta -> domicilio fiscal (lo valida SUNAT contra su padron)
+     *   proforma       -> planta (la habilitada, la del FDA y el CEU)
+     */
+    const [d] = await consultar(`
+      select max(valor) filter (where clave = 'empresa_domicilio_fiscal') as fiscal,
+             max(valor) filter (where clave = 'empresa_direccion_planta') as planta
+        from parametros`);
+    const plano = (t) => t.replace(/\s+/g, ' ');
+    const trozo = (v) => plano(String(v)).slice(0, 40);
+
+    ok(plano(texto).includes(trozo(d.planta)),
+       'la proforma lleva la direccion de la PLANTA', trozo(d.planta));
+    ok(!plano(texto).includes(trozo(d.fiscal)),
+       'y no el domicilio fiscal, que en un contrato de exportacion confunde');
+
+    //  `limit 1` sin `order by` no es determinista, y ademas puede caer en una
+    //  factura anulada, que el generador rechaza. Se pide una emitida.
+    const [f] = await consultar(
+      `select id from facturas where estado <> 'anulada' order by id limit 1`);
+    const rf = await p.request.get(`${BASE}/api/documentos/factura/${f.id}?formato=pdf`);
+    ok(rf.status() === 200, `la factura ${f.id} se emite`, `HTTP ${rf.status()}`);
+    const tf = (await textoDelPdf(await rf.body())).texto;
+    ok(plano(tf).includes(trozo(d.fiscal)),
+       'la factura lleva el DOMICILIO FISCAL, que es lo que exige SUNAT', trozo(d.fiscal));
+    ok(!plano(tf).includes(trozo(d.planta)),
+       'y no la de la planta, que haria la factura observable');
+  }
+
   console.log(TITULO(10, 'Quien firma por la empresa'));
   {
     const [f] = await consultar(`

@@ -219,18 +219,38 @@ function fechaCorta(v: string | null | undefined): string {
  * Los datos de la empresa que emite. Viven en Parámetros y no en el código
  * justamente para que cambiar una dirección no requiera un despliegue.
  */
-async function cargarEmisor() {
+/**
+ * Los datos de la empresa que emite.
+ *
+ * DOS DIRECCIONES, NO UNA.
+ * La ficha de SUNAT tiene el domicilio fiscal en Surco (Lima) y la planta está
+ * en Paita. No es que una sea la buena: cada documento lleva la suya.
+ *
+ *   · `fiscal`  → factura y boleta. Es obligatorio y SUNAT lo valida contra su
+ *                 padrón; una factura con la dirección de la planta es una
+ *                 factura observable.
+ *   · `planta`  → proforma y cotización. Es la planta habilitada, la del FDA y
+ *                 el CEU, y la que busca la autoridad sanitaria del comprador.
+ *
+ * Se resuelve aquí y no en cada pantalla para que nadie tenga que acordarse de
+ * cuál toca: quien pide el emisor dice qué documento está armando.
+ */
+async function cargarEmisor(cual: 'fiscal' | 'planta') {
   const supabase = await crearClienteServidor();
   const { data } = await supabase
     .from('parametros')
     .select('clave, valor')
-    .in('clave', ['empresa_razon_social', 'empresa_ruc', 'empresa_direccion', 'empresa_marca']);
+    .in('clave', ['empresa_razon_social', 'empresa_ruc', 'empresa_direccion_planta',
+                  'empresa_domicilio_fiscal', 'empresa_marca']);
 
   const p = new Map((data ?? []).map((x) => [x.clave as string, String(x.valor ?? '')]));
   return {
     razonSocial: p.get('empresa_razon_social') ?? '',
     ruc: p.get('empresa_ruc') ?? '',
-    direccion: p.get('empresa_direccion') ?? '',
+    direccion:
+      cual === 'fiscal'
+        ? (p.get('empresa_domicilio_fiscal') ?? p.get('empresa_direccion_planta') ?? '')
+        : (p.get('empresa_direccion_planta') ?? ''),
     marca: p.get('empresa_marca') ?? '',
   };
 }
@@ -549,7 +569,7 @@ async function cargarCotizacion(id: number): Promise<Documento> {
   const supabase = await crearClienteServidor();
   const [emisor, { data: cot }, { data: lineas }, { data: parametros }, { data: cuentasCot }] =
     await Promise.all([
-    cargarEmisor(),
+    cargarEmisor('planta'),
     supabase
       .from('cotizaciones')
       .select('*, clientes(razon_social, ruc_tax_id, etiqueta_tax_id, direccion, pais, contacto, email), vendedores(nombre), destinos(puerto, pais), listas_precio(nombre, incoterm)')
@@ -641,7 +661,7 @@ async function cargarProforma(id: number): Promise<Documento> {
   const supabase = await crearClienteServidor();
   const [emisor, expo, { data: ped }, { data: lineas }, { data: parametros }, { data: cuentasPed }] =
     await Promise.all([
-    cargarEmisor(),
+    cargarEmisor('planta'),
     cargarParametrosExportacion(),
     supabase
       .from('pedidos')
@@ -769,7 +789,7 @@ async function cargarProforma(id: number): Promise<Documento> {
 async function cargarComprobante(id: number): Promise<Documento> {
   const supabase = await crearClienteServidor();
   const [emisor, { data: fac }, { data: lineas }] = await Promise.all([
-    cargarEmisor(),
+    cargarEmisor('fiscal'),
     supabase
       .from('facturas')
       .select('*, clientes(razon_social, ruc_tax_id, etiqueta_tax_id, direccion, pais, contacto, email, dias_credito), pedidos(id, numero_proforma, incoterm, oc_cliente, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, destinos(puerto, pais))')
