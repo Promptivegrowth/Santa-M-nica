@@ -239,6 +239,34 @@ try {
     ok((texto.match(/DATE:/g) ?? []).length >= 2, 'con fecha para cada parte');
   }
 
+  console.log(TITULO(9.5, 'La razon social es la MISMA en todo el documento'));
+  {
+    /*
+     * Salio una proforma con el membrete diciendo «S.A.» y el BENEFICIARY del
+     * banco diciendo «S.A.C.» tres centimetros mas abajo: el titular de la
+     * cuenta guarda su propia copia del nombre y el parametro no lo alcanza.
+     *
+     * No es un detalle: el banco del comprador compara el beneficiario con el
+     * nombre del documento y devuelve la orden si no coinciden.
+     */
+    const [e] = await consultar(
+      `select valor from parametros where clave = 'empresa_razon_social'`);
+    const razon = String(e.valor);
+    ok(texto.includes(razon), 'el membrete lleva la razon social configurada', razon);
+
+    const sufijo = razon.match(/S\.A\.C?\.?$/)?.[0] ?? '';
+    const otro = sufijo === 'S.A.' ? 'S.A.C.' : 'S.A.';
+    ok(!texto.includes(otro),
+       `y no aparece «${otro}» en ninguna parte del documento`);
+
+    const [t] = await consultar(`
+      select count(*) as n from cuentas_bancarias
+       where titular ilike '%SANTA M_NICA%' and titular <> '${razon.split("'").join("''")}'`);
+    ok(Number(t.n) === 0,
+       'el titular de las cuentas dice exactamente lo mismo que el membrete',
+       `${t.n} cuenta(s) con otro nombre`);
+  }
+
   console.log(TITULO(10, 'Quien firma por la empresa'));
   {
     const [f] = await consultar(`

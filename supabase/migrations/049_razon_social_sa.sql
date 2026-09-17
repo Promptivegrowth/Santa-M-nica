@@ -16,3 +16,19 @@
 update parametros
    set valor = 'INDUSTRIAL PESQUERA SANTA MÓNICA S.A.'
  where clave = 'empresa_razon_social';
+
+
+-- ────────────────────────────────────────────────────────────────────────────
+--  Y donde tambien estaba escrita
+-- ────────────────────────────────────────────────────────────────────────────
+--  Cambiar el parametro no bastaba: el titular de las cuentas bancarias lleva
+--  su propia copia del nombre, y la proforma lo imprime como BENEFICIARY. Salia
+--  una proforma con el membrete diciendo «S.A.» y el beneficiario del banco
+--  diciendo «S.A.C.» tres centimetros mas abajo.
+--
+--  Es justo el tipo de discrepancia que para una transferencia: el banco del
+--  comprador compara el beneficiario con el nombre del documento, y si no
+--  coinciden devuelve la orden.
+update cuentas_bancarias
+   set titular = replace(titular, 'S.A.C.', 'S.A.')
+ where titular ilike '%SANTA M_NICA S.A.C.%';

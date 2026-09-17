@@ -61,3 +61,10 @@ documentos-prueba/
 # no un descuido.
 SM26-312*.pdf
 *Proforma DALIAN*
+
+# La firma escaneada del Gerente General. Vive en la base de datos, que es
+# donde tiene permisos y copia de seguridad; el PNG suelto es solo el resultado
+# de haberla extraido de la imagen que mandaron por WhatsApp. Una firma en un
+# repositorio es una firma que cualquiera puede pegar en otro documento.
+firma-gerente-general.png
+firma-walter-*.png
