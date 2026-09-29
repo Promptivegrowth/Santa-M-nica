@@ -137,6 +137,30 @@ const fecha = (c) => {
 };
 
 /**
+ * Cómo se carga cada motivo de la columna AT (CONDICIÓN FINAL EVALUACIONES PT)
+ * como dictamen de calidad. Los valores son los que trae el archivo real:
+ *
+ *    INMOVILIZADO SANIPES RECORTES / RETORNO → inmovilizado · SANIPES
+ *    MERCADO NACIONAL                        → observado · Solo mercado nacional
+ *    CALIDAD                                 → observado · En evaluación de calidad
+ *
+ * «Mercado nacional» es observado y no disponible, como pide Oliver para todo
+ * lo que tiene OBS en la AU, pero con el motivo que lo separa en el cuadro de
+ * stock con condición (migración 055): ese sí se puede vender, dentro del país.
+ * El texto original va siempre como detalle, para no perder «recortes» o
+ * «retorno».
+ */
+function dictamenDe(motivoAT) {
+  const m = String(motivoAT ?? '').toUpperCase();
+  if (/SANIPES|INMOVILIZ/.test(m)) return { estado: 'inmovilizado', motivo: 'SANIPES', detalle: motivoAT };
+  if (/NACIONAL/.test(m)) return { estado: 'observado', motivo: 'MERCADO_NACIONAL', detalle: motivoAT };
+  if (/CALIDAD/.test(m)) return { estado: 'observado', motivo: 'EVAL_CALIDAD', detalle: motivoAT };
+  //  Un motivo que no se conoce no se adivina: queda observado con el texto
+  //  tal cual, y el informe lo señala para decidirlo con Oliver.
+  return { estado: 'observado', motivo: null, detalle: motivoAT ?? 'Sin motivo en la columna AT' };
+}
+
+/**
  * El peso neto de una fila.
  *
  * EL ARCHIVO TRAE FÓRMULAS ROTAS. En la versión del 28/09, 3 653 filas tienen
@@ -428,8 +452,9 @@ function informar(m, productos, presentaciones, capacidad) {
   const motivos = new Map();
   for (const x of observado) motivos.set(x.motivo, (motivos.get(x.motivo) ?? 0) + x.kg);
   for (const [mo, kg] of [...motivos].sort((a, b) => b[1] - a[1])) {
-    const marca = /NACIONAL/i.test(mo ?? '') ? '  ← solo mercado nacional' : '';
-    console.log(`    ${String(mo ?? 'sin motivo').slice(0, 34).padEnd(34)} ${tm(kg).padStart(8)} TM${marca}`);
+    const d = dictamenDe(mo);
+    const destino = d.motivo ? `${d.estado} · ${d.motivo}` : `${d.estado} · ¿MOTIVO? (consultar)`;
+    console.log(`    ${String(mo ?? 'sin motivo').slice(0, 34).padEnd(34)} ${tm(kg).padStart(8)} TM  → ${destino}`);
   }
   if (pesosReconstruidos) {
     console.log(`

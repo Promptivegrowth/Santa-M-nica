@@ -49,6 +49,7 @@ const PANTALLAS = [
   ['/almacenes/ingresos',        'Ingresos'],
   ['/almacenes/traslados',       'Traslados'],
   ['/almacenes/calidad',         'Calidad'],
+  ['/almacenes/alertas',         'Alertas de stock'],
   ['/almacenes/anticuamiento',   'Anticuamiento'],
   ['/almacenes/valorizado',      'valorizado'],
   ['/logistica/planificador',    'Planificador'],

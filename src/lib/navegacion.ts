@@ -67,6 +67,7 @@ export const NAVEGACION: Grupo[] = [
       { titulo: 'Ingresos',              ruta: '/almacenes/ingresos',      icono: 'ingresos',      ayuda: 'Lo que entró a cámara', roles: ['gerencia', 'operaciones', 'almacen', 'consulta'] },
       { titulo: 'Traslados',             ruta: '/almacenes/traslados',     icono: 'traslados',     ayuda: 'Movimientos entre bodegas', roles: ['gerencia', 'operaciones', 'almacen', 'comex', 'consulta'] },
       { titulo: 'Calidad',               ruta: '/almacenes/calidad',       icono: 'calidad',       ayuda: 'Producto observado y liberado', roles: TODOS },
+      { titulo: 'Alertas de stock',      ruta: '/almacenes/alertas',       icono: 'reloj',         ayuda: 'Por vencer, observado y solo mercado nacional', roles: TODOS },
       { titulo: 'Anticuamiento',         ruta: '/almacenes/anticuamiento', icono: 'anticuamiento', ayuda: 'Producto que lleva mucho tiempo', roles: TODOS },
       { titulo: 'Inventario valorizado', ruta: '/almacenes/valorizado',    icono: 'valorizado',    ayuda: 'Cuánto vale lo que hay', roles: ['gerencia', 'operaciones', 'comercial'] },
     ],
