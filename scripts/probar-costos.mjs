@@ -3,7 +3,7 @@
  *  PRUEBA DE LOS COSTOS Y DEL MARGEN DE CONTRIBUCIÓN
  * ============================================================================
  *  Lo que pidió Oliver:
- *   · Tres costos por producto y por mes: materia prima, conversión, variable.
+ *   · Tres costos por producto: materia prima, conversión, variable.
  *   · Que los cargue Gerencia al inicio de mes.
  *   · Margen de contribución = precio de venta − costo total de producción.
  *
@@ -13,6 +13,10 @@
  *     daría margen del 100 % y nadie lo notaría.
  *   · Que solo Gerencia pueda escribirlos, y que si otro lo intenta el sistema
  *     lo DIGA en vez de fingir que guardó.
+ *
+ *  Las reglas nuevas de la migración 057 —vigencias, solo hacia adelante,
+ *  historial, costo del lote, margen bruto— tienen su propia prueba:
+ *  scripts/probar-costos-vigencia.mjs.
  *
  *      node scripts/probar-costos.mjs
  * ============================================================================
@@ -38,21 +42,34 @@ const ok = (cond, texto, detalle = '') => {
   if (!cond) fallos.push(texto);
 };
 
-/* Lo que se toque se deja como estaba. */
-let borrado = null;
+/*
+ * Lo que se toque se deja como estaba.
+ *
+ * Desde la migración 057 un costo que ya rige no se puede borrar ni cambiar,
+ * así que la prueba solo CREA vigencias de hoy y al final las quita, junto con
+ * su rastro en el historial. Para eso usa el interruptor de mantenimiento
+ * (app.costos_carga_historica) dentro de una transacción: desde la aplicación
+ * no se puede activar.
+ */
+const [{ ahora: INICIO }] = await consultar(`select now() as ahora`);
+let tocado = false;   // si la prueba llegó a crear algo
+/*
+ * Se quita TODO lo creado desde que empezó la prueba, no solo lo del producto
+ * que se quería tocar: si la pantalla guardara en otro por error, también se
+ * limpia. Borrar la vigencia deja una «baja» en el historial, que se borra
+ * después en la misma transacción.
+ */
 const restaurar = async () => {
-  if (!borrado) return;
+  if (!tocado) return;
   await consultar(`
-    insert into costos_mensuales
-      (sku_id, anio, mes, materia_prima_kg, conversion_kg, variable_kg, registrado_por)
-    values (${borrado.sku_id}, ${borrado.anio}, ${borrado.mes},
-            ${borrado.mp}, ${borrado.conv}, ${borrado.varia},
-            '${borrado.registrado_por}')
-    on conflict (sku_id, anio, mes) do update
-      set materia_prima_kg = excluded.materia_prima_kg,
-          conversion_kg    = excluded.conversion_kg,
-          variable_kg      = excluded.variable_kg`);
-  borrado = null;
+    begin;
+    select set_config('app.costos_carga_historica', 'si', true);
+    delete from costos_mensuales
+     where creado_en >= '${INICIO}'
+       and vigente_desde >= (now() at time zone 'America/Lima')::date;
+    delete from costos_historial where registrado_en >= '${INICIO}';
+    commit;`);
+  tocado = false;
 };
 
 const nav = await chromium.launch({ channel: 'chrome', headless: true });
@@ -116,31 +133,33 @@ try {
        `${f.familias_afectadas} familias tienen líneas fuera del cálculo`);
   }
 
-  console.log('\n─── 4 · El costo que rige es el último cargado ───');
+  console.log('\n─── 4 · El costo que rige es la última vigencia que empezó ───');
   {
+    /*
+     * Un producto con carga del mes y una actualización a mitad de mes: el
+     * día antes de la actualización rige la carga; desde ese día, la
+     * actualización; y el día antes de la carga, el mes anterior.
+     */
     const [caso] = await consultar(`
-      select sku_id, anio, mes, materia_prima_kg as mp, conversion_kg as conv,
-             variable_kg as varia, total_kg, registrado_por
-        from costos_mensuales order by anio desc, mes desc, sku_id limit 1`);
+      select a.sku_id, a.vigente_desde::text as desde_act, a.total_kg as t_act,
+             m.vigente_desde::text as desde_men, m.total_kg as t_men,
+             (a.vigente_desde - 1)::text as antes_act, (m.vigente_desde - 1)::text as antes_men
+        from costos_mensuales a
+        join costos_mensuales m on m.sku_id = a.sku_id and m.tipo = 'mensual'
+                               and m.anio = a.anio and m.mes = a.mes
+       where a.tipo = 'actualizacion' order by a.vigente_desde desc, a.sku_id limit 1`);
+    ok(Boolean(caso), 'hay productos con carga del mes y actualización posterior');
 
-    const [vig] = await consultar(
-      `select costo_produccion_kg(${caso.sku_id}, make_date(${caso.anio}, ${caso.mes}, 15)) as c`);
-    ok(Math.abs(Number(vig.c) - Number(caso.total_kg)) < 0.0001,
-       'dentro del mes rige el costo de ese mes');
+    const vig = async (f) => Number((await consultar(
+      `select costo_produccion_kg(${caso.sku_id}, '${f}'::date) as c`))[0].c);
 
-    // Se borra el del mes y tiene que caer al anterior, no a cero.
-    borrado = { ...caso };
-    await consultar(
-      `delete from costos_mensuales where sku_id = ${caso.sku_id} and anio = ${caso.anio} and mes = ${caso.mes}`);
-
-    const [tras] = await consultar(
-      `select costo_produccion_kg(${caso.sku_id}, make_date(${caso.anio}, ${caso.mes}, 15)) as c`);
-    ok(tras.c !== null && Number(tras.c) > 0,
-       'si falta el mes, se usa el último anterior — no cero', `US$ ${Number(tras.c).toFixed(4)}/kg`);
-    ok(Math.abs(Number(tras.c) - Number(caso.total_kg)) > 0.00001,
-       'y es un valor distinto: de verdad cayó al mes anterior');
-
-    await restaurar();
+    ok(Math.abs(await vig(caso.antes_act) - Number(caso.t_men)) < 0.0001,
+       'el día antes de la actualización rige la carga del mes');
+    ok(Math.abs(await vig(caso.desde_act) - Number(caso.t_act)) < 0.0001,
+       'desde el día de la actualización rige la actualización');
+    const previo = await vig(caso.antes_men);
+    ok(previo > 0 && Math.abs(previo - Number(caso.t_men)) > 0.00001,
+       'y antes de la carga rige el mes anterior —no cero—', `US$ ${previo.toFixed(4)}/kg`);
   }
 
   console.log('\n─── 5 · Solo Gerencia escribe ───');
@@ -155,12 +174,12 @@ try {
     const campos = pc.locator('.costo-campo');
     ok(await campos.count() > 0, 'los campos se muestran');
     ok(await campos.first().isDisabled(), 'pero desactivados');
-    ok(!/copiar del mes anterior/i.test(cuerpo), 'y no se le ofrece copiar el mes anterior');
+    ok(!/cargar con los costos vigentes/i.test(cuerpo), 'y no se le ofrece cargar el mes');
     await pc.context().close();
 
     // Almacén no entra siquiera.
     const pa = await entrar('almacen@santamonica.pe');
-    const r = await pa.goto(`${BASE}/finanzas/costos`, { waitUntil: 'networkidle' });
+    await pa.goto(`${BASE}/finanzas/costos`, { waitUntil: 'networkidle' });
     await pa.waitForTimeout(1800);
     ok(!pa.url().includes('/finanzas/costos'),
        'Almacén no accede a los costos: se le redirige', pa.url().replace(BASE, ''));
@@ -169,39 +188,67 @@ try {
 
   console.log('\n─── 6 · Gerencia edita en la propia tabla ───');
   {
+    /*
+     * En el mes en curso, editar un producto que ya tiene su carga del mes
+     * crea una ACTUALIZACIÓN que rige desde hoy. La carga no se toca: ya se
+     * aplicó a los ingresos de estos días.
+     */
     const [sku] = await consultar(`
-      select c.sku_id, s.codigo, c.anio, c.mes,
-             c.materia_prima_kg as mp, c.conversion_kg as conv, c.variable_kg as varia,
-             c.registrado_por
-        from costos_mensuales c join skus s on s.id = c.sku_id
-       order by c.anio desc, c.mes desc, s.codigo limit 1`);
-    borrado = { ...sku };
+      with hoy as (select (now() at time zone 'America/Lima')::date as d)
+      select c.id as carga_id, c.sku_id, s.codigo, c.total_kg,
+             c.materia_prima_kg as mp, c.conversion_kg as conv, c.variable_kg as varia
+        from costos_mensuales c join skus s on s.id = c.sku_id, hoy
+       where c.tipo = 'mensual' and c.vigente_desde < hoy.d
+         and c.vigente_desde >= date_trunc('month', hoy.d)::date
+         and not exists (select 1 from costos_mensuales x
+                          where x.sku_id = c.sku_id and x.vigente_desde > c.vigente_desde)
+       order by s.codigo limit 1`);
+    tocado = true;
 
     const p = await entrar('gerencia@santamonica.pe');
-    const periodo = `${sku.anio}-${String(sku.mes).padStart(2, '0')}`;
-    await p.goto(`${BASE}/finanzas/costos?periodo=${periodo}&buscar=${sku.codigo}`,
-                 { waitUntil: 'networkidle' });
+    await p.goto(`${BASE}/finanzas/costos?buscar=${encodeURIComponent(sku.codigo)}`, { waitUntil: 'networkidle' });
     await p.waitForTimeout(2200);
 
-    const fila = p.locator('table.datos tbody tr').first();
+    //  La fila EXACTA: buscar «04» también trae «104» y «041».
+    const filaDe = () => p.locator('table.tabla-costos tbody tr')
+      .filter({ has: p.locator('td:first-child', { hasText: new RegExp(`^${sku.codigo}$`) }) }).first();
+    const fila = filaDe();
     const campos = fila.locator('.costo-campo');
     ok(await campos.count() === 3, 'la fila tiene los tres campos');
     ok(!(await campos.first().isDisabled()), 'y para Gerencia están activos');
 
-    const nuevo = 2.5;
+    const nuevo = Number((Number(sku.mp) + 0.1).toFixed(4));
     await campos.nth(0).fill(String(nuevo));
-    await campos.nth(1).press('Tab');          // salir del campo dispara el guardado
-    await campos.nth(0).blur().catch(() => {});
+    await campos.nth(0).press('Enter');         // Enter guarda
     await p.waitForTimeout(3500);
 
-    const [tras] = await consultar(
-      `select materia_prima_kg, total_kg from costos_mensuales
-        where sku_id = ${sku.sku_id} and anio = ${sku.anio} and mes = ${sku.mes}`);
-    ok(Math.abs(Number(tras.materia_prima_kg) - nuevo) < 0.0001,
-       'el cambio se guarda al salir del campo', `${tras.materia_prima_kg}`);
-    ok(Math.abs(Number(tras.total_kg)
-        - (nuevo + Number(sku.conv) + Number(sku.varia))) < 0.0001,
+    const [hoyRow] = await consultar(`
+      select id, tipo, materia_prima_kg, total_kg,
+             vigente_desde = (now() at time zone 'America/Lima')::date as es_hoy
+        from costos_mensuales where sku_id = ${sku.sku_id} order by vigente_desde desc limit 1`);
+    ok(hoyRow.es_hoy && hoyRow.tipo === 'actualizacion',
+       'se guarda como actualización que rige desde hoy', hoyRow.tipo);
+    ok(Math.abs(Number(hoyRow.materia_prima_kg) - nuevo) < 0.0001, 'con el valor escrito', `${hoyRow.materia_prima_kg}`);
+    ok(Math.abs(Number(hoyRow.total_kg) - (nuevo + Number(sku.conv) + Number(sku.varia))) < 0.0001,
        'y el total se recalcula solo');
+    const [carga] = await consultar(`select total_kg from costos_mensuales where id = ${sku.carga_id}`);
+    ok(Math.abs(Number(carga.total_kg) - Number(sku.total_kg)) < 0.0001, 'la carga del mes queda intacta');
+
+    const [h] = await consultar(`
+      select accion, total_antes, total_nuevo, usuario_nombre from costos_historial
+       where costo_id = ${hoyRow.id} order by id desc limit 1`);
+    ok(h && h.accion === 'alta'
+       && Math.abs(Number(h.total_antes) - Number(sku.total_kg)) < 0.0001
+       && Math.abs(Number(h.total_nuevo) - Number(hoyRow.total_kg)) < 0.0001
+       && Boolean(h.usuario_nombre),
+       'el historial guarda costo anterior, nuevo y usuario',
+       h ? `${h.total_antes} → ${h.total_nuevo} · ${h.usuario_nombre}` : '');
+
+    await p.reload({ waitUntil: 'networkidle' });
+    await p.waitForTimeout(1500);
+    const vig = await filaDe().locator('td[data-vigencia]').innerText();
+    ok(/actualizaci/i.test(vig), 'la fila dice desde cuándo rige y que es una actualización',
+       vig.replace(/\s+/g, ' '));
 
     await restaurar();
     await p.context().close();

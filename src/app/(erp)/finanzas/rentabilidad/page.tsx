@@ -7,6 +7,12 @@
  *
  *  El margen mínimo aceptable es un parámetro configurable; por debajo de él,
  *  el pedido se marca como "margen bajo".
+ *
+ *  MARGEN BRUTO (documento de mejoras 2.2 · migración 057)
+ *  «Margen bruto = Venta − Costo.» Es la pestaña principal. Se mide sobre lo
+ *  que de verdad salió: los kilos despachados por el precio de su línea de
+ *  pedido, menos esos mismos kilos por el costo con el que ingresó el pallet
+ *  del que salieron. Por mes de salida, en hora de Lima.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -16,6 +22,8 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Icono } from '@/components/estructura/Icono';
 import { GraficoBarras } from '@/components/graficos/Graficos';
+import { Filtros } from '@/components/ui/Filtros';
+import { traerTodo } from '@/lib/traerTodo';
 import { num, dinero, pct, fecha } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 
@@ -23,6 +31,7 @@ export const metadata: Metadata = { title: 'Rentabilidad' };
 export const dynamic = 'force-dynamic';
 
 const EJES = [
+  { clave: 'bruto',       titulo: 'Margen bruto' },
   { clave: 'pedido',      titulo: 'Por pedido' },
   { clave: 'cliente',     titulo: 'Por cliente' },
   { clave: 'vendedor',    titulo: 'Por vendedor' },
@@ -32,7 +41,7 @@ const EJES = [
 
 export default async function PaginaRentabilidad(props: PageProps<'/finanzas/rentabilidad'>) {
   const q = await props.searchParams;
-  const eje = (q.eje as string) ?? 'pedido';
+  const eje = (q.eje as string) ?? 'bruto';
 
   const usuario = await obtenerUsuarioActual();
   if (!veCostos((usuario?.rol ?? 'consulta') as Rol)) redirect('/panel');
@@ -91,6 +100,45 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
   const contribPct = contrib.venta > 0 ? (contrib.margen / contrib.venta) * 100 : 0;
   const enPerdida = familias.filter((f) => Number(f.margen_pct ?? 0) < 0);
 
+  /* ---- El margen bruto: por mes de salida ---- */
+  type LineaBruto = {
+    pedido_id: number; numero_proforma: string; cliente: string; familia: string;
+    kg: number; venta: number; costo: number; margen: number; sin_costo: boolean;
+  };
+  const { data: mesesBruto } = eje === 'bruto'
+    ? await supabase.from('v_margen_bruto_mensual').select('*').order('mes', { ascending: false })
+    : { data: [] as Record<string, unknown>[] };
+  const claveBruto = (q.mes as string) || String(mesesBruto?.[0]?.clave ?? '');
+  const mesBruto = (mesesBruto ?? []).find((m) => m.clave === claveBruto);
+  const lineasBruto = eje === 'bruto' && claveBruto
+    ? await traerTodo<LineaBruto>((d, h) =>
+        supabase.from('v_margen_bruto_linea')
+          .select('pedido_id, numero_proforma, cliente, familia, kg, venta, costo, margen, sin_costo')
+          .eq('mes', `${claveBruto}-01`).order('packing_linea_id').range(d, h))
+    : [];
+
+  /** Suma las líneas del mes por una clave: pedido o familia. */
+  function sumarBruto(clave: (l: LineaBruto) => string) {
+    const m = new Map<string, { nombre: string; ref: LineaBruto; kg: number; venta: number; costo: number; margen: number; sinCosto: number }>();
+    for (const l of lineasBruto) {
+      const k = clave(l);
+      const a = m.get(k) ?? { nombre: k, ref: l, kg: 0, venta: 0, costo: 0, margen: 0, sinCosto: 0 };
+      a.kg += Number(l.kg); a.venta += Number(l.venta); a.costo += Number(l.costo);
+      a.margen += Number(l.margen); a.sinCosto += l.sin_costo ? 1 : 0;
+      m.set(k, a);
+    }
+    return [...m.values()]
+      .map((a) => ({ ...a, pct: a.venta > 0 ? (a.margen / a.venta) * 100 : 0 }))
+      .sort((a, b) => b.venta - a.venta);
+  }
+  const brutoPedidos = sumarBruto((l) => String(l.pedido_id));
+  const brutoFamilias = sumarBruto((l) => l.familia);
+  const nombreMesBruto = (clave: string) => {
+    const t = new Date(`${clave}-01T12:00:00`).toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  };
+  const tonoPct = (v: number) => (v < 0 ? 'var(--critico)' : v < margenMinimo ? 'var(--atencion)' : 'var(--ok)');
+
   return (
     <>
       <CabeceraPagina
@@ -98,6 +146,7 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
         descripcion={`Venta contra costo de los pedidos ya despachados. El margen mínimo aceptable está configurado en ${margenMinimo} %.`}
       />
 
+      {eje !== 'bruto' && (
       <RejillaKpi>
         <Kpi etiqueta="Venta despachada" valor={dinero(venta, 'USD', 0)} tono="marca" />
         <Kpi etiqueta="Costo" valor={dinero(costo, 'USD', 0)} />
@@ -106,6 +155,7 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
         <Kpi etiqueta="Pedidos con margen bajo" valor={num(bajoMargen.length)}
              tono={bajoMargen.length > 0 ? 'atencion' : 'ok'} href="/finanzas/rentabilidad?eje=bajo" />
       </RejillaKpi>
+      )}
 
       <nav className="pestanas no-imprimir" aria-label="Ejes de análisis">
         {EJES.map((e) => (
@@ -113,6 +163,145 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
                 data-activa={eje === e.clave ? 'si' : 'no'}>{e.titulo}</Link>
         ))}
       </nav>
+
+      {/* ══════ MARGEN BRUTO ══════ */}
+      {eje === 'bruto' && (
+        <>
+          <div className="ficha-aviso ficha-aviso-info" role="status">
+            <Icono nombre="alerta" tamano={17} />
+            <span>
+              <strong>Margen bruto = venta − costo</strong>, sobre lo que salió en el mes: los kilos
+              despachados por el precio de su pedido, menos esos kilos por el costo con el que
+              ingresó cada pallet. El costo lo fija Gerencia en{' '}
+              <Link href="/finanzas/costos">Costos de producción</Link> y cada pallet conserva el
+              que regía el día en que entró.
+            </span>
+          </div>
+
+          <Panel titulo="Mes de salida" className="mb-espacio">
+            <Filtros
+              campos={[{
+                tipo: 'select', clave: 'mes', etiqueta: 'Mes',
+                opciones: (mesesBruto ?? []).map((m) => ({ valor: String(m.clave), texto: nombreMesBruto(String(m.clave)) })),
+              }]}
+            />
+          </Panel>
+
+          {!mesBruto ? (
+            <Vacio titulo="Sin despachos" mensaje="No hay despachos en ese mes, así que no hay margen que medir." />
+          ) : (
+            <>
+              <RejillaKpi>
+                <Kpi etiqueta="Venta" valor={dinero(Number(mesBruto.venta), 'USD', 0)} tono="marca"
+                     nota={`${num(Number(mesBruto.kg) / 1000, 1)} TM despachadas`} href="#bruto-pedidos" />
+                <Kpi etiqueta="Costo" valor={dinero(Number(mesBruto.costo), 'USD', 0)}
+                     nota="costo de ingreso de los pallets" href="#bruto-familias" />
+                <Kpi etiqueta="Margen bruto" valor={dinero(Number(mesBruto.margen), 'USD', 0)}
+                     tono={Number(mesBruto.margen) >= 0 ? 'ok' : 'critico'} href="#bruto-pedidos" />
+                <Kpi etiqueta="Margen bruto %" valor={pct(Number(mesBruto.margen_pct ?? 0))}
+                     tono={Number(mesBruto.margen_pct ?? 0) < 0 ? 'critico' : Number(mesBruto.margen_pct ?? 0) < margenMinimo ? 'atencion' : 'ok'}
+                     nota={`el mínimo aceptable es ${margenMinimo} %`} href="#bruto-evolucion" />
+                <Kpi etiqueta="Pedidos" valor={num(Number(mesBruto.pedidos))}
+                     nota={Number(mesBruto.lineas_sin_costo) > 0 ? `${num(Number(mesBruto.lineas_sin_costo))} líneas sin costo` : 'con salida en el mes'}
+                     tono={Number(mesBruto.lineas_sin_costo) > 0 ? 'atencion' : 'neutro'} href="#bruto-pedidos" />
+              </RejillaKpi>
+
+              <div id="bruto-pedidos">
+                <Panel titulo={`${num(brutoPedidos.length)} pedidos con salida en ${nombreMesBruto(claveBruto).toLowerCase()}`} className="mb-espacio">
+                  <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+                    <table className="datos" data-cuadro="bruto-pedidos">
+                      <thead>
+                        <tr>
+                          <th>Proforma</th><th>Cliente</th><th className="num">TM</th>
+                          <th className="num">Venta</th><th className="num">Costo</th>
+                          <th className="num">Margen bruto</th><th className="num">%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {brutoPedidos.map((a) => (
+                          <tr key={a.nombre}>
+                            <td>
+                              <Link href={`/ventas/pedidos/${a.ref.pedido_id}?t=rentabilidad`} className="enlace-dato">
+                                {a.ref.numero_proforma}
+                              </Link>
+                            </td>
+                            <td>{a.ref.cliente}</td>
+                            <td className="num">{num(a.kg / 1000, 1)}</td>
+                            <td className="num">{dinero(a.venta, 'USD', 0)}</td>
+                            <td className="num">{dinero(a.costo, 'USD', 0)}</td>
+                            <td className="num"><strong style={{ color: a.margen < 0 ? 'var(--critico)' : undefined }}>{dinero(a.margen, 'USD', 0)}</strong></td>
+                            <td className="num"><strong style={{ color: tonoPct(a.pct) }}>{a.pct.toFixed(1)} %</strong></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+              </div>
+
+              <div id="bruto-familias">
+                <Panel titulo="Por familia" className="mb-espacio">
+                  <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+                    <table className="datos" data-cuadro="bruto-familias">
+                      <thead>
+                        <tr>
+                          <th>Familia</th><th className="num">TM</th><th className="num">Venta</th>
+                          <th className="num">Costo</th><th className="num">Margen bruto</th><th className="num">%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {brutoFamilias.map((a) => (
+                          <tr key={a.nombre}>
+                            <td>{a.nombre}</td>
+                            <td className="num">{num(a.kg / 1000, 1)}</td>
+                            <td className="num">{dinero(a.venta, 'USD', 0)}</td>
+                            <td className="num">{dinero(a.costo, 'USD', 0)}</td>
+                            <td className="num"><strong style={{ color: a.margen < 0 ? 'var(--critico)' : undefined }}>{dinero(a.margen, 'USD', 0)}</strong></td>
+                            <td className="num"><strong style={{ color: tonoPct(a.pct) }}>{a.pct.toFixed(1)} %</strong></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+              </div>
+            </>
+          )}
+
+          <div id="bruto-evolucion">
+            <Panel titulo="Margen bruto por mes" className="mb-espacio">
+              <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+                <table className="datos" data-cuadro="bruto-meses">
+                  <thead>
+                    <tr>
+                      <th>Mes</th><th className="num">Pedidos</th><th className="num">TM</th>
+                      <th className="num">Venta</th><th className="num">Costo</th>
+                      <th className="num">Margen bruto</th><th className="num">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(mesesBruto ?? []).slice(0, 12).map((m) => (
+                      <tr key={String(m.clave)} data-mes={String(m.clave)}>
+                        <td>
+                          <Link href={`/finanzas/rentabilidad?eje=bruto&mes=${m.clave}`} className="enlace-ficha">
+                            {nombreMesBruto(String(m.clave))}
+                          </Link>
+                        </td>
+                        <td className="num">{num(Number(m.pedidos))}</td>
+                        <td className="num">{num(Number(m.kg) / 1000, 1)}</td>
+                        <td className="num">{dinero(Number(m.venta), 'USD', 0)}</td>
+                        <td className="num">{dinero(Number(m.costo), 'USD', 0)}</td>
+                        <td className="num">{dinero(Number(m.margen), 'USD', 0)}</td>
+                        <td className="num"><strong style={{ color: tonoPct(Number(m.margen_pct ?? 0)) }}>{pct(Number(m.margen_pct ?? 0))}</strong></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Panel>
+          </div>
+        </>
+      )}
 
       {/* ══════ MARGEN DE CONTRIBUCIÓN ══════ */}
       {eje === 'contribucion' && (

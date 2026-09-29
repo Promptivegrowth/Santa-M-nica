@@ -158,11 +158,13 @@ export async function registrarIngreso(d: DatosIngreso): Promise<Resultado> {
       linea_procesadora_id: d.linea_procesadora_id,
       bultos_iniciales: d.bultos,
       peso_neto_inicial_kg: d.peso_neto_kg,
+      //  Solo cuenta si el producto no tiene costo cargado: si lo tiene, la
+      //  base pone el que rige hoy y descarta este (057, lotes_costo_de_ingreso).
       costo_unitario: d.costo_unitario,
       observaciones: d.observaciones?.trim() || null,
       creado_por: permiso.usuario!.id,
     })
-    .select('id')
+    .select('id, costo_unitario, costo_origen')
     .single();
 
   if (errorLote || !lote) {
@@ -180,7 +182,9 @@ export async function registrarIngreso(d: DatosIngreso): Promise<Resultado> {
     camara_id: d.camara_id,
     bultos: d.bultos,
     peso_neto_kg: d.peso_neto_kg,
-    costo_unitario: d.costo_unitario,
+    //  El del LOTE, no el del formulario: el Kardex tiene que valorizar el
+    //  pallet con el mismo costo con el que quedó registrado.
+    costo_unitario: Number(lote.costo_unitario),
     documento_tipo: 'ingreso',
     documento_ref: `ING-${String(lote.id).padStart(6, '0')}`,
     usuario_id: permiso.usuario!.id,
@@ -249,13 +253,19 @@ export async function siguienteCodigoPallet(prefijo = 'SM'): Promise<string> {
   return `${raiz}${String(ultimo + 1).padStart(4, '0')}`;
 }
 
-/** El costo del último ingreso de ese producto, para proponerlo. */
-export async function costoSugerido(skuPresentacionId: number): Promise<number> {
+/**
+ * El costo que se le va a poner al pallet: el que rige hoy para ese producto.
+ *
+ * Lo pone la base al crear el lote (057); esto es solo para enseñarlo en el
+ * formulario antes de guardar. Almacén no puede leer la tabla de costos, así
+ * que se pregunta a una función que devuelve solo esto y solo de un producto.
+ * `null` si el producto nunca tuvo costo cargado: entonces sí se teclea.
+ */
+export async function costoVigente(skuPresentacionId: number): Promise<
+  { total_kg: number; vigente_desde: string; tipo: string } | null
+> {
   const supabase = await crearClienteServidor();
-  const { data } = await supabase
-    .from('lotes').select('costo_unitario')
-    .eq('sku_presentacion_id', skuPresentacionId)
-    .order('creado_en', { ascending: false })
-    .limit(1).maybeSingle();
-  return Number(data?.costo_unitario ?? 0);
+  const { data } = await supabase.rpc('costo_vigente_ingreso', { p_sku_presentacion_id: skuPresentacionId });
+  const fila = (data ?? [])[0];
+  return fila ? { total_kg: Number(fila.total_kg), vigente_desde: String(fila.vigente_desde), tipo: String(fila.tipo) } : null;
 }

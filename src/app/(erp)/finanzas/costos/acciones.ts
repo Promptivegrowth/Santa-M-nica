@@ -2,24 +2,34 @@
 
 /**
  * ============================================================================
- *  LOS TRES COSTOS DE PRODUCCIÓN, MES A MES
+ *  LOS TRES COSTOS DE PRODUCCIÓN · carga del mes y actualizaciones
  * ============================================================================
  *  Oliver: «son tres costos, a llenar al inicio de mes [...] ese lo tendría
- *  que ingresar Marco, que tiene todos los datos».
+ *  que ingresar Marco». Y el documento de mejoras (2.2): obligatorio al
+ *  inicio de cada mes, actualizable después —semanalmente—, con registro del
+ *  costo anterior, el nuevo, la fecha y el usuario.
  *
- *  Escribe solo GERENCIA. No es rigidez: el costo de producción decide el
- *  margen de toda la empresa, y quien lo teclea decide de hecho si un pedido
- *  parece rentable. La base lo impone también, con su propia política.
+ *  CÓMO SE TRADUCE UN «GUARDAR» (migración 057)
+ *  El costo ya no es «el de un mes»: es el que rige DESDE una fecha, y solo
+ *  hacia adelante. Así que guardar en la pantalla significa:
  *
- *  EL BOTÓN QUE DE VERDAD IMPORTA
- *  «Copiar del mes anterior». Son 191 productos por tres campos: 573 números
- *  cada mes. Nadie sostiene eso, y un sistema que lo exige acaba con los
- *  costos sin cargar. Lo normal es que el mes cambie poco, así que se copia y
- *  se ajusta lo que se movió.
+ *    · Mes en curso, producto SIN la carga del mes → carga mensual desde hoy.
+ *    · Mes en curso, producto CON la carga del mes → actualización desde hoy.
+ *      Si ya hay una vigencia que empieza hoy, se corrige esa.
+ *    · Mes futuro → la carga mensual de ese mes, desde el día 1. Se puede
+ *      corregir hasta que llegue ese día.
+ *    · Mes pasado → no se puede: ya se aplicó a ingresos reales.
+ *
+ *  La base impone lo mismo por su cuenta (costos_solo_hacia_adelante), y el
+ *  historial lo escribe un disparador: esta capa no puede saltárselo.
+ *
+ *  Escribe solo GERENCIA: quien teclea el costo decide, de hecho, si un
+ *  pedido parece rentable.
  * ============================================================================
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { hoyEnLima } from '@/lib/fechas';
 
 export type Resultado =
   | { ok: true; mensaje: string; cuantos?: number }
@@ -41,13 +51,41 @@ async function autorizar() {
   return { usuario };
 }
 
+/** «2026-09» → primer día «2026-09-01». */
+const primerDia = (periodo: string) => `${periodo}-01`;
+
+/**
+ * Desde qué día rige lo que se guarde en ese periodo, o por qué no se puede.
+ * Es la única regla de fechas de esta capa; la base aplica la misma.
+ */
+function vigenciaPara(periodo: string): { desde: string; esMesActual: boolean } | { error: string } {
+  if (!/^\d{4}-\d{2}$/.test(periodo)) return { error: 'Periodo no válido.' };
+  const hoy = hoyEnLima();
+  const actual = hoy.slice(0, 7);
+  if (periodo < actual) {
+    return {
+      error:
+        'Ese mes ya pasó y sus costos se aplicaron a los ingresos de esos días: no se pueden cambiar. ' +
+        'Si el costo de hoy es otro, cárguelo en el mes en curso y regirá desde hoy.',
+    };
+  }
+  return periodo === actual ? { desde: hoy, esMesActual: true } : { desde: primerDia(periodo), esMesActual: false };
+}
+
+/** Traduce el error de la base a algo que se entienda en pantalla. */
+function explicar(mensaje: string): string {
+  //  Las excepciones de los disparadores ya vienen redactadas para el usuario.
+  return mensaje.replace(/^.*?ERROR:\s*/, '');
+}
+
 export type DatosCosto = {
   sku_id: number;
-  anio: number;
-  mes: number;
+  /** El mes que se está mirando en pantalla: «AAAA-MM». */
+  periodo: string;
   materia_prima_kg: number;
   conversion_kg: number;
   variable_kg: number;
+  observaciones?: string;
 };
 
 /* ==========================================================================
@@ -77,148 +115,198 @@ export async function guardarCosto(d: DatosCosto): Promise<Resultado> {
     };
   }
 
+  const v = vigenciaPara(d.periodo);
+  if ('error' in v) return { ok: false, mensaje: v.error };
+
   const supabase = await crearClienteServidor();
 
-  const { error } = await supabase
-    .from('costos_mensuales')
-    .upsert({
-      sku_id: d.sku_id,
-      anio: d.anio,
-      mes: d.mes,
-      materia_prima_kg: d.materia_prima_kg,
-      conversion_kg: d.conversion_kg,
-      variable_kg: d.variable_kg,
-      registrado_por: permiso.usuario!.id,
-    }, { onConflict: 'sku_id,anio,mes' });
+  /*
+   * ¿Carga del mes o actualización? Depende de si el producto ya tiene su
+   * carga mensual en ese mes. En un mes futuro siempre es la carga.
+   */
+  let tipo: 'mensual' | 'actualizacion' = 'mensual';
+  if (v.esMesActual) {
+    const { data: carga } = await supabase
+      .from('costos_mensuales').select('id')
+      .eq('sku_id', d.sku_id).eq('tipo', 'mensual')
+      .gte('vigente_desde', primerDia(d.periodo)).lte('vigente_desde', v.desde)
+      .limit(1);
+    if ((carga ?? []).length > 0) tipo = 'actualizacion';
+  }
 
-  if (error) return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+  //  Si ya hay una vigencia que empieza ese mismo día, se corrige esa: no
+  //  pueden convivir dos costos que rigen desde el mismo día.
+  const { data: mismaFecha } = await supabase
+    .from('costos_mensuales').select('id, tipo')
+    .eq('sku_id', d.sku_id).eq('vigente_desde', v.desde).maybeSingle();
+
+  const valores = {
+    materia_prima_kg: d.materia_prima_kg,
+    conversion_kg: d.conversion_kg,
+    variable_kg: d.variable_kg,
+    registrado_por: permiso.usuario!.id,
+    observaciones: d.observaciones?.trim() || null,
+  };
+
+  const { error } = mismaFecha
+    ? await supabase.from('costos_mensuales').update(valores).eq('id', mismaFecha.id)
+    : await supabase.from('costos_mensuales').insert({
+        ...valores,
+        sku_id: d.sku_id,
+        vigente_desde: v.desde,
+        //  anio y mes los rellena la base a partir de la vigencia.
+        anio: Number(v.desde.slice(0, 4)),
+        mes: Number(v.desde.slice(5, 7)),
+        tipo,
+      });
+
+  if (error) return { ok: false, mensaje: explicar(error.message) };
 
   /*
-   * Se vuelve a leer antes de decir que se guardó.
-   *
-   * Es la lección de un fallo real de este mismo proyecto: una escritura que
-   * la política de seguridad rechaza NO da error, simplemente no afecta a
-   * ninguna fila. Decir «guardado» sin haber mirado deja al usuario
-   * convencido de algo que no ocurrió.
+   * Se vuelve a leer antes de decir que se guardó: una escritura que la
+   * política de seguridad rechaza NO da error, simplemente no afecta a
+   * ninguna fila.
    */
   const { data: verif } = await supabase
-    .from('costos_mensuales')
-    .select('total_kg')
-    .eq('sku_id', d.sku_id).eq('anio', d.anio).eq('mes', d.mes)
-    .maybeSingle();
+    .from('costos_mensuales').select('total_kg, tipo')
+    .eq('sku_id', d.sku_id).eq('vigente_desde', v.desde).maybeSingle();
 
   if (!verif || Math.abs(Number(verif.total_kg) - total) > 0.0001) {
-    return {
-      ok: false,
-      mensaje: 'El costo no llegó a guardarse. Avise a soporte en vez de volver a intentarlo.',
-    };
+    return { ok: false, mensaje: 'El costo no llegó a guardarse. Avise a soporte en vez de volver a intentarlo.' };
   }
 
   revalidatePath('/finanzas/costos');
   revalidatePath('/finanzas/rentabilidad');
 
-  return { ok: true, mensaje: `Costo guardado: US$ ${total.toFixed(4)} por kilo.` };
+  const que = mismaFecha ? 'Corregido' : verif.tipo === 'actualizacion' ? 'Actualización registrada' : 'Carga del mes registrada';
+  const desde = v.desde.split('-').reverse().join('/');
+  return {
+    ok: true,
+    mensaje: `${que}: US$ ${total.toFixed(4)} por kilo, desde el ${desde}. Los ingresos anteriores conservan su costo.`,
+  };
 }
 
 /* ==========================================================================
-   COPIAR EL MES ANTERIOR
+   CARGAR EL MES CON LOS COSTOS QUE RIGEN
    --------------------------------------------------------------------------
-   El botón que hace sostenible cargar costos todos los meses. Copia solo lo
-   que FALTA: nunca pisa un valor ya cargado, porque quien lo escribió a mano
-   lo hizo con un motivo.
+   El botón que hace sostenible la carga obligatoria: 191 productos por tres
+   campos son 573 números cada mes, y nadie sostiene eso. Se toma el costo que
+   rige hoy para cada producto que todavía no tiene la carga del mes y se
+   registra como tal; luego se ajusta solo lo que se movió.
+
+   Nunca pisa nada: solo crea la carga de los que no la tienen.
    ========================================================================== */
-export async function copiarMesAnterior(anio: number, mes: number): Promise<Resultado> {
+export async function cargarMesConVigentes(periodo: string): Promise<Resultado> {
   const permiso = await autorizar();
   if (permiso.error) return { ok: false, mensaje: permiso.error };
 
+  const v = vigenciaPara(periodo);
+  if ('error' in v) return { ok: false, mensaje: v.error };
+
   const supabase = await crearClienteServidor();
+  const finMes = new Date(Number(periodo.slice(0, 4)), Number(periodo.slice(5, 7)), 0).getDate();
 
-  const anteriorMes = mes === 1 ? 12 : mes - 1;
-  const anteriorAnio = mes === 1 ? anio - 1 : anio;
-
-  const [{ data: origen }, { data: yaHay }] = await Promise.all([
-    supabase
-      .from('costos_mensuales')
-      .select('sku_id, materia_prima_kg, conversion_kg, variable_kg')
-      .eq('anio', anteriorAnio).eq('mes', anteriorMes),
-    supabase
-      .from('costos_mensuales')
-      .select('sku_id')
-      .eq('anio', anio).eq('mes', mes),
+  const [{ data: vigentes }, { data: yaCargados }, { data: mismaFecha }] = await Promise.all([
+    //  El costo que rige hoy de cada producto: la vigencia más reciente.
+    supabase.from('v_costos_carga_mes').select('sku_id, total_kg'),
+    supabase.from('costos_mensuales').select('sku_id')
+      .eq('tipo', 'mensual')
+      .gte('vigente_desde', primerDia(periodo)).lte('vigente_desde', `${periodo}-${finMes}`),
+    supabase.from('costos_mensuales').select('sku_id').eq('vigente_desde', v.desde),
   ]);
 
-  if (!origen?.length) {
-    return {
-      ok: false,
-      mensaje:
-        `No hay costos cargados en ${String(anteriorMes).padStart(2, '0')}/${anteriorAnio}, ` +
-        'así que no hay nada que copiar.',
-    };
+  const tienen = new Set([...(yaCargados ?? []), ...(mismaFecha ?? [])].map((c) => Number(c.sku_id)));
+  const faltan = (vigentes ?? []).filter((x) => !tienen.has(Number(x.sku_id)) && Number(x.total_kg) > 0);
+
+  if (!faltan.length) {
+    return { ok: false, mensaje: 'Todos los productos que tienen algún costo ya tienen la carga de este mes.' };
   }
 
-  const cargados = new Set((yaHay ?? []).map((c) => Number(c.sku_id)));
-  const nuevos = origen.filter((c) => !cargados.has(Number(c.sku_id)));
+  //  Los tres componentes de la vigencia que rige, no solo el total.
+  const ids = faltan.map((f) => Number(f.sku_id));
+  const { data: detalle } = await supabase
+    .from('costos_mensuales')
+    .select('sku_id, vigente_desde, materia_prima_kg, conversion_kg, variable_kg')
+    .in('sku_id', ids).lte('vigente_desde', hoyEnLima())
+    .order('vigente_desde', { ascending: false });
 
-  if (!nuevos.length) {
-    return { ok: false, mensaje: 'Este mes ya tiene todos los productos del mes anterior cargados.' };
+  const ultimo = new Map<number, { materia_prima_kg: number; conversion_kg: number; variable_kg: number }>();
+  for (const c of detalle ?? []) {
+    if (!ultimo.has(Number(c.sku_id))) ultimo.set(Number(c.sku_id), c as never);
   }
 
-  const { error } = await supabase.from('costos_mensuales').insert(
-    nuevos.map((c) => ({
-      sku_id: c.sku_id,
-      anio, mes,
-      materia_prima_kg: c.materia_prima_kg,
-      conversion_kg: c.conversion_kg,
-      variable_kg: c.variable_kg,
-      registrado_por: permiso.usuario!.id,
-      observaciones: `Copiado de ${String(anteriorMes).padStart(2, '0')}/${anteriorAnio}`,
-    }))
-  );
+  const filas = ids.filter((id) => ultimo.has(id)).map((id) => ({
+    sku_id: id,
+    vigente_desde: v.desde,
+    anio: Number(v.desde.slice(0, 4)),
+    mes: Number(v.desde.slice(5, 7)),
+    tipo: 'mensual',
+    materia_prima_kg: ultimo.get(id)!.materia_prima_kg,
+    conversion_kg: ultimo.get(id)!.conversion_kg,
+    variable_kg: ultimo.get(id)!.variable_kg,
+    registrado_por: permiso.usuario!.id,
+    observaciones: 'Carga del mes con el costo que regía',
+  }));
 
-  if (error) return { ok: false, mensaje: `No se pudo copiar: ${error.message}` };
+  const { error } = await supabase.from('costos_mensuales').insert(filas);
+  if (error) return { ok: false, mensaje: explicar(error.message) };
 
   await supabase.rpc('registrar_evento', {
     p_entidad: 'costos_mensuales',
     p_entidad_id: null,
-    p_tipo: 'costos_copiados',
-    p_descripcion:
-      `${permiso.usuario!.nombre} copió ${nuevos.length} costos de ` +
-      `${String(anteriorMes).padStart(2, '0')}/${anteriorAnio} a ${String(mes).padStart(2, '0')}/${anio}`,
+    p_tipo: 'costos_cargados',
+    p_descripcion: `${permiso.usuario!.nombre} cargó ${filas.length} costos de ${periodo} con los que regían`,
     p_severidad: 'info',
   }).then(() => undefined, () => undefined);
+
+  //  El aviso de costos sin cargar se recalcula al momento, no mañana.
+  await supabase.rpc('costos_avisar_carga_mensual').then(() => undefined, () => undefined);
 
   revalidatePath('/finanzas/costos');
   revalidatePath('/finanzas/rentabilidad');
 
   return {
     ok: true,
-    cuantos: nuevos.length,
+    cuantos: filas.length,
     mensaje:
-      `${nuevos.length} producto${nuevos.length === 1 ? '' : 's'} copiado${nuevos.length === 1 ? '' : 's'} ` +
-      `de ${String(anteriorMes).padStart(2, '0')}/${anteriorAnio}. ` +
-      'Revise y ajuste lo que haya cambiado.',
+      `${filas.length} producto${filas.length === 1 ? '' : 's'} con la carga del mes, ` +
+      `con el costo que regía. Revise y ajuste lo que haya cambiado.`,
   };
 }
 
 /* ==========================================================================
-   BORRAR EL COSTO DE UN PRODUCTO EN UN MES
+   QUITAR EL COSTO QUE SE ACABA DE PONER
+   --------------------------------------------------------------------------
+   Solo se puede quitar una vigencia que todavía no empezó o que empieza hoy
+   —un error recién cometido—. Una que ya rige se aplicó a ingresos: la base
+   lo impide y el mensaje lo explica.
    ========================================================================== */
-export async function borrarCosto(sku_id: number, anio: number, mes: number): Promise<Resultado> {
+export async function borrarCosto(sku_id: number, periodo: string): Promise<Resultado> {
   const permiso = await autorizar();
   if (permiso.error) return { ok: false, mensaje: permiso.error };
 
+  const v = vigenciaPara(periodo);
+  if ('error' in v) return { ok: false, mensaje: v.error };
+
   const supabase = await crearClienteServidor();
-  const { error } = await supabase
-    .from('costos_mensuales').delete()
-    .eq('sku_id', sku_id).eq('anio', anio).eq('mes', mes);
+  const { data: fila } = await supabase
+    .from('costos_mensuales').select('id')
+    .eq('sku_id', sku_id).eq('vigente_desde', v.desde).maybeSingle();
 
-  if (error) return { ok: false, mensaje: `No se pudo borrar: ${error.message}` };
+  if (!fila) {
+    return {
+      ok: false,
+      mensaje:
+        'El costo que rige hoy empezó antes de hoy y ya se aplicó a ingresos: no se puede quitar. ' +
+        'Si está mal, escriba el correcto y quedará como actualización desde hoy.',
+    };
+  }
 
+  const { error } = await supabase.from('costos_mensuales').delete().eq('id', fila.id);
+  if (error) return { ok: false, mensaje: explicar(error.message) };
+
+  await supabase.rpc('costos_avisar_carga_mensual').then(() => undefined, () => undefined);
   revalidatePath('/finanzas/costos');
   revalidatePath('/finanzas/rentabilidad');
-  return {
-    ok: true,
-    mensaje:
-      'Costo borrado. Los pedidos de ese mes pasarán a medirse con el último costo anterior que haya cargado.',
-  };
+  return { ok: true, mensaje: 'Quitado. Vuelve a regir el costo anterior de este producto.' };
 }

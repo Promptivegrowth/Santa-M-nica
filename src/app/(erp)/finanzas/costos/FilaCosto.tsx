@@ -15,6 +15,7 @@
  * ============================================================================
  */
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { guardarCosto, borrarCosto } from './acciones';
 
@@ -23,27 +24,32 @@ export function FilaCosto({
   codigo,
   corte,
   familia,
-  anio,
-  mes,
+  periodo,
   mp,
   conv,
   varia,
+  vigenteDesde,
+  tipo,
   puedeEditar,
 }: {
   skuId: number;
   codigo: string;
   corte: string;
   familia: string;
-  anio: number;
-  mes: number;
+  /** El mes que se mira: «AAAA-MM». Decide desde cuándo rige lo que se guarde. */
+  periodo: string;
   mp: number | null;
   conv: number | null;
   varia: number | null;
+  /** Desde qué día rige el costo que se muestra, y si fue la carga del mes o una actualización. */
+  vigenteDesde: string | null;
+  tipo: 'mensual' | 'actualizacion' | null;
   puedeEditar: boolean;
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
   const texto = (v: number | null) => (v === null ? '' : String(v));
   const [a, setA] = useState(texto(mp));
@@ -59,13 +65,14 @@ export function FilaCosto({
     if (!puedeEditar) return;
     if (`${a}|${b}|${c}` === original) return;   // nada que hacer
     setError(null);
+    setAviso(null);
 
     // Los tres vacíos sobre una fila que sí tenía costo significan «quítalo».
     if (a.trim() === '' && b.trim() === '' && c.trim() === '') {
       if (!cargado) return;
       iniciar(async () => {
-        const r = await borrarCosto(skuId, anio, mes);
-        if (!r.ok) setError(r.mensaje);
+        const r = await borrarCosto(skuId, periodo);
+        if (!r.ok) setError(r.mensaje); else setAviso(r.mensaje);
         router.refresh();
       });
       return;
@@ -74,12 +81,12 @@ export function FilaCosto({
     iniciar(async () => {
       const r = await guardarCosto({
         sku_id: skuId,
-        anio, mes,
+        periodo,
         materia_prima_kg: Number(a) || 0,
         conversion_kg: Number(b) || 0,
         variable_kg: Number(c) || 0,
       });
-      if (!r.ok) setError(r.mensaje);
+      if (!r.ok) setError(r.mensaje); else setAviso(r.mensaje);
       router.refresh();
     });
   }
@@ -119,10 +126,37 @@ export function FilaCosto({
               y con la que se compara el precio. Así nadie multiplica a mano. */}
           {total > 0 ? `${(total * 1000).toLocaleString('es-PE', { maximumFractionDigits: 0 })}` : '—'}
         </td>
+        {/*
+          Desde cuándo rige y de dónde viene. Es lo que responde «¿con qué
+          costo entró el pallet de ayer?» sin abrir nada.
+        */}
+        <td className="num" style={{ fontSize: '.72rem', whiteSpace: 'nowrap' }} data-vigencia={vigenteDesde ?? ''}>
+          {vigenteDesde ? (
+            <>
+              {vigenteDesde.split('-').reverse().join('/')}
+              <br />
+              <span style={{ color: tipo === 'actualizacion' ? 'var(--atencion)' : 'var(--tinta-3)' }}>
+                {tipo === 'actualizacion' ? 'actualización' : 'carga del mes'}
+              </span>
+            </>
+          ) : '—'}
+        </td>
+        <td>
+          <Link href={`/finanzas/costos?periodo=${periodo}&historial=${skuId}#historial`}
+                className="enlace-ficha" style={{ fontSize: '.72rem' }}
+                title={`Todos los cambios de costo de ${codigo}`}>
+            Historial
+          </Link>
+        </td>
       </tr>
       {error && (
         <tr>
-          <td colSpan={8} className="costo-error">{error}</td>
+          <td colSpan={10} className="costo-error">{error}</td>
+        </tr>
+      )}
+      {aviso && !error && (
+        <tr>
+          <td colSpan={10} style={{ fontSize: '.74rem', color: 'var(--ok)' }} role="status">{aviso}</td>
         </tr>
       )}
     </>

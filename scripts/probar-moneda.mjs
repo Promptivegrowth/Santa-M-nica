@@ -64,7 +64,11 @@ for (const [ruta, nombre] of [
   await p.waitForTimeout(1200);
   const boleta = p.locator('table.datos tbody tr a').first();
   await boleta.click();
-  await p.waitForTimeout(1800);
+  //  Se espera a la ficha, no un tiempo fijo: con el servidor de desarrollo
+  //  recién arrancado, compilarla tarda más de lo que una pausa adivina.
+  await p.waitForURL(/\/finanzas\/facturas\/\d+/, { timeout: 30000 });
+  await p.waitForLoadState('networkidle');
+  await p.locator('text=/US\\$|S\\//').first().waitFor({ timeout: 30000 }).catch(() => {});
   const ficha = await p.locator('body').innerText();
   ok(ficha.includes('US$') || ficha.includes('S/'),
      'Ficha de factura: muestra un importe con su símbolo de moneda');

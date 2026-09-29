@@ -88,8 +88,22 @@ console.log('\n─── 4 · Las vistas convierten ───');
        and (view_definition ilike '%precio_tm%' or view_definition ilike '%f.total%'
          or view_definition ilike '%subtotal%' or view_definition ilike '%cobranzas%')
      order by 1`);
+  /*
+   * Una vista que agrega OTRA vista que ya convierte —v_margen_contribucion_
+   * familia sobre v_margen_contribucion— tampoco necesita llamar a a_dolares:
+   * sus cifras ya llegan en dólares. Convertir otra vez sería el error.
+   */
+  const convertidas = vistas.filter((v) => v.convierte).map((v) => v.vista);
+  const definiciones = await consultar(`
+    select table_name as vista, view_definition as def from information_schema.views
+     where table_schema = 'public' and table_name in (${vistas.map((v) => `'${v.vista}'`).join(',') || `''`})`);
+  const heredan = (vista) => {
+    const def = String(definiciones.find((d) => d.vista === vista)?.def ?? '');
+    return convertidas.some((c) => c !== vista && new RegExp(`\\b${c}\\b`).test(def));
+  };
   for (const v of vistas) {
-    ok(v.convierte === true, `${v.vista}: convierte a dólares`);
+    ok(v.convierte === true || heredan(v.vista),
+       `${v.vista}: convierte a dólares${v.convierte ? '' : ' (lee de una vista que ya convierte)'}`);
   }
 }
 

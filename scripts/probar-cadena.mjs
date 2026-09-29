@@ -169,6 +169,25 @@ comprobar('Se escribió la línea de Kardex de tipo ingreso',
   kardex.length === 1 && kardex[0].tipo === 'ingreso' && Number(kardex[0].kg) === 500,
   JSON.stringify(kardex));
 
+/*
+ * El costo (057): el pallet toma el que rige hoy para su producto, y la línea
+ * de Kardex valoriza con ESE mismo costo, no con lo que hubiera en el
+ * formulario.
+ */
+const costo = lote ? sql(`
+  select l.costo_unitario::text as lote, l.costo_origen,
+         (select m.costo_unitario::text from movimientos m where m.lote_id = l.id) as kardex,
+         costo_produccion_kg(sp.sku_id, (now() at time zone 'America/Lima')::date)::text as vigente
+    from lotes l join sku_presentaciones sp on sp.id = l.sku_presentacion_id
+   where l.id = ${lote.id};
+`)[0] : null;
+comprobar('El pallet entra con el costo que rige hoy',
+  costo && costo.costo_origen === 'estandar' && Math.abs(Number(costo.lote) - Number(costo.vigente)) < 0.0001,
+  costo ? `${Number(costo.lote).toFixed(4)} · ${costo.costo_origen}` : '');
+comprobar('Y el Kardex lo valoriza con ese mismo costo',
+  costo && Math.abs(Number(costo.kardex) - Number(costo.lote)) < 0.0001,
+  costo ? `${Number(costo.kardex).toFixed(4)}` : '');
+
 const despues = sql(`
   select coalesce(round(sum(peso_neto_kg)::numeric,1), 0) kg
   from existencias where almacen_id = ${stock?.almacen_id ?? bodegaId};

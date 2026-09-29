@@ -2,56 +2,66 @@
 
 /**
  * ============================================================================
- *  COPIAR LOS COSTOS DEL MES ANTERIOR
+ *  CARGAR EL MES CON LOS COSTOS QUE RIGEN
  * ============================================================================
- *  El botón que hace sostenible esta pantalla. Son 191 productos por tres
- *  campos: 573 números cada mes. Nadie sostiene eso, y un sistema que lo exige
- *  acaba con los costos sin cargar y el margen sin calcular.
+ *  El botón que hace sostenible la carga obligatoria de cada mes. Son 191
+ *  productos por tres campos: 573 números cada mes. Nadie sostiene eso, y un
+ *  sistema que lo exige acaba con los costos sin cargar y el margen sin
+ *  calcular.
  *
- *  Copia SOLO lo que falta: nunca pisa un valor ya escrito, porque quien lo
- *  escribió a mano lo hizo con un motivo.
+ *  Registra como carga del mes el costo que rige hoy, solo para los productos
+ *  que todavía no la tienen: nunca pisa un valor ya escrito. Después se ajusta
+ *  lo que se movió.
  * ============================================================================
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
-import { copiarMesAnterior } from './acciones';
+import { cargarMesConVigentes } from './acciones';
 
 export function CopiarMes({
-  anio,
-  mes,
+  periodo,
+  nombreMes,
   faltan,
+  esMesActual,
 }: {
-  anio: number;
-  mes: number;
-  /** Cuántos productos siguen sin costo este mes. */
+  periodo: string;
+  nombreMes: string;
+  /** Cuántos productos siguen sin la carga de ese mes. */
   faltan: number;
+  esMesActual: boolean;
 }) {
   const router = useRouter();
   const [copiando, iniciar] = useTransition();
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
 
-  if (faltan === 0) return null;
+  if (faltan === 0 && !aviso) return null;
 
   return (
-    <div className="costos-copiar">
+    <div className="costos-copiar" data-bloque="cargar-mes">
       <div>
-        <strong>{faltan} producto{faltan === 1 ? '' : 's'} sin costo este mes</strong>
+        <strong>
+          {faltan} producto{faltan === 1 ? '' : 's'} sin la carga de {nombreMes}
+        </strong>
         <span>
-          Sus pedidos se están midiendo con el último costo anterior que haya cargado. Puede
-          copiar el mes pasado y ajustar solo lo que se movió.
+          {esMesActual
+            ? 'La carga del mes es obligatoria. Mientras falte, sus ingresos se valorizan con el último costo que regía. '
+            : 'Se puede dejar lista antes de que empiece el mes: regirá desde el día 1. '}
+          Puede cargar todos con el costo que rige hoy y ajustar solo lo que se movió.
         </span>
       </div>
 
-      <button type="button" className="btn btn-secundario btn-chico" disabled={copiando}
-              onClick={() => iniciar(async () => {
-                const r = await copiarMesAnterior(anio, mes);
-                setAviso({ ok: r.ok, texto: r.mensaje });
-                if (r.ok) router.refresh();
-              })}>
-        <Icono nombre="reportes" tamano={14} />
-        {copiando ? 'Copiando…' : 'Copiar del mes anterior'}
-      </button>
+      {faltan > 0 && (
+        <button type="button" className="btn btn-secundario btn-chico" disabled={copiando}
+                onClick={() => iniciar(async () => {
+                  const r = await cargarMesConVigentes(periodo);
+                  setAviso({ ok: r.ok, texto: r.mensaje });
+                  if (r.ok) router.refresh();
+                })}>
+          <Icono nombre="reportes" tamano={14} />
+          {copiando ? 'Cargando…' : 'Cargar con los costos vigentes'}
+        </button>
+      )}
 
       {aviso && (
         <p className={`ficha-aviso ${aviso.ok ? 'ficha-aviso-ok' : 'ficha-aviso-critico'}`}

@@ -27,7 +27,7 @@ import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import {
-  registrarIngreso, camarasDeAlmacen, costoSugerido,
+  registrarIngreso, camarasDeAlmacen, costoVigente,
   type DatosIngreso,
 } from './acciones';
 
@@ -83,6 +83,11 @@ export function FormularioIngreso({
   const [camarasDe, setCamarasDe] = useState(0);
   const [problema, setProblema] = useState<{ mensaje: string; campo?: string } | null>(null);
   const [hechos, setHechos] = useState<string[]>([]);
+  /*
+   * El costo que regirá para el pallet, si el producto lo tiene cargado.
+   * `undefined` mientras se pregunta; `null` si no tiene ninguno.
+   */
+  const [vigente, setVigente] = useState<{ total_kg: number; vigente_desde: string; tipo: string } | null | undefined>(undefined);
 
   const producto = productos.find((p) => p.id === d.sku_presentacion_id);
 
@@ -108,15 +113,20 @@ export function FormularioIngreso({
     setProblema(null);
   }
 
-  /** Al elegir producto se propone el costo del último ingreso igual. */
+  /**
+   * Al elegir producto se averigua qué costo regirá. Si lo hay, es el del
+   * pallet y no se teclea: lo pone la base. Si no lo hay, se pide a mano.
+   */
   function elegirProducto(id: number) {
     campo('sku_presentacion_id', id);
     const p = productos.find((x) => x.id === id);
     if (p && modoPeso === 'porBulto') setPesoBulto(p.peso_bulto_kg);
+    setVigente(undefined);
     if (id) {
-      costoSugerido(id).then((c) => {
-        // Solo se propone si el usuario no escribió uno: no se pisa lo suyo.
-        setD((previo) => (previo.costo_unitario > 0 ? previo : { ...previo, costo_unitario: c }));
+      costoVigente(id).then((c) => {
+        setVigente(c);
+        //  Con costo vigente, el del formulario es solo para la cifra de abajo.
+        if (c) setD((previo) => ({ ...previo, costo_unitario: c.total_kg }));
       });
     }
   }
@@ -254,16 +264,36 @@ export function FormularioIngreso({
             )}
           </label>
 
-          <label className="form-campo">
-            <span>Costo por kg (US$)</span>
-            <input className="campo mono" type="number" min={0} step={0.0001}
-                   value={d.costo_unitario || ''} data-error={error('costo_unitario')}
-                   onChange={(e) => campo('costo_unitario', Number(e.target.value))} />
-            <small>
-              Se propone el del último ingreso de este producto. Con él se recalcula el costo
-              promedio de la bodega.
-            </small>
-          </label>
+          {vigente ? (
+            /*
+             * El costo lo fija Gerencia, no quien registra el ingreso: el
+             * pallet toma el que rige hoy y lo conserva. Se enseña para que se
+             * vea con qué valor entra, sin poder cambiarlo.
+             */
+            <div className="form-campo" data-costo="vigente">
+              <span>Costo por kg (US$)</span>
+              <output className="campo mono" style={{ background: 'var(--fondo-2, transparent)' }}>
+                {vigente.total_kg.toFixed(4)}
+              </output>
+              <small>
+                El que rige para este producto desde el {vigente.vigente_desde.split('-').reverse().join('/')}
+                {' '}({vigente.tipo === 'actualizacion' ? 'actualización' : 'carga del mes'}). Lo carga Gerencia
+                en Costos de producción; el pallet lo conserva aunque después cambie.
+              </small>
+            </div>
+          ) : (
+            <label className="form-campo" data-costo="manual">
+              <span>Costo por kg (US$)</span>
+              <input className="campo mono" type="number" min={0} step={0.0001}
+                     value={d.costo_unitario || ''} data-error={error('costo_unitario')}
+                     onChange={(e) => campo('costo_unitario', Number(e.target.value))} />
+              <small>
+                {vigente === null
+                  ? 'Este producto no tiene costo cargado en Costos de producción: escríbalo a mano. Conviene avisar a Gerencia.'
+                  : 'Elija el producto para ver el costo que regirá.'}
+              </small>
+            </label>
+          )}
         </div>
 
         {d.peso_neto_kg > 0 && d.costo_unitario > 0 && (
