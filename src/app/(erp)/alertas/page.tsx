@@ -8,6 +8,12 @@
  *  Cada alerta es NAVEGABLE: lleva al registro que la provocó. De nada sirve
  *  saber que «el lote SM 26 02 0001 lleva 19 meses en cámara» si después hay
  *  que buscarlo a mano en otra pantalla.
+ *
+ *  LAS SEIS PRINCIPALES (documento de mejoras, punto 6)
+ *  Arriba, y con la cifra de AHORA MISMO (v_alertas_principales, 059): lo que
+ *  vence, lo retenido, la cobertura, lo que se puede despachar ya, el
+ *  backorder y lo que va fuera de tiempo. Cada tarjeta abre su detalle. El
+ *  resto de avisos sigue debajo, como antes.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -40,14 +46,26 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
   if (entidad) consulta = consulta.eq('entidad', entidad);
   if (titulo) consulta = consulta.eq('titulo', titulo);
 
-  const [{ data: filas, count }, { data: todas }, { data: tipos }] = await Promise.all([
+  const [{ data: filas, count }, { data: todas }, { data: tipos }, { data: principales }] = await Promise.all([
     consulta
       .order('severidad', { ascending: false })
       .order('generada_en', { ascending: false })
       .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
     supabase.from('alertas').select('severidad, entidad').eq('atendida', false),
     supabase.from('v_alertas_resumen').select('titulo, cuantas').order('cuantas', { ascending: false }),
+    supabase.from('v_alertas_principales').select('*').order('orden'),
   ]);
+
+  /*
+   * Los avisos de resumen no apuntan a un registro —hablan de muchos—, así que
+   * no tienen ficha. Llevan a la pantalla que los detalla.
+   */
+  const rutaDeAviso = new Map<string, string>([
+    ...(principales ?? []).map((p) => [String(p.aviso), String(p.ruta)] as [string, string]),
+    ['Costos del mes sin cargar', '/finanzas/costos?faltantes=si'],
+    ['Cotizaciones por vencer', '/ventas/cotizaciones'],
+  ]);
+  const TONO: Record<string, 'critico' | 'atencion' | 'ok'> = { critica: 'critico', advertencia: 'atencion', ok: 'ok' };
 
   const criticas = (todas ?? []).filter((a) => a.severidad === 'critica').length;
   const avisos = (todas ?? []).filter((a) => a.severidad === 'advertencia').length;
@@ -64,6 +82,29 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
           Configurar reglas
         </Link>
       </CabeceraPagina>
+
+      {/* ══════ LAS SEIS PRINCIPALES ══════ */}
+      <Panel titulo="Alertas principales · en este momento" className="mb-espacio">
+        <div data-bloque="principales">
+          <RejillaKpi>
+            {(principales ?? []).map((p) => (
+              <Kpi
+                key={String(p.clave)}
+                etiqueta={String(p.titulo)}
+                valor={num(Number(p.cifra), p.unidad === 'TM' ? 1 : 0)}
+                sufijo={String(p.unidad)}
+                tono={TONO[String(p.severidad)] ?? 'neutro'}
+                nota={String(p.detalle)}
+                href={String(p.ruta)}
+              />
+            ))}
+          </RejillaKpi>
+        </div>
+        <p className="pie-explicativo" style={{ padding: '0 1rem .8rem' }}>
+          Las cifras son de ahora mismo, no de la última revisión: si se despacha un pedido o se
+          libera un pallet, cambian al volver a entrar. Pulse cualquiera para ver qué la forma.
+        </p>
+      </Panel>
 
       <RejillaKpi>
         <Kpi etiqueta="Total pendientes" valor={num((todas ?? []).length)} />
@@ -119,7 +160,8 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
             */}
             <ul className="lista-alertas-nav">
               {(filas ?? []).map((a) => {
-                const destino = enlaceEntidad(a.entidad as string, a.entidad_id as number);
+                const destino = enlaceEntidad(a.entidad as string, a.entidad_id as number)
+                  ?? rutaDeAviso.get(a.titulo as string) ?? null;
                 const contenido = (
                   <>
                     <span className="alerta-marca" data-sev={a.severidad as string} aria-hidden />

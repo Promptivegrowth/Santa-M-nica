@@ -280,6 +280,8 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
         familia y no por SKU. Ordenada de la más corta a la más larga: la que
         importa es la que está por agotarse, y tiene que ser la primera fila.
       */}
+      {/* El ancla la usan las Alertas principales para traer aquí directamente. */}
+      <div id="cobertura">
       <Panel titulo="Cobertura por familia" className="mb-espacio">
         {cobertura.length === 0 ? (
           <Vacio titulo="Sin datos" mensaje="No hay stock ni despachos del mes anterior con que calcular la cobertura." />
@@ -345,6 +347,7 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
           </>
         )}
       </Panel>
+      </div>
 
       <Panel titulo={`${num(count ?? 0)} posiciones con saldo`}>
         <Filtros
