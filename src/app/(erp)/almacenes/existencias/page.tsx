@@ -45,7 +45,7 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
      —«filete 300 toneladas, aleta 200»— y los otros dos ejes salen gratis. */
   const eje = (q.eje as string) || 'formato';
 
-  const [{ data: almacenes }, { data: catalogo }] = await Promise.all([
+  const [{ data: almacenes }, { data: catalogo }, { data: coberturaDatos }] = await Promise.all([
     supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
     /*
      * Solo lo que TIENE STOCK. Ofrecer los 179 cortes del maestro llenaría el
@@ -65,7 +65,25 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
         .select('especie, formato, corte, familia, almacen_id, rango, fisico_kg, valor')
         .range(d, h)
     ).then((data) => ({ data })),
+    /*
+     * La cobertura por familia. Se pide ordenada desde la base con las nulas al
+     * final: la que está por agotarse es la primera fila, y una familia sin
+     * despachos —sin ritmo con que medirla— no debe colarse arriba.
+     */
+    supabase.from('v_cobertura_familia')
+      .select('especie, formato, familia, stock_kg, despachado_mes_anterior_kg, cobertura_dias, situacion, dias_mes, minimo_dias')
+      .order('cobertura_dias', { ascending: true, nullsFirst: false }),
   ]);
+
+  /*
+   * Las agotadas van primero aunque su cobertura sea «0»: son las más graves,
+   * y el orden por número las dejaría mezcladas con las que tienen cero coma
+   * algo.
+   */
+  const cobertura = [...(coberturaDatos ?? [])].sort((a, b) => {
+    const peso = (s: string) => (s === 'agotada' ? 0 : s === 'baja' ? 1 : s === 'normal' ? 2 : 3);
+    return peso(String(a.situacion)) - peso(String(b.situacion));
+  });
 
   /*
    * Los desplegables se encadenan, igual que en Productos: al elegir una
@@ -254,6 +272,78 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
           SKU, que no son formas de agrupar el inventario. El gráfico enseña los diez grupos
           mayores y agrupa el resto; la tabla los lista todos.
         </p>
+      </Panel>
+
+      {/*
+        COBERTURA POR FAMILIA — documento de mejoras, punto 1.1.
+        «Cobertura = Stock actual × 26 días / Despacho del mes anterior», por
+        familia y no por SKU. Ordenada de la más corta a la más larga: la que
+        importa es la que está por agotarse, y tiene que ser la primera fila.
+      */}
+      <Panel titulo="Cobertura por familia" className="mb-espacio">
+        {cobertura.length === 0 ? (
+          <Vacio titulo="Sin datos" mensaje="No hay stock ni despachos del mes anterior con que calcular la cobertura." />
+        ) : (
+          <>
+            <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+              <table className="datos">
+                <thead>
+                  <tr>
+                    <th>Familia</th>
+                    <th className="num">Stock actual</th>
+                    <th className="num">Despachado mes anterior</th>
+                    <th className="num">Cobertura</th>
+                    <th>Situación</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cobertura.map((c) => (
+                    <tr key={`${c.especie}|${c.formato}`}>
+                      <td>
+                        <Link
+                          href={`/almacenes/existencias?especie=${encodeURIComponent(c.especie)}&formato=${encodeURIComponent(c.formato)}`}
+                          className="enlace-dato">
+                          {c.familia}
+                        </Link>
+                      </td>
+                      <td className="num">{tm(c.stock_kg)} TM</td>
+                      <td className="num">
+                        {Number(c.despachado_mes_anterior_kg) > 0 ? `${tm(c.despachado_mes_anterior_kg)} TM` : '—'}
+                      </td>
+                      <td className="num" style={{ fontWeight: 600 }}>
+                        {c.situacion === 'agotada' ? '0 días'
+                          : c.cobertura_dias === null ? '—'
+                          : `${num(Number(c.cobertura_dias), 0)} días`}
+                      </td>
+                      <td>
+                        <Etiqueta
+                          texto={
+                            c.situacion === 'agotada' ? 'Agotada'
+                            : c.situacion === 'baja' ? 'Baja'
+                            : c.situacion === 'sin_movimiento' ? 'Sin despachos'
+                            : 'Normal'
+                          }
+                          tono={
+                            c.situacion === 'agotada' || c.situacion === 'baja' ? 'critico'
+                            : c.situacion === 'sin_movimiento' ? 'neutro' : 'ok'
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="pie-explicativo" style={{ padding: '.6rem 1rem .8rem' }}>
+              Cobertura = stock actual × {num(Number(cobertura[0]?.dias_mes ?? 26), 0)} días hábiles ÷ lo
+              despachado el mes calendario anterior: cuántos días alcanza lo que hay si se sigue
+              vendiendo al mismo ritmo. Por debajo de {num(Number(cobertura[0]?.minimo_dias ?? 15), 0)} días
+              la familia sale como <strong>baja</strong> y avisa en Alertas. Una familia{' '}
+              <strong>sin despachos</strong> el mes pasado no tiene ritmo con que medirla —no es cobertura
+              infinita—. Los dos números se cambian en Configuración.
+            </p>
+          </>
+        )}
       </Panel>
 
       <Panel titulo={`${num(count ?? 0)} posiciones con saldo`}>
