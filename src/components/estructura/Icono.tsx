@@ -37,6 +37,8 @@ const TRAZOS: Record<string, React.ReactNode> = {
   necesidades: <><path d="M3.5 8 12 3.5 20.5 8v8L12 20.5 3.5 16z" /><path d="M12 12v8.5M3.5 8 12 12l8.5-4" /><path d="M9.2 16.6h5.6" strokeDasharray="1.6 1.6" /></>,
 
   /* ─────────── ALMACENES ─────────── */
+  // Resumen de ventas: diana — el plan del mes contra lo que salió
+  objetivo: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" /></>,
   // Productos: caja con su etiqueta — el catálogo, no el inventario
   productos: <><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z" /><path d="M3 7.5 12 12l9-4.5M12 12v9" /><path d="M7.5 5.2l9 4.5" /></>,
   // Existencias: cajas apiladas
