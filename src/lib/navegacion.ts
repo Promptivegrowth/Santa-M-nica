@@ -54,7 +54,6 @@ export const NAVEGACION: Grupo[] = [
       { titulo: 'Pedidos',            ruta: '/ventas/pedidos',        icono: 'pedido',         ayuda: 'Las proformas y su avance', roles: TODOS },
       { titulo: 'Disponibilidad',     ruta: '/ventas/disponibilidad', icono: 'disponibilidad', ayuda: 'Cuánto se puede vender de verdad', roles: TODOS },
       { titulo: 'Control de pedidos', ruta: '/ventas/control',        icono: 'control',        ayuda: 'Los que están en riesgo', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
-      { titulo: 'Necesidades',        ruta: '/ventas/necesidades',    icono: 'necesidades',    ayuda: 'Qué falta producir o comprar', roles: ['gerencia', 'operaciones', 'comercial', 'consulta'] },
       { titulo: 'Tiempos del flujo',  ruta: '/ventas/tiempos',        icono: 'planificador',   ayuda: 'Cuánto tarda cada paso, de la oferta al cobro', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
     ],
   },
@@ -71,6 +70,17 @@ export const NAVEGACION: Grupo[] = [
       { titulo: 'Alertas de stock',      ruta: '/almacenes/alertas',       icono: 'reloj',         ayuda: 'Por vencer, observado y solo mercado nacional', roles: TODOS },
       { titulo: 'Anticuamiento',         ruta: '/almacenes/anticuamiento', icono: 'anticuamiento', ayuda: 'Producto que lleva mucho tiempo', roles: TODOS },
       { titulo: 'Inventario valorizado', ruta: '/almacenes/valorizado',    icono: 'valorizado',    ayuda: 'Cuánto vale lo que hay', roles: ['gerencia', 'operaciones', 'comercial'] },
+    ],
+  },
+  {
+    /*
+     * Módulo nuevo (documento de mejoras, puntos 5 y 12): lo que falta
+     * producir para completar los pedidos, que es el backorder visto desde la
+     * planta. Almacén lo ve porque es quien recibe lo producido.
+     */
+    grupo: 'Producción',
+    entradas: [
+      { titulo: 'Necesidades de producción', ruta: '/produccion', icono: 'necesidades', ayuda: 'Lo que falta producir para completar los pedidos', roles: ['gerencia', 'operaciones', 'comercial', 'almacen', 'consulta'] },
     ],
   },
   {

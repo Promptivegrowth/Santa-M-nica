@@ -43,7 +43,7 @@ const PANTALLAS = [
   ['/ventas/pedidos',            'Pedidos'],
   ['/ventas/disponibilidad',     'Disponibilidad'],
   ['/ventas/control',            'Control de pedidos'],
-  ['/ventas/necesidades',        'Necesidades'],
+  ['/produccion',                'Necesidades de producción'],
   ['/almacenes/existencias',     'Existencias'],
   ['/almacenes/reservas',        'Reservas de stock'],
   ['/almacenes/kardex',          'Kardex'],
