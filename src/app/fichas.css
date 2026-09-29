@@ -562,3 +562,22 @@ table.datos tr[data-inactiva="si"] > td { opacity: 0.5; }
   text-align: center;
   color: var(--tinta-2);
 }
+
+/* ---------------------------------------------------------------------------
+   CONTROL DE PEDIDOS · el filtro de semana de los completos
+   --------------------------------------------------------------------------- */
+.control-semana {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+  padding: 0.7rem 1rem 0;
+}
+.control-semana label { display: flex; flex-direction: column; gap: 0.25rem; }
+.control-semana label span {
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+}
+.control-semana select { min-width: 15rem; }
