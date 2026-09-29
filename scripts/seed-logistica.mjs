@@ -535,15 +535,7 @@ export async function sembrarLogistica(ctx) {
       join reglas r on r.nombre = 'Factura vencida'
      where f.estado = 'vencida';
 
-    -- (5) Documentos de flota por vencer
-    insert into alertas (regla_id, entidad, entidad_id, severidad, titulo, mensaje)
-    select r.id, 'vehiculo', v.id,
-           (case when v.soat_vence < current_date then 'critica' else 'advertencia' end)::severidad_alerta,
-           'SOAT por vencer',
-           format('El SOAT del vehículo %s vence el %s.', v.placa, to_char(v.soat_vence,'DD/MM/YYYY'))
-      from vehiculos v
-      join reglas r on r.nombre = 'SOAT por vencer'
-     where v.soat_vence <= current_date + 30;
+    -- (Las alertas de SOAT se retiraron a pedido del cliente: ver migración 051.)
   `);
 
   // Línea de tiempo: eventos legibles para la pestaña Historial
