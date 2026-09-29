@@ -30,6 +30,7 @@ import { AccionesLista } from '@/components/ui/Acciones';
 import { num, dinero, fecha } from '@/lib/formato';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 import { veCostos, type Rol } from '@/lib/navegacion';
+import { traerTodo } from '@/lib/traerTodo';
 
 export const metadata: Metadata = { title: 'Tiempos del flujo' };
 export const dynamic = 'force-dynamic';
@@ -122,32 +123,76 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
   const destino = (q.destino as string) ?? '';
   const vendedor = (q.vendedor as string) ?? '';
   const soloCompletos = q.completos === 'si';
+  /* Documento de mejoras: «identificarse visualmente el despacho que incumple». */
+  const soloIncumplen = q.completos === 'incumplen';
 
   const hoy = hoyEnLima();
 
-  let consulta = supabase.from('v_tiempos_flujo').select('*');
+  /*
+   * La consulta se CONSTRUYE de nuevo en cada página, no se reutiliza. Un
+   * constructor de Supabase acumula lo que se le encadena: reusarlo en la
+   * segunda página le añadiría otro `order` encima del primero. Mientras
+   * haya menos de mil pedidos solo se pide una página y no se notaría; el día
+   * que haya más, sí.
+   */
+  const construir = () => {
+    let c = supabase.from('v_tiempos_flujo').select('*');
+    /* El rango va sobre la fecha del PEDIDO: es el hito que tienen todos. La
+       cotización solo la tiene una parte, y el despacho, menos todavía. */
+    if (desde) c = c.gte('f_pedido', desde);
+    if (hasta) c = c.lte('f_pedido', hasta);
+    if (destino) c = c.eq('destino', destino);
+    if (vendedor) c = c.eq('vendedor', vendedor);
+    if (buscar) {
+      const limpio = buscar.replace(/[%,()]/g, ' ');
+      c = c.or(`numero_proforma.ilike.%${limpio}%,cliente.ilike.%${limpio}%,cotizacion.ilike.%${limpio}%`);
+    }
+    /* «Cadena completa» son los que llegaron al muelle: sin despacho no hay
+       tiempo total que medir, y son justamente los que Oliver quiere ver. */
+    if (soloCompletos) c = c.not('f_despacho', 'is', null);
+    return c;
+  };
 
-  /* El rango va sobre la fecha del PEDIDO: es el hito que tienen todos. La
-     cotización solo la tiene una parte, y el despacho, menos todavía. */
-  if (desde) consulta = consulta.gte('f_pedido', desde);
-  if (hasta) consulta = consulta.lte('f_pedido', hasta);
-  if (destino) consulta = consulta.eq('destino', destino);
-  if (vendedor) consulta = consulta.eq('vendedor', vendedor);
-  if (buscar) {
-    const limpio = buscar.replace(/[%,()]/g, ' ');
-    consulta = consulta.or(`numero_proforma.ilike.%${limpio}%,cliente.ilike.%${limpio}%,cotizacion.ilike.%${limpio}%`);
-  }
-  /* «Cadena completa» son los que llegaron al muelle: sin despacho no hay
-     tiempo total que medir, y son justamente los que Oliver quiere ver. */
-  if (soloCompletos) consulta = consulta.not('f_despacho', 'is', null);
-
-  const [{ data: filas }, { data: destinos }, { data: vendedores }] = await Promise.all([
-    consulta.order('f_pedido', { ascending: false }).limit(2000),
+  const [filas, { data: destinos }, { data: vendedores }, { data: semanas }, demoras] = await Promise.all([
+    /*
+     * Aquí decía `.limit(2000)`, que no hace lo que parece: la API de
+     * Supabase corta en MIL filas por mucho que se pida más, y sin avisar.
+     * Con 443 pedidos no mordía todavía; con el primer año de operación real,
+     * los promedios de esta pantalla se habrían calculado sobre una parte de
+     * los pedidos sin que nadie lo notara. Se pagina.
+     */
+    traerTodo<Fila>((d, h) => construir().order('f_pedido', { ascending: false }).range(d, h)),
     supabase.from('destinos').select('puerto').order('puerto'),
     supabase.from('vendedores').select('nombre').order('nombre'),
+    /* El seguimiento semanal: doce semanas son un trimestre, que es lo que se
+       mira para ver si algo mejora o empeora. */
+    supabase.from('v_cumplimiento_semanal').select('*')
+      .order('semana', { ascending: false }).limit(12),
+    traerTodo<{ pedido_id: number; incumple_programacion: boolean; incumple_despacho: boolean;
+                umbral_programado_despacho: number; umbral_pedido_programacion: number }>((d, h) =>
+      supabase.from('v_demora_pedidos')
+        .select('pedido_id, incumple_programacion, incumple_despacho, umbral_programado_despacho, umbral_pedido_programacion')
+        .range(d, h)),
   ]);
 
-  const lista = (filas ?? []) as Fila[];
+  /* Qué incumple cada pedido, para marcarlo en la tabla. */
+  const demoraDe = new Map(demoras.map((d) => [Number(d.pedido_id), d]));
+  const umbralDesp = Number(demoras[0]?.umbral_programado_despacho ?? 6);
+  const umbralProg = Number(demoras[0]?.umbral_pedido_programacion ?? 12);
+  const incumple = (id: number) => {
+    const d = demoraDe.get(id);
+    return Boolean(d?.incumple_programacion || d?.incumple_despacho);
+  };
+
+  const lista = (soloIncumplen
+    ? filas.filter((f) => incumple(Number(f.pedido_id)))
+    : filas) as Fila[];
+
+  /* La última semana CERRADA: la que está en curso todavía puede mejorar, y
+     presentarla como resultado sería juzgar un partido a medio jugar. */
+  const cerradas = (semanas ?? []).filter((s) => !s.semana_abierta);
+  const ultima = cerradas[0];
+  const cuantosIncumplen = filas.filter((f) => incumple(Number(f.pedido_id))).length;
 
   /*
    * LOS PEDIDOS CON LA CRONOLOGÍA ROTA NO ENTRAN EN NINGÚN PROMEDIO.
@@ -169,7 +214,7 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
   const mayor = Math.max(1, ...resumenes.map((r) => Math.abs(r.promedio ?? 0)));
 
   const visibles = lista.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
-  const hayFiltros = Boolean(buscar || desde || hasta || destino || vendedor || soloCompletos);
+  const hayFiltros = Boolean(buscar || desde || hasta || destino || vendedor || soloCompletos || soloIncumplen);
 
   return (
     <>
@@ -219,6 +264,102 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
           </span>
         </div>
       )}
+
+      {/* ══════ FILL RATE Y OTIF ══════
+          Documento de mejoras, punto 4: «agregar los indicadores Fill Rate y
+          OTIF con seguimiento semanal». El plan es lo que está en el
+          planificador y el real lo que salió, como respondió Oliver. */}
+      <div id="cumplimiento">
+        <Panel titulo="Cumplimiento semanal · Fill Rate y OTIF" className="mb-espacio">
+          {!ultima ? (
+            <Vacio titulo="Sin semanas cerradas" mensaje="Todavía no hay una semana completa de embarques programados con que medir." />
+          ) : (
+            <>
+              <div className="rejilla-2" style={{ padding: '.8rem 1rem 0' }}>
+                <Kpi
+                  etiqueta="Fill Rate"
+                  valor={ultima.fill_rate === null ? '—' : num(Number(ultima.fill_rate), 1)}
+                  sufijo="%"
+                  tono={Number(ultima.fill_rate) >= 95 ? 'ok' : Number(ultima.fill_rate) >= 80 ? 'atencion' : 'critico'}
+                  nota={`Semana ${ultima.numero_semana} · ${num(Number(ultima.atendido_kg) / 1000, 1)} de ${num(Number(ultima.programado_kg) / 1000, 1)} TM programadas`}
+                  href="#cumplimiento-tabla"
+                />
+                <Kpi
+                  etiqueta="OTIF"
+                  valor={ultima.otif === null ? '—' : num(Number(ultima.otif), 1)}
+                  sufijo="%"
+                  tono={Number(ultima.otif) >= 95 ? 'ok' : Number(ultima.otif) >= 80 ? 'atencion' : 'critico'}
+                  nota={`Semana ${ultima.numero_semana} · ${num(Number(ultima.pedidos_otif))} de ${num(Number(ultima.pedidos_programados))} pedidos completos y a tiempo`}
+                  href="#cumplimiento-tabla"
+                />
+              </div>
+
+              <div className="tabla-envoltorio" id="cumplimiento-tabla" style={{ border: 'none', borderRadius: 0, marginTop: '.8rem' }}>
+                <table className="datos">
+                  <thead>
+                    <tr>
+                      <th>Semana</th>
+                      <th className="num">Contenedores</th>
+                      <th className="num">Programado</th>
+                      <th className="num">Atendido</th>
+                      <th className="num">Fill Rate</th>
+                      <th className="num">Pedidos</th>
+                      <th className="num">Completos y a tiempo</th>
+                      <th className="num">OTIF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(semanas ?? []).map((s) => {
+                      const fr = s.fill_rate === null ? null : Number(s.fill_rate);
+                      const ot = s.otif === null ? null : Number(s.otif);
+                      const tono = (v: number | null) =>
+                        v === null ? undefined : v >= 95 ? 'var(--ok)' : v >= 80 ? 'var(--atencion)' : 'var(--critico)';
+                      return (
+                        <tr key={String(s.semana)}>
+                          <td>
+                            <strong>Semana {s.numero_semana}</strong>
+                            <br />
+                            <span style={{ color: 'var(--tinta-3)', fontSize: '.7rem' }}>
+                              desde el {fecha(String(s.semana))}
+                            </span>
+                            {s.semana_abierta && <> <Etiqueta texto="En curso" tono="neutro" /></>}
+                          </td>
+                          <td className="num">
+                            {num(Number(s.contenedores_despachados))} / {num(Number(s.contenedores))}
+                          </td>
+                          <td className="num">{num(Number(s.programado_kg) / 1000, 1)} TM</td>
+                          <td className="num">{num(Number(s.atendido_kg) / 1000, 1)} TM</td>
+                          <td className="num" style={{ fontWeight: 600, color: tono(fr) }}>
+                            {fr === null ? '—' : `${num(fr, 1)} %`}
+                          </td>
+                          <td className="num">{num(Number(s.pedidos_programados))}</td>
+                          <td className="num">{num(Number(s.pedidos_otif))}</td>
+                          <td className="num" style={{ fontWeight: 600, color: tono(ot) }}>
+                            {ot === null ? '—' : `${num(ot, 1)} %`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="pie-explicativo" style={{ padding: '.6rem 1rem .8rem' }}>
+                <strong>Fill Rate</strong> = toneladas despachadas ÷ toneladas programadas en el
+                planificador para esa semana. <strong>OTIF</strong> = pedidos cuyos contenedores de la
+                semana salieron todos y en o antes de su salida programada ÷ pedidos programados. Se mide
+                por contenedor —donde lo planificado y lo despachado se registran igual— y sumando
+                contenedores distintos, porque uno puede llevar dos proformas. La semana en curso se
+                marca <em>en curso</em>: lo que no salió todavía puede salir.
+                {Number(ultima.embarques_sin_carga) > 0 && (
+                  <> {num(Number(ultima.embarques_sin_carga))} embarque(s) de la semana {ultima.numero_semana} estaban
+                  programados sin carga asignada y no tienen cantidad que medir.</>
+                )}
+              </p>
+            </>
+          )}
+        </Panel>
+      </div>
 
       {/* ══════ EL EMBUDO ══════ */}
       <Panel titulo="Dónde se va el tiempo" className="mb-espacio">
@@ -284,7 +425,10 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
             },
             {
               tipo: 'select', clave: 'completos', etiqueta: 'Alcance',
-              opciones: [{ valor: 'si', texto: 'Solo cadena completa' }],
+              opciones: [
+                { valor: 'si', texto: 'Solo cadena completa' },
+                { valor: 'incumplen', texto: 'Solo los que incumplen los tiempos' },
+              ],
             },
           ]}
         />
@@ -292,6 +436,9 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
         <div className="atajos-fecha">
           <span>Rápido:</span>
           <Link href="/ventas/tiempos?completos=si">Solo los que ya salieron</Link>
+          <Link href="/ventas/tiempos?completos=incumplen">
+            Incumplen los tiempos ({num(cuantosIncumplen)})
+          </Link>
           <Link href={`/ventas/tiempos?desde=${desplazarDias(hoy, -30)}&hasta=${hoy}`}>Últimos 30 días</Link>
           <Link href={`/ventas/tiempos?desde=${desplazarDias(hoy, -90)}&hasta=${hoy}`}>Últimos 90 días</Link>
           {hayFiltros && <Link href="/ventas/tiempos" className="atajo-limpiar">Quitar filtros</Link>}
@@ -323,24 +470,34 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
                 </thead>
                 <tbody>
                   {visibles.map((f) => {
-                    /** Un tramo sin datos se pinta como raya, no como cero. */
-                    const dias = (clave: string, esPuntualidad = false) => {
+                    /**
+                     * Un tramo sin datos se pinta como raya, no como cero.
+                     *
+                     * El rojo sale del UMBRAL DEL DOCUMENTO, no de un número
+                     * elegido aquí: antes Programado → Despachado se ponía rojo
+                     * a partir de 3 días, y el cliente fijó 6. Pintar rojo lo
+                     * que su regla da por bueno sería alarmar sin motivo.
+                     */
+                    const dias = (clave: string, esPuntualidad = false, umbral?: number) => {
                       const v = f[clave];
                       if (v === null || v === undefined) {
                         return <span style={{ color: 'var(--tinta-3)' }}>—</span>;
                       }
                       const n = Number(v);
-                      const color = esPuntualidad
-                        ? n <= 0 ? 'var(--ok)' : n <= 2 ? 'var(--atencion)' : 'var(--critico)'
-                        : undefined;
+                      const color = umbral !== undefined
+                        ? n > umbral ? 'var(--critico)' : n > 0 && esPuntualidad ? 'var(--atencion)' : n <= 0 && esPuntualidad ? 'var(--ok)' : undefined
+                        : esPuntualidad
+                          ? n <= 0 ? 'var(--ok)' : n <= 2 ? 'var(--atencion)' : 'var(--critico)'
+                          : undefined;
                       return (
-                        <span style={{ color }}>
+                        <span style={{ color, fontWeight: umbral !== undefined && n > umbral ? 600 : undefined }}>
                           {n > 0 && esPuntualidad ? '+' : ''}{num(n, 0)} d
                         </span>
                       );
                     };
 
                     const roto = f.cronologia_valida === false;
+                    const fuera = incumple(Number(f.pedido_id));
 
                     return (
                       <tr key={f.pedido_id as number} className={roto ? 'fila-incoherente' : undefined}>
@@ -355,6 +512,10 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
                           {roto && (
                             <> <Etiqueta texto="Fechas imposibles" tono="critico" /></>
                           )}
+                          {/* «Identificarse visualmente el despacho que incumple.» */}
+                          {fuera && !roto && (
+                            <> <Etiqueta texto="Fuera de tiempo" tono="critico" /></>
+                          )}
                         </td>
                         <td title={f.cliente as string}>
                           {String(f.cliente).length > 26 ? String(f.cliente).slice(0, 25) + '…' : String(f.cliente)}
@@ -362,8 +523,8 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
                         <td style={{ fontSize: '.78rem' }}>{(f.destino as string) ?? '—'}</td>
                         <td className="num" style={{ fontSize: '.76rem' }}>{fecha(f.f_pedido as string)}</td>
                         <td className="num">{dias('dias_negociacion')}</td>
-                        <td className="num">{dias('dias_a_programar')}</td>
-                        <td className="num">{dias('dias_puntualidad', true)}</td>
+                        <td className="num">{dias('dias_a_programar', false, umbralProg)}</td>
+                        <td className="num">{dias('dias_puntualidad', true, umbralDesp)}</td>
                         <td className="num">
                           {f.dias_total === null || f.dias_total === undefined ? (
                             <Etiqueta texto="En curso" tono="neutro" />
