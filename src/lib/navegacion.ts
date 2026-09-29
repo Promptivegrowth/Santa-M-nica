@@ -27,6 +27,11 @@ export type Entrada = {
   /** Descripción corta que se muestra como ayuda contextual. */
   ayuda?: string;
   roles: Rol[] | 'todos';
+  /**
+   * Además del rol, un permiso PERSONAL. Objetivos mensuales lo ven Marco y
+   * Oliver —dos personas, no dos roles—: otro gerente no lo tendría.
+   */
+  permiso?: 've_objetivos';
 };
 
 export type Grupo = {
@@ -58,6 +63,8 @@ export const NAVEGACION: Grupo[] = [
     entradas: [
       { titulo: 'Control Tower', ruta: '/panel',   icono: 'panel',  ayuda: 'Los indicadores del día', roles: TODOS },
       { titulo: 'Alertas',       ruta: '/alertas', icono: 'alerta', ayuda: 'Lo que necesita atención', roles: TODOS },
+      /* Solo para quien tenga el permiso personal (060): hoy, Marco y Oliver. */
+      { titulo: 'Objetivos mensuales', ruta: '/objetivos', icono: 'bandera', ayuda: 'Los compromisos del mes y del año, con su semáforo', roles: TODOS, permiso: 've_objetivos' },
     ],
   },
   {
@@ -137,13 +144,14 @@ export const NAVEGACION: Grupo[] = [
   },
 ];
 
-/** Filtra el menú según el rol del usuario conectado. */
-export function navegacionPara(rol: Rol): Grupo[] {
+/** Filtra el menú según el rol del usuario conectado y sus permisos personales. */
+export function navegacionPara(rol: Rol, permisos: { ve_objetivos?: boolean } = {}): Grupo[] {
   return NAVEGACION
     .map((g) => ({
       ...g,
       entradas: g.entradas.filter(
-        (e) => e.roles === 'todos' || (e.roles as Rol[]).includes(rol)
+        (e) => (e.roles === 'todos' || (e.roles as Rol[]).includes(rol))
+          && (!e.permiso || permisos[e.permiso] === true)
       ),
     }))
     .filter((g) => g.entradas.length > 0);

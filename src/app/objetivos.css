@@ -1,0 +1,72 @@
+/* ============================================================================
+   OBJETIVOS MENSUALES
+   La tabla es ancha —doce meses y el año—, así que la primera columna queda
+   fija al desplazarse y las celdas son compactas. El semáforo va en el fondo
+   de la celda con los colores semánticos del tema, que ya tienen su versión
+   oscura: nada de colores sueltos que solo funcionen en un modo.
+   ============================================================================ */
+
+.obj-tabla { overflow-x: auto; }
+.obj-tabla table.datos { min-width: 1100px; font-variant-numeric: tabular-nums; }
+.obj-tabla th, .obj-tabla td { white-space: nowrap; }
+
+.obj-tabla .obj-nombre {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--superficie);
+  min-width: 17rem; max-width: 22rem; white-space: normal;
+}
+.obj-tabla thead .obj-nombre { background: var(--superficie-2); z-index: 2; }
+.obj-tabla .obj-nombre small { display: block; color: var(--tinta-3); font-size: .68rem; }
+
+.obj-tabla tr.obj-bloque td {
+  background: var(--superficie-2);
+  font-family: var(--font-mono);
+  font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--tinta-2);
+  position: sticky; left: 0;
+}
+
+.obj-tabla td.obj-mes { text-align: right; padding-inline: .35rem; }
+.obj-tabla td.obj-anio { text-align: right; font-weight: 600; border-left: 2px solid var(--linea-2); }
+
+/* El semáforo */
+.obj-tabla td[data-estado='supera']    { background: var(--ok-suave); box-shadow: inset 3px 0 0 var(--ok); }
+.obj-tabla td[data-estado='cumple']    { background: var(--ok-suave); }
+.obj-tabla td[data-estado='alerta']    { background: var(--atencion-suave); }
+.obj-tabla td[data-estado='no_cumple'] { background: var(--critico-suave); color: var(--critico); font-weight: 600; }
+
+/* De dónde viene el número */
+.obj-origen {
+  display: inline-block; margin-left: .25rem;
+  font-family: var(--font-mono); font-size: .58rem; letter-spacing: .04em;
+  padding: 0 .25rem; border-radius: 3px;
+  color: var(--tinta-3); border: 1px solid var(--linea);
+  vertical-align: middle;
+}
+.obj-origen[data-origen='ajuste'] { color: var(--atencion); border-color: var(--atencion); }
+
+.obj-meta-linea { display: block; font-size: .64rem; color: var(--tinta-3); font-weight: 400; }
+
+/* Casillas editables. Con doble clase porque .campo se define después
+   (globals.css) y con la misma especificidad ganaría: saldrían casillas de
+   formulario, altas y anchas, en vez de celdas de hoja de cálculo. */
+.campo.obj-campo {
+  width: 5.6rem; padding: .15rem .35rem; text-align: right; font-size: .78rem;
+  background: transparent; border-color: var(--linea); border-radius: 4px;
+}
+.campo.obj-campo:focus { background: var(--superficie); }
+.obj-campo[data-error='si'], .obj-meta[data-error='si'] .obj-campo { outline: 2px solid var(--critico); }
+.obj-meta { display: inline-flex; flex-direction: column; gap: 2px; }
+.obj-meta .campo.obj-campo { width: 5rem; font-size: .72rem; }
+
+.obj-leyenda { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; font-size: .76rem; color: var(--tinta-2); }
+.obj-leyenda span { display: inline-flex; align-items: center; gap: .35rem; }
+.obj-leyenda i { width: .9rem; height: .9rem; border-radius: 3px; display: inline-block; border: 1px solid var(--linea); }
+.obj-leyenda i[data-estado='cumple']    { background: var(--ok-suave); }
+.obj-leyenda i[data-estado='supera']    { background: var(--ok-suave); box-shadow: inset 3px 0 0 var(--ok); }
+.obj-leyenda i[data-estado='alerta']    { background: var(--atencion-suave); }
+.obj-leyenda i[data-estado='no_cumple'] { background: var(--critico-suave); }
+
+@media (max-width: 720px) {
+  .obj-tabla .obj-nombre { min-width: 11rem; }
+}

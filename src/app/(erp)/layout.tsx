@@ -34,7 +34,7 @@ export default async function LayoutErp({ children }: LayoutProps<'/'>) {
   return (
     <Marco
       usuario={{ nombre: usuario.nombre, email: usuario.email, rol: usuario.rol as Rol }}
-      grupos={navegacionPara(usuario.rol as Rol)}
+      grupos={navegacionPara(usuario.rol as Rol, { ve_objetivos: usuario.ve_objetivos === true })}
       alertasPendientes={count ?? 0}
     >
       {children}

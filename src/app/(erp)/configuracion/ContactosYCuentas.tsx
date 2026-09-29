@@ -72,7 +72,7 @@ const CUENTA_VACIA: DatosCuenta = {
   numero: '',
   cci: '',
   swift: '',
-  titular: 'INDUSTRIAL PESQUERA SANTA MÓNICA S.A.C.',
+  titular: 'INDUSTRIAL PESQUERA SANTA MÓNICA S.A.',
   principal: false,
   observaciones: '',
 };

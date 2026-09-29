@@ -81,7 +81,7 @@ export type OpcionesReporte = {
 export async function generarReporte(op: OpcionesReporte): Promise<Buffer> {
   const libro = new ExcelJS.Workbook();
   libro.creator = 'Santa Mónica ERP';
-  libro.company = 'Industrial Pesquera Santa Mónica S.A.C.';
+  libro.company = 'Industrial Pesquera Santa Mónica S.A.';
   libro.created = new Date();
 
   const hoja = libro.addWorksheet(op.hoja ?? 'Reporte', {
@@ -118,7 +118,7 @@ export async function generarReporte(op: OpcionesReporte): Promise<Buffer> {
 
   hoja.mergeCells(`D2:${ultimaCol}2`);
   const celdaSub = hoja.getCell('D2');
-  celdaSub.value = op.subtitulo ?? 'Industrial Pesquera Santa Mónica S.A.C. · RUC 20205572229';
+  celdaSub.value = op.subtitulo ?? 'Industrial Pesquera Santa Mónica S.A. · RUC 20205572229';
   celdaSub.font = { name: 'Calibri', size: 9, color: { argb: 'FF6F7D95' } };
   celdaSub.alignment = { vertical: 'top', horizontal: 'left' };
 

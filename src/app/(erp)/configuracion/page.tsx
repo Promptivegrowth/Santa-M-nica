@@ -22,6 +22,7 @@ import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { EditorParametro } from './EditorParametro';
 import { SubirFirma } from './SubirFirma';
 import { InterruptorAprobador } from './InterruptorAprobador';
+import { InterruptorObjetivos } from './InterruptorObjetivos';
 import { InterruptorRegla } from './InterruptorRegla';
 import { ContactosYCuentas } from './ContactosYCuentas';
 import { Icono } from '@/components/estructura/Icono';
@@ -160,7 +161,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
       supabase.from('parametros').select('*').order('grupo').order('etiqueta'),
       supabase.from('reglas').select('*').order('severidad', { ascending: false }).order('nombre'),
       supabase.from('motivos').select('*').order('ambito').order('nombre'),
-      supabase.from('usuarios').select('id, nombre, email, rol, activo, aprueba_cotizaciones, creado_en').order('rol'),
+      supabase.from('usuarios').select('id, nombre, email, rol, activo, aprueba_cotizaciones, ve_objetivos, creado_en').order('rol'),
       Promise.all([
         supabase.from('almacenes').select('id', { count: 'exact', head: true }),
         supabase.from('skus').select('id', { count: 'exact', head: true }),
@@ -530,7 +531,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
           ) : (
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
               <table className="datos">
-                <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Aprueba cotizaciones</th><th>Alta</th></tr></thead>
+                <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Aprueba cotizaciones</th>{usuario?.ve_objetivos === true && <th>Objetivos</th>}<th>Alta</th></tr></thead>
                 <tbody>
                   {(usuarios ?? []).map((u) => (
                     <tr key={u.id as string}>
@@ -551,6 +552,11 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                           editable={rol === 'gerencia'}
                         />
                       </td>
+                      {usuario?.ve_objetivos === true && (
+                        <td>
+                          <InterruptorObjetivos id={u.id as string} nombre={u.nombre as string} ve={u.ve_objetivos === true} />
+                        </td>
+                      )}
                       <td style={{ fontSize: '.74rem', color: 'var(--tinta-3)' }}>{fechaHora(u.creado_en as string)}</td>
                     </tr>
                   ))}

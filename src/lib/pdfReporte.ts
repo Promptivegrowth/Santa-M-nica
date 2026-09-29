@@ -164,7 +164,7 @@ function cabecera(doc: Lienzo, op: OpcionesPdfReporte) {
   doc.fillColor(MARCA.tintaSuave).font('Helvetica').fontSize(7.6)
     .text(op.subtitulo, xTexto, y + 18, { width: 430, lineBreak: false });
   doc.fillColor(MARCA.tintaSuave).font('Helvetica').fontSize(6.8)
-    .text('INDUSTRIAL PESQUERA SANTA MONICA S.A.C.  ·  RUC 20205572229', xTexto, y + 30, {
+    .text('INDUSTRIAL PESQUERA SANTA MONICA S.A.  ·  RUC 20205572229', xTexto, y + 30, {
       width: 430, lineBreak: false,
     });
 
@@ -251,7 +251,7 @@ export async function generarPdfReporte(opciones: OpcionesPdfReporte): Promise<B
     bufferPages: true,   // hace falta para poder escribir «de M» al final
     info: {
       Title: op.titulo,
-      Author: 'Industrial Pesquera Santa Monica S.A.C.',
+      Author: 'Industrial Pesquera Santa Monica S.A.',
       Subject: op.subtitulo,
       Creator: 'ERP Santa Monica',
     },
