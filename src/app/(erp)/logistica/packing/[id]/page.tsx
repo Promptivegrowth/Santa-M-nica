@@ -219,11 +219,12 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
   return (
     <>
       <RejillaKpi>
-        <Kpi etiqueta="Total de bultos" valor={num(totalBultos)} nota={`${lotes.length} lotes distintos`} />
-        <Kpi etiqueta="Peso neto" valor={tm(totalPeso)} sufijo="TM" />
+        <Kpi etiqueta="Total de bultos" valor={num(totalBultos)} nota={`${lotes.length} lotes distintos`} href="#pallets" />
+        <Kpi etiqueta="Peso neto" valor={tm(totalPeso)} sufijo="TM" href="#pallets" />
         <Kpi etiqueta="Filas utilizadas" valor={`${filaMax} / ${filasContenedor}`}
              tono={vacio ? 'neutro' : 'marca'}
-             nota={`${sacosPorFila} sacos por fila`} />
+             nota={`${sacosPorFila} sacos por fila`}
+  href="#plano" />
         <Kpi
           etiqueta="Saldo por fila"
           valor={vacio ? 'Vacío' : cierraEnCero ? 'Cierra' : 'Revisar'}
@@ -231,6 +232,7 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
           nota={vacio
             ? 'Sin pallets cargados'
             : cierraEnCero ? 'Todas las filas completas' : 'Hay filas incompletas'}
+          href="#plano"
         />
       </RejillaKpi>
 
@@ -253,7 +255,7 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
       </Panel>
 
       {/* ══════ EL PLANO ══════ */}
-      <Panel titulo="Pallets cargados" className="mb-espacio">
+      <Panel id="pallets" titulo="Pallets cargados" className="mb-espacio">
         {/* Primero qué sale, después dónde va dentro del contenedor. */}
         <CargarLotes
           packingId={packingId}
@@ -268,7 +270,7 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
         />
       </Panel>
 
-      <Panel titulo={`Plano de estiba · ${filasContenedor} filas de ${sacosPorFila} sacos`}>
+      <Panel id="plano" titulo={`Plano de estiba · ${filasContenedor} filas de ${sacosPorFila} sacos`}>
         {/*
           El plano es editable: el sistema lo propone con criterio FIFO, pero
           en el muelle mandan cosas que el programa no sabe —lo que se descarga

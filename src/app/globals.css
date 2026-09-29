@@ -204,6 +204,12 @@ h1, h2, h3, h4, h5 {
   border: 1px solid var(--linea);
   border-radius: var(--radio);
 }
+/*
+ * Al llegar a una sección desde una tarjeta («#pendientes»), que no quede
+ * tapada por la barra superior fija. Vale para paneles y para los bloques
+ * con id que envuelven una tabla.
+ */
+.panel[id], main [id] { scroll-margin-top: 5rem; }
 .panel-cabecera {
   display: flex; align-items: center; justify-content: space-between; gap: .75rem;
   padding: .7rem 1rem;

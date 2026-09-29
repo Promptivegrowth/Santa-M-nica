@@ -136,29 +136,32 @@ export default async function PaginaFlota(props: PageProps<'/logistica/flota'>) 
       )}
 
       <RejillaKpi>
-        <Kpi etiqueta="Vehículos" valor={num(flota.length)} nota={`${num(flota.filter((v) => v.activo).length)} activos`} />
+        <Kpi etiqueta="Vehículos" valor={num(flota.length)} nota={`${num(flota.filter((v) => v.activo).length)} activos`} href="#vehiculos" />
         <Kpi
           etiqueta="Con documento vencido"
           valor={num(vencidos.length)}
           tono={vencidos.length > 0 ? 'critico' : 'ok'}
           nota="No pueden salir"
+          href="#vehiculos"
         />
         <Kpi
           etiqueta="Por vencer en 30 días"
           valor={num(porVencer.length)}
           tono={porVencer.length > 0 ? 'atencion' : 'ok'}
           nota="Hay que renovar"
+          href="#vehiculos"
         />
-        <Kpi etiqueta="Capacidad de la flota" valor={num(capacidad, 1)} sufijo="TM" nota="Solo vehículos activos" />
+        <Kpi etiqueta="Capacidad de la flota" valor={num(capacidad, 1)} sufijo="TM" nota="Solo vehículos activos" href="#vehiculos" />
         <Kpi
           etiqueta="Licencias en riesgo"
           valor={num(licenciasEnRiesgo.length)}
           tono={licenciasEnRiesgo.length > 0 ? 'atencion' : 'ok'}
           nota="Conductores"
+          href="#conductores"
         />
       </RejillaKpi>
 
-      <Panel titulo={`Vehículos · ${flota.length}`} className="mb-espacio">
+      <Panel id="vehiculos" titulo={`Vehículos · ${flota.length}`} className="mb-espacio">
         {flota.length === 0 ? (
           <Vacio titulo="Sin vehículos" mensaje="No hay vehículos registrados en el maestro." />
         ) : (
@@ -224,7 +227,7 @@ export default async function PaginaFlota(props: PageProps<'/logistica/flota'>) 
         )}
       </Panel>
 
-      <Panel titulo={`Conductores · ${conLicencia.length}`} className="mb-espacio">
+      <Panel id="conductores" titulo={`Conductores · ${conLicencia.length}`} className="mb-espacio">
         {conLicencia.length === 0 ? (
           <Vacio titulo="Sin conductores" mensaje="No hay conductores registrados en el maestro." />
         ) : (

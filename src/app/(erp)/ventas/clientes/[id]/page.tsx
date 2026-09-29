@@ -232,21 +232,23 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
       )}
 
       <RejillaKpi>
-        <Kpi etiqueta="Pedidos abiertos" valor={num(abiertos.length)} tono={abiertos.length ? 'marca' : 'neutro'} />
-        <Kpi etiqueta="Volumen histórico" valor={tm(tmTotal * 1000)} nota="Suma de sus pedidos" />
+        <Kpi etiqueta="Pedidos abiertos" valor={num(abiertos.length)} tono={abiertos.length ? 'marca' : 'neutro'} href="#pedidos" />
+        <Kpi etiqueta="Volumen histórico" valor={tm(tmTotal * 1000)} nota="Suma de sus pedidos" href="#pedidos" />
         {puedeVerImportes && (
           <>
-            <Kpi etiqueta="Facturado" valor={dinero(facturadoTotal, c.moneda as 'USD' | 'PEN', 0)} />
+            <Kpi etiqueta="Facturado" valor={dinero(facturadoTotal, c.moneda as 'USD' | 'PEN', 0)} href="#facturas" />
             <Kpi
               etiqueta="Deuda viva"
               valor={dinero(deuda, c.moneda as 'USD' | 'PEN', 0)}
               tono={vencido > 0 ? 'critico' : deuda > 0 ? 'atencion' : 'ok'}
               nota={vencido > 0 ? `${dinero(vencido, c.moneda as 'USD' | 'PEN', 0)} vencidos` : 'Al día'}
+              href="#facturas"
             />
             <Kpi
               etiqueta="Crédito disponible"
               valor={linea > 0 ? dinero(disponible, c.moneda as 'USD' | 'PEN', 0) : 'Sin línea'}
               tono={linea > 0 && disponible <= 0 ? 'critico' : 'ok'}
+              href="#condiciones"
             />
           </>
         )}
@@ -268,7 +270,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
           </dl>
         </Panel>
 
-        <Panel titulo="Condiciones comerciales">
+        <Panel id="condiciones" titulo="Condiciones comerciales">
           <dl className="ficha">
             <div><dt>Moneda</dt><dd>{c.moneda as string}</dd></div>
             <div><dt>Días de crédito</dt><dd>{num(Number(c.dias_credito))} días</dd></div>
@@ -306,7 +308,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
       </div>
 
       {/* ---- Pedidos ---- */}
-      <Panel
+      <Panel id="pedidos"
         titulo={`Pedidos · ${(pedidos ?? []).length} más recientes`}
         className="mb-espacio"
         acciones={<Link href={`/ventas/pedidos?cliente=${cliId}`} className="btn btn-sutil">Ver todos</Link>}
@@ -411,7 +413,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
 
       {/* ---- Facturas ---- */}
       {puedeVerImportes && (
-        <Panel titulo={`Facturas · ${(facturas ?? []).length} más recientes`} className="mb-espacio">
+        <Panel id="facturas" titulo={`Facturas · ${(facturas ?? []).length} más recientes`} className="mb-espacio">
           {(facturas ?? []).length === 0 ? (
             <Vacio titulo="Sin facturas" mensaje="No se le ha emitido ningún comprobante." />
           ) : (

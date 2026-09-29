@@ -111,13 +111,14 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
       />
 
       <RejillaKpi>
-        <Kpi etiqueta="Stock total" valor={tm(total)} sufijo="TM" nota="En todas las bodegas" />
+        <Kpi etiqueta="Stock total" valor={tm(total)} sufijo="TM" nota="En todas las bodegas" href="/almacenes/existencias" />
         <Kpi
           etiqueta="Sobre el umbral"
           valor={tm(tmSobre)}
           sufijo="TM"
           tono={tmSobre > 0 ? 'atencion' : 'ok'}
           nota={`${((tmSobre / (total || 1)) * 100).toFixed(1)} % del inventario`}
+          href="/almacenes/anticuamiento?alerta=si#lotes"
         />
         {puedeVerCostos && (
           <Kpi
@@ -125,6 +126,7 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
             valor={dinero(valorSobre, 'USD', 0)}
             tono="atencion"
             nota="Capital parado en producto antiguo"
+            href="/almacenes/anticuamiento?alerta=si#lotes"
           />
         )}
         <Kpi
@@ -132,6 +134,7 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
           valor={num(vencidos)}
           tono={vencidos > 0 ? 'critico' : 'ok'}
           nota="Requieren disposición"
+          href="/almacenes/anticuamiento?situacion=vencido#lotes"
         />
       </RejillaKpi>
 
@@ -162,6 +165,7 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
           valor={tm(tmSobre)}
           sufijo="TM"
           nota={`más de ${umbral?.valor ?? 12} meses en cámara`}
+          href="/almacenes/anticuamiento?alerta=si#lotes"
         />
         {puedeVerCostos && (
           <Kpi
@@ -169,6 +173,7 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
             valor={dinero(yaVencido.valor + porVencer.valor, 'USD', 0)}
             tono={yaVencido.valor + porVencer.valor > 0 ? 'atencion' : 'ok'}
             nota="vencido y por vencer"
+            href="/almacenes/alertas#por-vencer"
           />
         )}
       </RejillaKpi>
@@ -201,7 +206,7 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
         />
       </Panel>
 
-      <Panel titulo={`${num(count ?? 0)} lotes en cámara`}>
+      <Panel id="lotes" titulo={`${num(count ?? 0)} lotes en cámara`}>
         <Filtros
           campos={[
             {

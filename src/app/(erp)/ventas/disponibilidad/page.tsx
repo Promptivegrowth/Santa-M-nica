@@ -77,11 +77,11 @@ export default async function PaginaDisponibilidad(props: PageProps<'/ventas/dis
       />
 
       <RejillaKpi>
-        <Kpi etiqueta="Stock físico" valor={tm(inv.fisico_kg)} sufijo="TM" nota="Todo lo que hay en cámara" />
-        <Kpi etiqueta="Bloqueado" valor={tm(inv.bloqueado_kg)} sufijo="TM" tono="critico" nota="Observado por Calidad" />
-        <Kpi etiqueta="Reservado" valor={tm(inv.reservado_kg)} sufijo="TM" tono="atencion" nota="Apartado para pedidos" />
-        <Kpi etiqueta="En preparación" valor={tm(inv.preparacion_kg)} sufijo="TM" tono="atencion" nota="Ya en un contenedor" />
-        <Kpi etiqueta="Disponible" valor={tm(inv.disponible_kg)} sufijo="TM" tono="ok" nota="Lo que se puede vender hoy" />
+        <Kpi etiqueta="Stock físico" valor={tm(inv.fisico_kg)} sufijo="TM" nota="Todo lo que hay en cámara" href="/almacenes/existencias" />
+        <Kpi etiqueta="Bloqueado" valor={tm(inv.bloqueado_kg)} sufijo="TM" tono="critico" nota="Observado por Calidad" href="/almacenes/alertas#condicion" />
+        <Kpi etiqueta="Reservado" valor={tm(inv.reservado_kg)} sufijo="TM" tono="atencion" nota="Apartado para pedidos" href="/almacenes/reservas?estado=activa" />
+        <Kpi etiqueta="En preparación" valor={tm(inv.preparacion_kg)} sufijo="TM" tono="atencion" nota="Ya en un contenedor" href="/logistica/packing" />
+        <Kpi etiqueta="Disponible" valor={tm(inv.disponible_kg)} sufijo="TM" tono="ok" nota="Lo que se puede vender hoy" href="/ventas/disponibilidad?disponible=si#detalle" />
       </RejillaKpi>
 
       <Panel titulo="Cómo se descompone el stock" className="mb-espacio">
@@ -95,7 +95,7 @@ export default async function PaginaDisponibilidad(props: PageProps<'/ventas/dis
         />
       </Panel>
 
-      <Panel titulo={`Disponibilidad por producto y bodega · ${num(count ?? 0)} combinaciones`}>
+      <Panel id="detalle" titulo={`Disponibilidad por producto y bodega · ${num(count ?? 0)} combinaciones`}>
         <Filtros
           campos={[
             { tipo: 'texto', clave: 'buscar', etiqueta: 'Producto o corte', ancho: '12rem' },

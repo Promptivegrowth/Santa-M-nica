@@ -125,7 +125,7 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
       )}
 
       <RejillaKpi>
-        <Kpi etiqueta="Total emitidas" valor={num((todas ?? []).length)} />
+        <Kpi etiqueta="Total emitidas" valor={num((todas ?? []).length)} href="/ventas/cotizaciones#lista" />
         <Kpi
           etiqueta="Esperando aprobación"
           valor={num(porAprobar)}
@@ -146,7 +146,7 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
              href="/ventas/cotizaciones?estado=aceptada" />
       </RejillaKpi>
 
-      <Panel titulo={`${num(count ?? 0)} cotizaciones`}>
+      <Panel id="lista" titulo={`${num(count ?? 0)} cotizaciones`}>
         <Filtros
           campos={[
             { tipo: 'texto', clave: 'buscar', etiqueta: 'Número', ancho: '11rem' },

@@ -230,12 +230,14 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
           sufijo="días"
           tono="marca"
           nota={total.n ? `promedio de ${num(total.n)} pedidos despachados` : 'ningún pedido despachado con estos filtros'}
+          href="#etapas"
         />
         <Kpi
           etiqueta="El pedido normal"
           valor={total.mediana === null ? '—' : num(total.mediana, 0)}
           sufijo="días"
           nota="mediana: la mitad tarda menos que esto"
+          href="#etapas"
         />
         <Kpi
           etiqueta="Los más lentos"
@@ -243,6 +245,7 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
           sufijo="días"
           tono="atencion"
           nota="uno de cada diez tarda esto o más"
+          href="#pedidos-lista"
         />
         <Kpi
           etiqueta="Pedidos analizados"
@@ -251,6 +254,7 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
           nota={rotos > 0
             ? `${num(rotos)} quedaron fuera por fechas imposibles`
             : soloCompletos ? 'solo los que ya salieron' : 'todos los del filtro'}
+          href="#pedidos-lista"
         />
       </RejillaKpi>
 
@@ -362,7 +366,7 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
       </div>
 
       {/* ══════ EL EMBUDO ══════ */}
-      <Panel titulo="Dónde se va el tiempo" className="mb-espacio">
+      <Panel id="etapas" titulo="Dónde se va el tiempo" className="mb-espacio">
         <div className="tramos">
           {resumenes.map((r) => {
             const ancho = r.promedio === null ? 0 : (Math.abs(r.promedio) / mayor) * 100;
@@ -409,7 +413,7 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
       </Panel>
 
       {/* ══════ EL DETALLE ══════ */}
-      <Panel titulo={`${num(lista.length)} pedidos`}>
+      <Panel id="pedidos-lista" titulo={`${num(lista.length)} pedidos`}>
         <Filtros
           campos={[
             { tipo: 'texto', clave: 'buscar', etiqueta: 'Proforma, cliente o cotización', ancho: '15rem' },

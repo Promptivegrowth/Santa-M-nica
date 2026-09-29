@@ -175,15 +175,16 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
       )}
 
       <RejillaKpi>
-        <Kpi etiqueta="Subtotal" valor={dinero(Number(f.subtotal), moneda, 2)} />
-        <Kpi etiqueta="IGV" valor={dinero(Number(f.igv), moneda, 2)} />
-        <Kpi etiqueta="Total" valor={dinero(Number(f.total), moneda, 2)} tono="marca" />
-        <Kpi etiqueta="Cobrado" valor={dinero(cobrado, moneda, 2)} tono={cobrado > 0 ? 'ok' : 'neutro'} />
+        <Kpi etiqueta="Subtotal" valor={dinero(Number(f.subtotal), moneda, 2)} href="#detalle" />
+        <Kpi etiqueta="IGV" valor={dinero(Number(f.igv), moneda, 2)} href="#detalle" />
+        <Kpi etiqueta="Total" valor={dinero(Number(f.total), moneda, 2)} tono="marca" href="#detalle" />
+        <Kpi etiqueta="Cobrado" valor={dinero(cobrado, moneda, 2)} tono={cobrado > 0 ? 'ok' : 'neutro'} href="#cobros" />
         <Kpi
           etiqueta="Saldo"
           valor={dinero(saldo, moneda, 2)}
           tono={anulada ? 'neutro' : saldo <= 0.01 ? 'ok' : vencida ? 'critico' : 'atencion'}
           nota={anulada ? 'Anulada' : saldo <= 0.01 ? 'Cobrada' : dias < 0 ? `Vencida hace ${Math.abs(dias)} d` : `Vence en ${dias} d`}
+          href="#cobros"
         />
       </RejillaKpi>
 
@@ -223,7 +224,7 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
           </dl>
         </Panel>
 
-        <Panel titulo={`Cobros registrados · ${(cobros ?? []).length}`}>
+        <Panel id="cobros" titulo={`Cobros registrados · ${(cobros ?? []).length}`}>
           {(cobros ?? []).length === 0 ? (
             <Vacio
               titulo="Sin cobros"
@@ -257,7 +258,7 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
         </Panel>
       </div>
 
-      <Panel titulo={`Detalle facturado · ${(lineas ?? []).length} líneas`} className="mb-espacio">
+      <Panel id="detalle" titulo={`Detalle facturado · ${(lineas ?? []).length} líneas`} className="mb-espacio">
         {(lineas ?? []).length === 0 ? (
           <Vacio titulo="Sin líneas" mensaje="Esta factura no tiene detalle cargado." />
         ) : (

@@ -148,10 +148,10 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
 
       {eje !== 'bruto' && (
       <RejillaKpi>
-        <Kpi etiqueta="Venta despachada" valor={dinero(venta, 'USD', 0)} tono="marca" />
-        <Kpi etiqueta="Costo" valor={dinero(costo, 'USD', 0)} />
-        <Kpi etiqueta="Margen" valor={dinero(margen, 'USD', 0)} tono="ok" />
-        <Kpi etiqueta="Margen %" valor={pct(margenPct)} tono={margenPct < margenMinimo ? 'critico' : 'ok'} />
+        <Kpi etiqueta="Venta despachada" valor={dinero(venta, 'USD', 0)} tono="marca" href="/finanzas/rentabilidad?eje=pedido" />
+        <Kpi etiqueta="Costo" valor={dinero(costo, 'USD', 0)} href="/finanzas/rentabilidad?eje=pedido" />
+        <Kpi etiqueta="Margen" valor={dinero(margen, 'USD', 0)} tono="ok" href="/finanzas/rentabilidad?eje=pedido" />
+        <Kpi etiqueta="Margen %" valor={pct(margenPct)} tono={margenPct < margenMinimo ? 'critico' : 'ok'} href="/finanzas/rentabilidad?eje=pedido" />
         <Kpi etiqueta="Pedidos con margen bajo" valor={num(bajoMargen.length)}
              tono={bajoMargen.length > 0 ? 'atencion' : 'ok'} href="/finanzas/rentabilidad?eje=bajo" />
       </RejillaKpi>
@@ -326,23 +326,28 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
 
           <RejillaKpi>
             <Kpi etiqueta="Venta medible" valor={dinero(contrib.venta, 'USD', 0)} tono="marca"
-                 nota="solo lo que tiene costo cargado" />
+                 nota="solo lo que tiene costo cargado"
+  href="#familias-contribucion" />
             <Kpi etiqueta="Costo de producción"
                  valor={dinero(contrib.mp + contrib.conv + contrib.varia, 'USD', 0)}
-                 nota="los tres componentes" />
+                 nota="los tres componentes"
+  href="#composicion" />
             <Kpi etiqueta="Margen de contribución" valor={dinero(contrib.margen, 'USD', 0)}
-                 tono={contrib.margen > 0 ? 'ok' : 'critico'} />
+                 tono={contrib.margen > 0 ? 'ok' : 'critico'}
+  href="#familias-contribucion" />
             <Kpi etiqueta="Sobre la venta" valor={`${contribPct.toFixed(1)} %`}
                  tono={contribPct >= margenMinimo ? 'ok' : 'atencion'}
-                 nota={`el mínimo aceptable es ${margenMinimo} %`} />
+                 nota={`el mínimo aceptable es ${margenMinimo} %`}
+  href="#familias-contribucion" />
             <Kpi etiqueta="Familias en pérdida" valor={num(enPerdida.length)}
                  tono={enPerdida.length > 0 ? 'critico' : 'ok'}
-                 nota="se venden por debajo de su costo" />
+                 nota="se venden por debajo de su costo"
+  href="#familias-contribucion" />
           </RejillaKpi>
 
           {/* De qué se compone el costo: es la pregunta que hay detrás de
               pedir los tres números por separado. */}
-          <Panel titulo="De qué se compone el costo" className="mb-espacio">
+          <Panel id="composicion" titulo="De qué se compone el costo" className="mb-espacio">
             <div className="composicion">
               {[
                 { nombre: 'Materia prima', valor: contrib.mp, tono: 'marca' as const },
@@ -370,7 +375,7 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
             </p>
           </Panel>
 
-          <Panel titulo={`${familias.length} familias de producto`}>
+          <Panel id="familias-contribucion" titulo={`${familias.length} familias de producto`}>
             {familias.length === 0 ? (
               <Vacio
                 titulo="Sin costos cargados"

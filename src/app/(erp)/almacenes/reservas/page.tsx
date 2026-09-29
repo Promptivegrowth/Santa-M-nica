@@ -178,8 +178,8 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
       )}
 
       <RejillaKpi>
-        <Kpi etiqueta="Reservas activas" valor={num(activas.length)} tono="marca" />
-        <Kpi etiqueta="Stock apartado" valor={tm(kgActivos)} nota="No figura como disponible" />
+        <Kpi etiqueta="Reservas activas" valor={num(activas.length)} tono="marca" href="/almacenes/reservas?estado=activa#lista" />
+        <Kpi etiqueta="Stock apartado" valor={tm(kgActivos)} nota="No figura como disponible" href="/almacenes/reservas?estado=activa#lista" />
         <Kpi
           etiqueta="Con plazo vencido"
           valor={num(vencidas.length)}
@@ -191,10 +191,11 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
           etiqueta="Liberadas históricas"
           valor={num(universo.filter((r) => ['liberada', 'expirada'].includes(r.estado as string)).length)}
           nota="Conservan su motivo"
+          href="/almacenes/reservas?estado=liberada#lista"
         />
       </RejillaKpi>
 
-      <Panel titulo={idBuscado ? `Reserva #${idBuscado}` : `${num(count ?? 0)} reservas`}>
+      <Panel id="lista" titulo={idBuscado ? `Reserva #${idBuscado}` : `${num(count ?? 0)} reservas`}>
         {idBuscado ? (
           <div style={{ padding: '.6rem 1rem' }}>
             <Link href="/almacenes/reservas" className="btn btn-sutil">

@@ -142,9 +142,10 @@ export default async function PaginaValorizado(props: PageProps<'/almacenes/valo
           valor={dinero(valor, 'USD', 0)}
           tono="marca"
           nota={hayFiltros ? 'Solo lo que cumple los filtros' : 'Todo lo que hay en cámara'}
+          href="#detalle"
         />
-        <Kpi etiqueta="Toneladas" valor={tm(kg)} sufijo="TM" nota={`${num(lotes)} lotes`} />
-        <Kpi etiqueta="Costo promedio" valor={dinero(costoPorKg * 1000, 'USD', 0)} nota="Por tonelada" />
+        <Kpi etiqueta="Toneladas" valor={tm(kg)} sufijo="TM" nota={`${num(lotes)} lotes`} href="#detalle" />
+        <Kpi etiqueta="Costo promedio" valor={dinero(costoPorKg * 1000, 'USD', 0)} nota="Por tonelada" href="#detalle" />
         <Kpi
           etiqueta="Capital en producto de +18 meses"
           valor={dinero(valorViejo, 'USD', 0)}
@@ -169,7 +170,7 @@ export default async function PaginaValorizado(props: PageProps<'/almacenes/valo
         </Panel>
       )}
 
-      <Panel titulo={`Detalle por lote · ${num(count ?? 0)} posiciones`}>
+      <Panel id="detalle" titulo={`Detalle por lote · ${num(count ?? 0)} posiciones`}>
         <Filtros
           campos={[
             { tipo: 'fecha', clave: 'desde', etiqueta: 'Producido desde' },

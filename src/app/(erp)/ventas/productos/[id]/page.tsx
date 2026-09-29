@@ -186,15 +186,16 @@ async function CuerpoProducto({
       )}
 
       <RejillaKpi>
-        <Kpi etiqueta="Físico en cámara" valor={tm(fisico)} nota={`${(stock ?? []).length} almacenes`} />
-        <Kpi etiqueta="Apartado" valor={tm(reservado)} tono={reservado > 0 ? 'atencion' : 'neutro'} />
+        <Kpi etiqueta="Físico en cámara" valor={tm(fisico)} nota={`${(stock ?? []).length} almacenes`} href="#existencias" />
+        <Kpi etiqueta="Apartado" valor={tm(reservado)} tono={reservado > 0 ? 'atencion' : 'neutro'} href="#existencias" />
         <Kpi
           etiqueta="Disponible"
           valor={tm(disponible)}
           tono={disponible > 0 ? 'ok' : 'critico'}
           nota={pesoBulto > 0 ? `≈ ${num(bultosDisponibles)} bultos` : undefined}
+          href="#existencias"
         />
-        <Kpi etiqueta="Vendido reciente" valor={num(vendidasTm, 1)} sufijo="TM" nota={`${(ventas ?? []).length} líneas`} />
+        <Kpi etiqueta="Vendido reciente" valor={num(vendidasTm, 1)} sufijo="TM" nota={`${(ventas ?? []).length} líneas`} href="#ventas" />
       </RejillaKpi>
 
       <div className="rejilla-2 mb-espacio">
@@ -218,7 +219,7 @@ async function CuerpoProducto({
           </dl>
         </Panel>
 
-        <Panel titulo={`Existencias por almacén · ${(stock ?? []).length}`}>
+        <Panel id="existencias" titulo={`Existencias por almacén · ${(stock ?? []).length}`}>
           {(stock ?? []).length === 0 ? (
             <Vacio
               titulo="Sin existencias"
@@ -362,7 +363,7 @@ async function CuerpoProducto({
       </Panel>
 
       {/* ---- A quién se le vende ---- */}
-      <Panel titulo={`Ventas recientes · ${(ventas ?? []).length} líneas`}>
+      <Panel id="ventas" titulo={`Ventas recientes · ${(ventas ?? []).length} líneas`}>
         {(ventas ?? []).length === 0 ? (
           <Vacio titulo="Sin ventas" mensaje="Este producto nunca se ha incluido en un pedido." />
         ) : (

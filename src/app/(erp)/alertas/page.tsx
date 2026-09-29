@@ -107,7 +107,7 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
       </Panel>
 
       <RejillaKpi>
-        <Kpi etiqueta="Total pendientes" valor={num((todas ?? []).length)} />
+        <Kpi etiqueta="Total pendientes" valor={num((todas ?? []).length)} href="#lista" />
         <Kpi
           etiqueta="Críticas"
           valor={num(criticas)}
@@ -124,7 +124,7 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
         />
       </RejillaKpi>
 
-      <Panel titulo={`${num(count ?? 0)} alertas sin atender`}>
+      <Panel id="lista" titulo={`${num(count ?? 0)} alertas sin atender`}>
         <Filtros
           campos={[
             {

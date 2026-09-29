@@ -87,14 +87,16 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
       />
 
       <RejillaKpi>
-        <Kpi etiqueta="Contenedores cargados" valor={num((filas ?? []).length)} />
+        <Kpi etiqueta="Contenedores cargados" valor={num((filas ?? []).length)} href="#lista" />
         <Kpi etiqueta="Tiempo promedio de carga" valor={num(promedio, 1)} sufijo="h"
-             tono={promedio > objetivo ? 'atencion' : 'ok'} nota={`Objetivo: ${num(objetivo, 1)} h`} />
+             tono={promedio > objetivo ? 'atencion' : 'ok'} nota={`Objetivo: ${num(objetivo, 1)} h`}
+  href="#lista" />
         <Kpi etiqueta="Cargas sobre el objetivo" valor={num(sobreObjetivo)}
-             tono={sobreObjetivo > 0 ? 'atencion' : 'ok'} nota="Oportunidad de mejora" />
+             tono={sobreObjetivo > 0 ? 'atencion' : 'ok'} nota="Oportunidad de mejora"
+  href="#lista" />
       </RejillaKpi>
 
-      <Panel titulo={`${(filas ?? []).length} packing lists`}>
+      <Panel id="lista" titulo={`${(filas ?? []).length} packing lists`}>
         <nav className="pestanas no-imprimir" style={{ padding: '.7rem 1rem 0', margin: 0 }}>
           <Link href={enlace({ estado: '' })} className="pestana" data-activa={!estado ? 'si' : 'no'}>Todos</Link>
           {['abierto', 'en_carga', 'cerrado'].map((e) => (

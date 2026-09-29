@@ -245,22 +245,24 @@ async function CuerpoLote({
       )}
 
       <RejillaKpi>
-        <Kpi etiqueta="Físico en almacén" valor={tm(fisicoKg)} nota={`${num(bultos)} bultos`} />
+        <Kpi etiqueta="Físico en almacén" valor={tm(fisicoKg)} nota={`${num(bultos)} bultos`} href="#ubicacion" />
         <Kpi
           etiqueta="Apartado"
           valor={tm(reservadoKg)}
           tono={reservadoKg > 0 ? 'atencion' : 'ok'}
           nota="Reservas activas"
+          href="#reservas"
         />
         <Kpi
           etiqueta="Libre para vender"
           valor={tm(libreKg)}
           tono={libreKg > 0 ? 'ok' : 'critico'}
           nota="Físico menos apartado"
+          href="#ubicacion"
         />
-        <Kpi etiqueta="Antigüedad" valor={`${num(meses, 1)} m`} nota={(edad?.rango as string) ?? '—'} />
+        <Kpi etiqueta="Antigüedad" valor={`${num(meses, 1)} m`} nota={(edad?.rango as string) ?? '—'} href="/almacenes/anticuamiento" />
         {puedeVerCostos && (
-          <Kpi etiqueta="Valor en libros" valor={dinero(valor, 'USD', 0)} nota="Costo promedio móvil" />
+          <Kpi etiqueta="Valor en libros" valor={dinero(valor, 'USD', 0)} nota="Costo promedio móvil" href="/almacenes/valorizado" />
         )}
       </RejillaKpi>
 
@@ -286,7 +288,7 @@ async function CuerpoLote({
           </dl>
         </Panel>
 
-        <Panel titulo="Ubicación física">
+        <Panel id="ubicacion" titulo="Ubicación física">
           {(existencias ?? []).length === 0 ? (
             <Vacio
               titulo="Sin existencias"
@@ -322,7 +324,7 @@ async function CuerpoLote({
       </div>
 
       {/* ---- Reservas: el corazón del problema del cliente ---- */}
-      <Panel
+      <Panel id="reservas"
         titulo={`Reservas activas · ${(reservas ?? []).length}`}
         className="mb-espacio"
         acciones={

@@ -174,6 +174,7 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
             `${num(lotesTocados)} lote${lotesTocados === 1 ? '' : 's'} · ` +
             `${num(personas)} persona${personas === 1 ? '' : 's'}`
           }
+          href="#detalle"
         />
         <Kpi
           etiqueta="Entró"
@@ -181,12 +182,14 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
           sufijo="TM"
           tono="ok"
           nota={`${num(entradaBultos)} bultos`}
+          href={porTipo.length > 0 ? '#por-tipo' : '#detalle'}
         />
         <Kpi
           etiqueta="Salió"
           valor={tm(salidaKg)}
           sufijo="TM"
           nota={`${num(salidaBultos)} bultos`}
+          href={porTipo.length > 0 ? '#por-tipo' : '#detalle'}
         />
         <Kpi
           etiqueta="Saldo del período"
@@ -194,12 +197,13 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
           sufijo="TM"
           tono={neto >= 0 ? 'ok' : 'atencion'}
           nota={neto >= 0 ? 'La cámara creció' : 'La cámara se vació en esa cantidad'}
+          href={porTipo.length > 0 ? '#por-tipo' : '#detalle'}
         />
       </RejillaKpi>
 
       {/* ---- El desglose por tipo: qué clase de movimiento pesó más ---- */}
       {porTipo.length > 0 && (
-        <Panel titulo="Por tipo de movimiento" className="mb-espacio">
+        <Panel id="por-tipo" titulo="Por tipo de movimiento" className="mb-espacio">
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
             <table className="datos">
               <thead>
@@ -249,7 +253,7 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
         </Panel>
       )}
 
-      <Panel titulo={`Detalle · ${num(count ?? 0)} movimientos`}>
+      <Panel id="detalle" titulo={`Detalle · ${num(count ?? 0)} movimientos`}>
         <Filtros
           campos={[
             { tipo: 'fecha', clave: 'desde', etiqueta: 'Desde' },

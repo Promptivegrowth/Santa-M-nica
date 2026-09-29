@@ -53,15 +53,17 @@ export default async function PaginaCobrar() {
       />
 
       <RejillaKpi>
-        <Kpi etiqueta="Saldo total pendiente" valor={dinero(total, 'USD', 0)} tono="marca" nota={`${num(lista.length)} documentos`} />
+        <Kpi etiqueta="Saldo total pendiente" valor={dinero(total, 'USD', 0)} tono="marca" nota={`${num(lista.length)} documentos`} href="#documentos" />
         <Kpi etiqueta="Saldo vencido" valor={dinero(vencido, 'USD', 0)} tono={vencido > 0 ? 'critico' : 'ok'}
-             nota={`${((vencido / (total || 1)) * 100).toFixed(1)} % del total`} />
+             nota={`${((vencido / (total || 1)) * 100).toFixed(1)} % del total`}
+  href="#antiguedad" />
         <Kpi etiqueta="Más de 90 días" valor={dinero(masDe90, 'USD', 0)} tono={masDe90 > 0 ? 'critico' : 'ok'}
-             nota="Requiere gestión urgente" />
+             nota="Requiere gestión urgente"
+  href="#antiguedad" />
       </RejillaKpi>
 
       {porTramo.length > 0 && (
-        <Panel titulo="Antigüedad del saldo" className="mb-espacio">
+        <Panel id="antiguedad" titulo="Antigüedad del saldo" className="mb-espacio">
           {/* Los tramos tienen orden natural: rampa de un solo tono */}
           <GraficoBarras
             datos={porTramo}
@@ -73,7 +75,7 @@ export default async function PaginaCobrar() {
         </Panel>
       )}
 
-      <Panel titulo={`${lista.length} documentos con saldo`}>
+      <Panel id="documentos" titulo={`${lista.length} documentos con saldo`}>
         {lista.length === 0 ? (
           <Vacio titulo="Nada por cobrar" mensaje="Todos los documentos están cobrados." />
         ) : (

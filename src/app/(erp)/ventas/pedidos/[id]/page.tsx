@@ -247,17 +247,18 @@ async function CuerpoPedido({
   return (
     <>
       <RejillaKpi>
-        <Kpi etiqueta="Cantidad pedida" valor={num(Number(pedido.tm_pedidas), 1)} sufijo="TM" />
-        <Kpi etiqueta="Reservado" valor={num(Number(pedido.tm_reservadas), 1)} sufijo="TM" tono="atencion" />
-        <Kpi etiqueta="Despachado" valor={num(Number(pedido.tm_despachadas), 1)} sufijo="TM" tono="ok" />
+        <Kpi etiqueta="Cantidad pedida" valor={num(Number(pedido.tm_pedidas), 1)} sufijo="TM" href={`/ventas/pedidos/${pedidoId}?t=productos`} />
+        <Kpi etiqueta="Reservado" valor={num(Number(pedido.tm_reservadas), 1)} sufijo="TM" tono="atencion" href={`/ventas/pedidos/${pedidoId}?t=reservas`} />
+        <Kpi etiqueta="Despachado" valor={num(Number(pedido.tm_despachadas), 1)} sufijo="TM" tono="ok" href={`/ventas/pedidos/${pedidoId}?t=despachos`} />
         <Kpi
           etiqueta="Falta por cubrir"
           valor={num(Number(pedido.tm_faltantes), 1)}
           sufijo="TM"
           tono={Number(pedido.tm_faltantes) > 0 ? 'critico' : 'ok'}
+          href={`/ventas/pedidos/${pedidoId}?t=faltantes`}
         />
         {puedeVerCostos && (
-          <Kpi etiqueta="Valor de la venta" valor={dinero(Number(pedido.venta), moneda, 0)} tono="marca" />
+          <Kpi etiqueta="Valor de la venta" valor={dinero(Number(pedido.venta), moneda, 0)} tono="marca" href={`/ventas/pedidos/${pedidoId}?t=rentabilidad`} />
         )}
       </RejillaKpi>
 

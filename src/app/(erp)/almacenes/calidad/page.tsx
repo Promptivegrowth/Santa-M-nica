@@ -70,7 +70,7 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
       />
 
       <RejillaKpi>
-        <Kpi etiqueta="Toneladas bloqueadas" valor={tm(bloqueadoTm?.bloqueado_kg ?? 0)} sufijo="TM" tono="critico" />
+        <Kpi etiqueta="Toneladas bloqueadas" valor={tm(bloqueadoTm?.bloqueado_kg ?? 0)} sufijo="TM" tono="critico" href="/almacenes/alertas#condicion" />
         <Kpi etiqueta="Observados" valor={num(cuenta('observado'))} tono="atencion" href="/almacenes/calidad?estado=observado" />
         <Kpi etiqueta="Inmovilizados" valor={num(cuenta('inmovilizado'))} tono="critico" href="/almacenes/calidad?estado=inmovilizado" />
         <Kpi etiqueta="Esperando resultados" valor={num(cuenta('espera_resultados'))} tono="neutro" href="/almacenes/calidad?estado=espera_resultados" />

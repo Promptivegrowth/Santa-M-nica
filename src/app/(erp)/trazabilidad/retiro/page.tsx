@@ -85,16 +85,20 @@ export default async function PaginaRetiro(props: PageProps<'/trazabilidad/retir
         <>
           <RejillaKpi>
             <Kpi etiqueta="Ya despachado" valor={tm(kgDespachado)} sufijo="TM" tono="critico"
-                 nota={`${clientes} cliente(s) afectado(s)`} />
+                 nota={`${clientes} cliente(s) afectado(s)`}
+  href="#despachado" />
             <Kpi etiqueta="Queda en bodega" valor={tm(kgBodega)} sufijo="TM" tono="atencion"
-                 nota="Inmovilizar de inmediato" />
+                 nota="Inmovilizar de inmediato"
+  href="#bodega" />
             <Kpi etiqueta="Reservado sin salir" valor={tm(kgReservado)} sufijo="TM" tono="atencion"
-                 nota="Bloquear antes de que salga" />
+                 nota="Bloquear antes de que salga"
+  href="#reservado" />
             <Kpi etiqueta="Contenedores afectados"
-                 valor={num(new Set(despachado.map((f) => f.contenedor).filter(Boolean)).size)} tono="critico" />
+                 valor={num(new Set(despachado.map((f) => f.contenedor).filter(Boolean)).size)} tono="critico"
+  href="#despachado" />
           </RejillaKpi>
 
-          <Panel titulo={`Producto ya despachado · ${despachado.length} registros`} className="mb-espacio">
+          <Panel id="despachado" titulo={`Producto ya despachado · ${despachado.length} registros`} className="mb-espacio">
             {despachado.length === 0 ? (
               <Vacio titulo="Nada salió" mensaje="Este lote no ha sido despachado a ningún cliente." />
             ) : (
@@ -122,7 +126,7 @@ export default async function PaginaRetiro(props: PageProps<'/trazabilidad/retir
           </Panel>
 
           <div className="rejilla-2">
-            <Panel titulo="Queda en bodega · inmovilizar">
+            <Panel id="bodega" titulo="Queda en bodega · inmovilizar">
               {enBodega.length === 0 ? (
                 <Vacio titulo="Sin saldo" mensaje="No queda producto de este lote en cámara." />
               ) : (
@@ -138,7 +142,7 @@ export default async function PaginaRetiro(props: PageProps<'/trazabilidad/retir
               )}
             </Panel>
 
-            <Panel titulo="Reservado sin salir · bloquear">
+            <Panel id="reservado" titulo="Reservado sin salir · bloquear">
               {reservado.length === 0 ? (
                 <Vacio titulo="Sin reservas" mensaje="No hay pedidos con este lote apartado." />
               ) : (

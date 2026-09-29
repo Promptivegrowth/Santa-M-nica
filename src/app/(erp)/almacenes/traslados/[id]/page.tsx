@@ -183,18 +183,20 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
       )}
 
       <RejillaKpi>
-        <Kpi etiqueta="Lotes trasladados" valor={num(filas.length)} nota={`${num(enviadoBultos)} bultos`} />
-        <Kpi etiqueta="Peso enviado" valor={tm(enviadoKg)} />
+        <Kpi etiqueta="Lotes trasladados" valor={num(filas.length)} nota={`${num(enviadoBultos)} bultos`} href="#lotes" />
+        <Kpi etiqueta="Peso enviado" valor={tm(enviadoKg)} href="#lotes" />
         <Kpi
           etiqueta="Peso aceptado"
           valor={cerrado ? tm(aceptadoKg) : '—'}
           tono={cerrado ? (Math.abs(diferencia) > 0.5 ? 'critico' : 'ok') : 'neutro'}
           nota={cerrado ? 'Confirmado en destino' : 'Aún no recibido'}
+          href="#lotes"
         />
         <Kpi
           etiqueta="Diferencia"
           valor={cerrado ? tm(diferencia) : '—'}
           tono={!cerrado ? 'neutro' : Math.abs(diferencia) > 0.5 ? 'critico' : 'ok'}
+          href="#lotes"
         />
       </RejillaKpi>
 
@@ -251,7 +253,7 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
         </Panel>
       </div>
 
-      <Panel titulo={`Lotes incluidos · ${filas.length}`} className="mb-espacio">
+      <Panel id="lotes" titulo={`Lotes incluidos · ${filas.length}`} className="mb-espacio">
         {filas.length === 0 ? (
           <Vacio titulo="Sin lotes" mensaje="Este traslado todavía no tiene líneas." />
         ) : (

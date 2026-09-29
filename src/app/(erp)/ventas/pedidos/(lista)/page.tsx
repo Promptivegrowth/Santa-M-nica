@@ -325,10 +325,11 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
           etiqueta="Pedidos"
           valor={num(totales.pedidos)}
           nota={hayFiltro ? 'con los filtros puestos' : 'en total'}
+          href="#lista"
         />
-        <Kpi etiqueta="Toneladas" valor={num(totales.tm, 1)} sufijo="TM" tono="marca" />
+        <Kpi etiqueta="Toneladas" valor={num(totales.tm, 1)} sufijo="TM" tono="marca" href="#lista" />
         {puedeVerCostos && (
-          <Kpi etiqueta="Valor de la venta" valor={dinero(totales.venta, 'USD', 0)} tono="marca" />
+          <Kpi etiqueta="Valor de la venta" valor={dinero(totales.venta, 'USD', 0)} tono="marca" href="#lista" />
         )}
         <Kpi
           etiqueta="Necesitan decisión"
@@ -345,7 +346,7 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
         />
       </RejillaKpi>
 
-      <Panel titulo={porCliente ? `${num(porClienteLista.length)} clientes` : `${num(count ?? 0)} pedidos`}>
+      <Panel id="lista" titulo={porCliente ? `${num(porClienteLista.length)} clientes` : `${num(count ?? 0)} pedidos`}>
         <Filtros
           campos={[
             { tipo: 'texto', clave: 'buscar', etiqueta: 'Proforma o cliente', ancho: '13rem' },

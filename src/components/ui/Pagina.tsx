@@ -89,14 +89,21 @@ export function Panel({
   acciones,
   children,
   className,
+  id,
 }: {
   titulo?: string;
   acciones?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  /**
+   * Ancla para llegar aquí desde una tarjeta (documento de mejoras, punto 7:
+   * «las tarjetas deben permitir hacer clic y ver el detalle»). Una tarjeta
+   * cuyo detalle es la tabla de la misma pantalla enlaza a «#su-id».
+   */
+  id?: string;
 }) {
   return (
-    <section className={clases('panel', className)}>
+    <section id={id} className={clases('panel', className)}>
       {(titulo || acciones) && (
         <div className="panel-cabecera">
           {titulo && <span className="panel-titulo">{titulo}</span>}

@@ -56,12 +56,12 @@ export default async function PaginaAuditoria(props: PageProps<'/trazabilidad/au
       />
 
       <RejillaKpi>
-        <Kpi etiqueta="Registros de auditoría" valor={num(count ?? 0)} tono="marca" />
-        <Kpi etiqueta="Tablas vigiladas" valor={num(TABLAS.length + 8)} nota="Todas las críticas" />
-        <Kpi etiqueta="Modificable" valor="No" tono="ok" nota="Sin política de escritura" />
+        <Kpi etiqueta="Registros de auditoría" valor={num(count ?? 0)} tono="marca" href="#eventos" />
+        <Kpi etiqueta="Tablas vigiladas" valor={num(TABLAS.length + 8)} nota="Todas las críticas" href="#eventos" />
+        <Kpi etiqueta="Modificable" valor="No" tono="ok" nota="Sin política de escritura" href="#eventos" />
       </RejillaKpi>
 
-      <Panel titulo={`${num(count ?? 0)} eventos registrados`}>
+      <Panel id="eventos" titulo={`${num(count ?? 0)} eventos registrados`}>
         <Filtros
           campos={[
             { tipo: 'select', clave: 'tabla', etiqueta: 'Tabla',

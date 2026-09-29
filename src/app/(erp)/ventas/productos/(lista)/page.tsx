@@ -225,18 +225,19 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
         tienen precio de venta conocido y cuántas especies se manejan.
       */}
       <RejillaKpi>
-        <Kpi etiqueta="Unidades vendibles" valor={num(catalogo.length)} nota="SKU × presentación" />
-        <Kpi etiqueta="Cortes distintos" valor={num(cortes)} />
-        <Kpi etiqueta="Especies" valor={num((especies ?? []).length)} />
+        <Kpi etiqueta="Unidades vendibles" valor={num(catalogo.length)} nota="SKU × presentación" href="#lista" />
+        <Kpi etiqueta="Cortes distintos" valor={num(cortes)} href="#lista" />
+        <Kpi etiqueta="Especies" valor={num((especies ?? []).length)} href="#lista" />
         <Kpi
           etiqueta="Con precio de venta"
           valor={num(conPrecio)}
           tono={conPrecio > 0 ? 'ok' : 'atencion'}
           nota={`${num(catalogo.length - conPrecio)} nunca se han vendido`}
+          href="#lista"
         />
       </RejillaKpi>
 
-      <Panel titulo={`${num(filtrado.length)} productos`}>
+      <Panel id="lista" titulo={`${num(filtrado.length)} productos`}>
         <Filtros
           campos={[
             /* La etiqueta va corta a propósito: con el texto largo se salía

@@ -274,6 +274,7 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
           valor={num(delMes.length)}
           tono="marca"
           nota={`${num(porDia.size)} días con salida`}
+          href="#calendario"
         />
         <Kpi
           etiqueta="Carga programada"
@@ -284,22 +285,25 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
               ? `${sinPacking} sin packing: esa parte es la comprometida`
               : 'Toda con packing cargado'
           }
+          href="#calendario"
         />
         <Kpi
           etiqueta="Días sobre el tope simultáneo"
           valor={num(diasSobreTope)}
           tono={diasSobreTope > 0 ? 'atencion' : 'ok'}
           nota={`Más de ${topeSimultaneo} bodegas a la vez`}
+          href="#calendario"
         />
         <Kpi
           etiqueta="Salidas en domingo"
           valor={num(domingos)}
           tono={domingos > 0 ? 'atencion' : 'ok'}
           nota={`Con recargo del ${recargoDomingo} %`}
+          href="#calendario"
         />
       </RejillaKpi>
 
-      <Panel>
+      <Panel id="calendario">
         <CalendarioEmbarques
           embarques={embarques}
           anio={anio}

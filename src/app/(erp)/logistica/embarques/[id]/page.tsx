@@ -216,8 +216,8 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
       )}
 
       <RejillaKpi>
-        <Kpi etiqueta="Pedidos" valor={num(pedidos.length)} tono="marca" />
-        <Kpi etiqueta="Volumen" valor={tm(totalTm * 1000)} />
+        <Kpi etiqueta="Pedidos" valor={num(pedidos.length)} tono="marca" href="#pedidos" />
+        <Kpi etiqueta="Volumen" valor={tm(totalTm * 1000)} href="#pedidos" />
         {puedeVerImportes && (
           <Kpi
             etiqueta="Valor embarcado"
@@ -225,6 +225,7 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
             nota={monedasDelEmbarque.length > 1
               ? `Convertido a dólares · lleva pedidos en ${monedasDelEmbarque.join(' y ')}`
               : undefined}
+            href="#pedidos"
           />
         )}
         <Kpi
@@ -232,11 +233,13 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
           valor={num((packings ?? []).length)}
           nota={(packings ?? []).length === 0 ? 'Sin preparar' : 'Preparados'}
           tono={(packings ?? []).length === 0 ? 'atencion' : 'ok'}
+          href={(packings ?? []).length === 1 ? `/logistica/packing/${(packings ?? [])[0].id}` : `/logistica/packing?buscar=${encodeURIComponent(String(e.numero))}`}
         />
         <Kpi
           etiqueta="Salida"
           valor={e.fecha_programada ? fecha(e.fecha_programada as string) : '—'}
           nota={dias === null ? '' : dias < 0 ? `Hace ${Math.abs(dias)} d` : `En ${dias} d`}
+          href={e.fecha_programada ? `/logistica/planificador?mes=${String(e.fecha_programada).slice(0, 7)}` : '/logistica/planificador'}
         />
       </RejillaKpi>
 
@@ -285,7 +288,7 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
         </Panel>
       </div>
 
-      <Panel titulo={`Pedidos en este embarque · ${pedidos.length}`} className="mb-espacio">
+      <Panel id="pedidos" titulo={`Pedidos en este embarque · ${pedidos.length}`} className="mb-espacio">
         {pedidos.length === 0 ? (
           <Vacio
             titulo="Embarque vacío"

@@ -244,14 +244,15 @@ export default async function PaginaCostos(props: PageProps<'/finanzas/costos'>)
              href={`/finanzas/costos?periodo=${periodo}#historial`} />
         <Kpi etiqueta={esActual ? 'Costo medio hoy' : 'Costo medio'} valor={dinero(medio, 'USD', 3)}
              sufijo="/kg" tono="marca"
-             nota={medio > 0 ? `${dinero(medio * 1000, 'USD', 0)} por TM · materia prima ${((medioMp / medio) * 100).toFixed(0)} %` : '—'} />
+             nota={medio > 0 ? `${dinero(medio * 1000, 'USD', 0)} por TM · materia prima ${((medioMp / medio) * 100).toFixed(0)} %` : '—'}
+  href="#productos" />
       </RejillaKpi>
 
       {editable && (
         <CopiarMes periodo={periodo} nombreMes={MESES[mes - 1].toLowerCase()} faltan={faltan} esMesActual={esActual} />
       )}
 
-      <Panel titulo={`${num(filtrada.length)} productos`}>
+      <Panel id="productos" titulo={`${num(filtrada.length)} productos`}>
         <Filtros
           campos={[
             { tipo: 'texto', clave: 'buscar', etiqueta: 'Código, corte o especie', ancho: '15rem' },
