@@ -36,6 +36,22 @@ export type Grupo = {
 
 const TODOS = 'todos' as const;
 
+/*
+ * LA ORGANIZACIÓN DEL MENÚ · documento de mejoras, punto 12
+ *
+ *   «Organizar el sistema en: Ventas (incluye Clientes), Stock/Inventarios,
+ *    Producción, Logística y Contable/Finanzas. Trazabilidad, Reportes y
+ *    Configuración permanecen como herramientas transversales.»
+ *
+ * Y donde el cuadro resumen del documento ubica cada pantalla:
+ *   · Rentabilidad → Ventas («Ventas → Rentabilidad para visualización del
+ *     margen»). El ingreso de costos queda en Contable/Finanzas.
+ *   · Tiempos del flujo → Logística («Logística → Tiempos de Flujo»: Fill
+ *     Rate, OTIF y alertas por demora).
+ *
+ * Solo cambia el menú: las direcciones de cada pantalla son las mismas, para
+ * no romper enlaces guardados, favoritos ni avisos ya enviados.
+ */
 export const NAVEGACION: Grupo[] = [
   {
     grupo: 'Panel',
@@ -49,26 +65,26 @@ export const NAVEGACION: Grupo[] = [
     entradas: [
       { titulo: 'Resumen de ventas',  ruta: '/ventas/resumen',        icono: 'objetivo',       ayuda: 'Contenedores planificados contra despachados', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
       { titulo: 'Clientes',           ruta: '/ventas/clientes',       icono: 'clientes',       ayuda: 'Cartera, crédito e historial', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
-      { titulo: 'Productos',          ruta: '/ventas/productos',      icono: 'productos',      ayuda: 'El maestro de lo que se vende', roles: TODOS },
       { titulo: 'Cotizaciones',       ruta: '/ventas/cotizaciones',   icono: 'cotizacion',     ayuda: 'Precios ofrecidos al cliente', roles: ['gerencia', 'operaciones', 'comercial', 'consulta'] },
       { titulo: 'Pedidos',            ruta: '/ventas/pedidos',        icono: 'pedido',         ayuda: 'Las proformas y su avance', roles: TODOS },
-      { titulo: 'Disponibilidad',     ruta: '/ventas/disponibilidad', icono: 'disponibilidad', ayuda: 'Cuánto se puede vender de verdad', roles: TODOS },
       { titulo: 'Control de pedidos', ruta: '/ventas/control',        icono: 'control',        ayuda: 'Los que están en riesgo', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
-      { titulo: 'Tiempos del flujo',  ruta: '/ventas/tiempos',        icono: 'planificador',   ayuda: 'Cuánto tarda cada paso, de la oferta al cobro', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
+      { titulo: 'Disponibilidad',     ruta: '/ventas/disponibilidad', icono: 'disponibilidad', ayuda: 'Cuánto se puede vender de verdad', roles: TODOS },
+      { titulo: 'Productos',          ruta: '/ventas/productos',      icono: 'productos',      ayuda: 'El maestro de lo que se vende', roles: TODOS },
+      { titulo: 'Rentabilidad',       ruta: '/finanzas/rentabilidad', icono: 'rentabilidad', ayuda: 'Margen por pedido y cliente', roles: ['gerencia', 'operaciones', 'comercial'] },
     ],
   },
   {
-    grupo: 'Almacenes',
+    grupo: 'Stock / Inventarios',
     entradas: [
       { titulo: 'Existencias',           ruta: '/almacenes/existencias',   icono: 'existencias',   ayuda: 'Físico, reservado y disponible', roles: TODOS },
+      { titulo: 'Alertas de stock',      ruta: '/almacenes/alertas',       icono: 'reloj',         ayuda: 'Por vencer, observado y solo mercado nacional', roles: TODOS },
+      { titulo: 'Anticuamiento',         ruta: '/almacenes/anticuamiento', icono: 'anticuamiento', ayuda: 'Producto que lleva mucho tiempo', roles: TODOS },
+      { titulo: 'Calidad',               ruta: '/almacenes/calidad',       icono: 'calidad',       ayuda: 'Producto observado y liberado', roles: TODOS },
       { titulo: 'Reservas',              ruta: '/almacenes/reservas',      icono: 'reservas',       ayuda: 'Qué stock está apartado y por qué', roles: TODOS },
       { titulo: 'Movimientos del día',   ruta: '/almacenes/movimientos',   icono: 'movimientos',   ayuda: 'El parte diario: qué entró y qué salió', roles: TODOS },
       { titulo: 'Kardex',                ruta: '/almacenes/kardex',        icono: 'kardex',        ayuda: 'El diario del almacén', roles: TODOS },
       { titulo: 'Ingresos',              ruta: '/almacenes/ingresos',      icono: 'ingresos',      ayuda: 'Lo que entró a cámara', roles: ['gerencia', 'operaciones', 'almacen', 'consulta'] },
       { titulo: 'Traslados',             ruta: '/almacenes/traslados',     icono: 'traslados',     ayuda: 'Movimientos entre bodegas', roles: ['gerencia', 'operaciones', 'almacen', 'comex', 'consulta'] },
-      { titulo: 'Calidad',               ruta: '/almacenes/calidad',       icono: 'calidad',       ayuda: 'Producto observado y liberado', roles: TODOS },
-      { titulo: 'Alertas de stock',      ruta: '/almacenes/alertas',       icono: 'reloj',         ayuda: 'Por vencer, observado y solo mercado nacional', roles: TODOS },
-      { titulo: 'Anticuamiento',         ruta: '/almacenes/anticuamiento', icono: 'anticuamiento', ayuda: 'Producto que lleva mucho tiempo', roles: TODOS },
       { titulo: 'Inventario valorizado', ruta: '/almacenes/valorizado',    icono: 'valorizado',    ayuda: 'Cuánto vale lo que hay', roles: ['gerencia', 'operaciones', 'comercial'] },
     ],
   },
@@ -93,6 +109,7 @@ export const NAVEGACION: Grupo[] = [
        * que tiene el dato no podría escribirlo.
        */
       { titulo: 'Planificador',     ruta: '/logistica/planificador', icono: 'planificador', ayuda: 'Calendario de embarques', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'almacen', 'consulta'] },
+      { titulo: 'Tiempos del flujo',  ruta: '/ventas/tiempos',        icono: 'cronometro',   ayuda: 'Cuánto tarda cada paso, de la oferta al cobro', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
       { titulo: 'Embarques',        ruta: '/logistica/embarques',    icono: 'embarques',    ayuda: 'Programación de salidas', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Packing y estiba', ruta: '/logistica/packing',      icono: 'packing',      ayuda: 'La carga del contenedor', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Despachos',        ruta: '/logistica/despachos',    icono: 'despachos',    ayuda: 'Lo que ya salió', roles: TODOS },
@@ -100,25 +117,20 @@ export const NAVEGACION: Grupo[] = [
     ],
   },
   {
-    grupo: 'Finanzas',
+    grupo: 'Contable / Finanzas',
     entradas: [
       { titulo: 'Facturación',        ruta: '/finanzas/facturas',     icono: 'facturas',     ayuda: 'Comprobantes emitidos', roles: ['gerencia', 'comercial', 'comex', 'consulta'] },
       { titulo: 'Cuentas por cobrar', ruta: '/finanzas/cobrar',       icono: 'cobrar',       ayuda: 'Quién debe y desde cuándo', roles: ['gerencia', 'comercial', 'consulta'] },
-      { titulo: 'Costos de producción', ruta: '/finanzas/costos',    icono: 'valorizado',   ayuda: 'Materia prima, conversión y variable, mes a mes', roles: ['gerencia', 'operaciones', 'comercial'] },
-      { titulo: 'Rentabilidad',       ruta: '/finanzas/rentabilidad', icono: 'rentabilidad', ayuda: 'Margen por pedido y cliente', roles: ['gerencia', 'operaciones', 'comercial'] },
+      { titulo: 'Costos de producción', ruta: '/finanzas/costos',    icono: 'costo',   ayuda: 'Materia prima, conversión y variable, mes a mes', roles: ['gerencia', 'operaciones', 'comercial'] },
     ],
   },
   {
-    grupo: 'Trazabilidad',
+    /* Transversales: sirven a todos los módulos, no pertenecen a ninguno. */
+    grupo: 'Herramientas',
     entradas: [
       { titulo: 'Buscador universal', ruta: '/trazabilidad',           icono: 'trazabilidad', ayuda: 'Busque cualquier código del negocio', roles: TODOS },
       { titulo: 'Retiro sanitario',   ruta: '/trazabilidad/retiro',    icono: 'retiro',       ayuda: 'Alcance de un lote observado', roles: ['gerencia', 'operaciones', 'calidad', 'comex'] },
       { titulo: 'Auditoría',          ruta: '/trazabilidad/auditoria', icono: 'auditoria',    ayuda: 'Quién cambió qué y cuándo', roles: ['gerencia', 'operaciones'] },
-    ],
-  },
-  {
-    grupo: 'Sistema',
-    entradas: [
       { titulo: 'Reportes',      ruta: '/reportes',      icono: 'reportes',      ayuda: 'Exportar a Excel con la marca', roles: TODOS },
       { titulo: 'Configuración', ruta: '/configuracion', icono: 'configuracion', ayuda: 'Parámetros, maestros y reglas', roles: ['gerencia', 'operaciones'] },
     ],
