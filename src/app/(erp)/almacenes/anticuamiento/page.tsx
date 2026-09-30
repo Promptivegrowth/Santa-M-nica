@@ -130,10 +130,11 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
           />
         )}
         <Kpi
-          etiqueta="Lotes con vida útil vencida"
-          valor={num(vencidos)}
+          etiqueta="Vida útil vencida"
+          valor={tm(yaVencido.kg)}
+          sufijo="TM"
           tono={vencidos > 0 ? 'critico' : 'ok'}
-          nota="Requieren disposición"
+          nota={`${num(vencidos)} lotes · requieren disposición`}
           href="/almacenes/anticuamiento?situacion=vencido#lotes"
         />
       </RejillaKpi>
@@ -146,18 +147,18 @@ export default async function PaginaAnticuamiento(props: PageProps<'/almacenes/a
       <RejillaKpi>
         <Kpi
           etiqueta="Ya vencido"
-          valor={num(yaVencido.lotes)}
-          sufijo="pallets"
+          valor={tm(yaVencido.kg)}
+          sufijo="TM"
           tono={yaVencido.lotes > 0 ? 'critico' : 'ok'}
-          nota={`${tm(yaVencido.kg)} TM${puedeVerCostos ? ` · ${dinero(yaVencido.valor, 'USD', 0)}` : ''}`}
+          nota={`${num(yaVencido.lotes)} pallets${puedeVerCostos ? ` · ${dinero(yaVencido.valor, 'USD', 0)}` : ''}`}
           href="/almacenes/anticuamiento?situacion=vencido"
         />
         <Kpi
           etiqueta="Por vencer"
-          valor={num(porVencer.lotes)}
-          sufijo="pallets"
+          valor={tm(porVencer.kg)}
+          sufijo="TM"
           tono={porVencer.lotes > 0 ? 'atencion' : 'ok'}
-          nota={`${tm(porVencer.kg)} TM · todavía se pueden colocar`}
+          nota={`${num(porVencer.lotes)} pallets · todavía se pueden colocar`}
           href="/almacenes/anticuamiento?situacion=por_vencer"
         />
         <Kpi

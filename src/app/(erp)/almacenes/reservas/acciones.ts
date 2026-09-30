@@ -342,7 +342,7 @@ export async function lotesParaLinea(pedidoLineaId: number): Promise<OpcionesDeL
 
   const { data: linea } = await supabase
     .from('pedido_lineas')
-    .select('cantidad_tm, sku_presentacion_id, sku_presentaciones(presentaciones(peso_bulto_kg, descripcion), skus(codigo, corte, especies(nombre)))')
+    .select('cantidad_tm, sku_presentacion_id, pedidos(tipo_despacho), sku_presentaciones(presentaciones(peso_bulto_kg, descripcion), skus(codigo, corte, especies(nombre)))')
     .eq('id', pedidoLineaId)
     .maybeSingle();
 
@@ -365,11 +365,20 @@ export async function lotesParaLinea(pedidoLineaId: number): Promise<OpcionesDeL
   const apartado = (reservado ?? []).reduce((s, r) => s + Number(r.peso_neto_kg), 0);
   const faltaKg = Math.max(0, pedidoKg - apartado);
 
-  const { data: lotes } = await supabase
+  /*
+   * Un pallet «Solo mercado nacional» (061) solo se ofrece a pedidos de
+   * mercado nacional. La base rechazaría la reserva de todos modos; no
+   * ofrecerlo evita que «apartar en lote» se quede a medias.
+   */
+  const pedido = Array.isArray(linea.pedidos) ? linea.pedidos[0] : linea.pedidos;
+  const esNacional = (pedido as { tipo_despacho?: string } | null)?.tipo_despacho === 'mercado_nacional';
+  let consultaLotes = supabase
     .from('v_stock_lote')
     .select('lote_id, almacen_id, codigo_pallet, fecha_produccion, disponible_kg, fisico_bultos, meses_almacenado')
     .eq('sku_presentacion_id', linea.sku_presentacion_id)
-    .gt('disponible_kg', 0)
+    .gt('disponible_kg', 0);
+  if (!esNacional) consultaLotes = consultaLotes.eq('solo_nacional_kg', 0);
+  const { data: lotes } = await consultaLotes
     .order('fecha_produccion', { ascending: true })
     .limit(60);
 

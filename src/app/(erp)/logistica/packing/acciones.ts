@@ -301,11 +301,22 @@ export async function lotesCargables(packingId: number): Promise<LoteCargable[]>
    * pallet que está en otra cámara exigiría un traslado antes, y ofrecerlo
    * aquí sería prometer algo que el camión no puede cumplir.
    */
-  const { data: stock } = await supabase
+  /*
+   * Los pallets «Solo mercado nacional» (061) solo se ofrecen si el embarque
+   * lleva algún pedido de mercado nacional; la base impide además cargarlos
+   * en una línea de exportación.
+   */
+  const { data: tipos } = idsPedidos.length
+    ? await supabase.from('pedidos').select('tipo_despacho').in('id', idsPedidos)
+    : { data: [] as { tipo_despacho: string }[] };
+  const llevaNacional = (tipos ?? []).some((t) => t.tipo_despacho === 'mercado_nacional');
+  let consultaStock = supabase
     .from('v_stock_lote')
     .select('lote_id, codigo_pallet, fecha_produccion, meses_almacenado, fisico_bultos, disponible_kg, bloqueado_kg, sku_presentacion_id')
     .eq('almacen_id', almacenId)
-    .gt('disponible_kg', 0)
+    .gt('disponible_kg', 0);
+  if (!llevaNacional) consultaStock = consultaStock.eq('solo_nacional_kg', 0);
+  const { data: stock } = await consultaStock
     .order('fecha_produccion', { ascending: true })
     .limit(120);
 

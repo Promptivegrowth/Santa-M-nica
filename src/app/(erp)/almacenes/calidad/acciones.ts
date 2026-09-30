@@ -153,8 +153,18 @@ export async function registrarDictamen(d: DatosDictamen): Promise<Resultado> {
 
   refrescar(d.lote_id);
 
+  //  ¿El motivo solo condiciona la venta (mercado nacional)? Entonces no bloquea.
+  const { data: motivo } = d.motivo_id
+    ? await supabase.from('motivos').select('condiciona_venta').eq('id', d.motivo_id).maybeSingle()
+    : { data: null };
+  const soloNacional = bloquea && motivo?.condiciona_venta === true && !sigueBloqueado;
+
   let mensaje: string;
-  if (bloquea) {
+  if (soloNacional) {
+    mensaje =
+      `Pallet ${lote.codigo_pallet} marcado «Solo mercado nacional». Sigue disponible, pero solo se puede ` +
+      'reservar y cargar para pedidos de mercado nacional.';
+  } else if (bloquea) {
     mensaje =
       `Pallet ${lote.codigo_pallet} ${d.estado === 'inmovilizado' ? 'inmovilizado' : d.estado === 'observado' ? 'observado' : 'en espera de resultados'}. ` +
       'Deja de estar disponible: no se puede reservar, trasladar ni despachar.';

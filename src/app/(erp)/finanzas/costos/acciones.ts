@@ -23,8 +23,10 @@
  *  La base impone lo mismo por su cuenta (costos_solo_hacia_adelante), y el
  *  historial lo escribe un disparador: esta capa no puede saltárselo.
  *
- *  Escribe solo GERENCIA: quien teclea el costo decide, de hecho, si un
- *  pedido parece rentable.
+ *  QUIÉN ESCRIBE (migración 062)
+ *  Un permiso de PERSONA, «carga_costos»: hoy Marco y Oliver, que son quienes
+ *  conocen el costo de cada producto. Antes era el rol Gerencia, y Oliver
+ *  veía la pantalla en solo lectura sin saber por qué.
  * ============================================================================
  */
 import { revalidatePath } from 'next/cache';
@@ -35,17 +37,15 @@ export type Resultado =
   | { ok: true; mensaje: string; cuantos?: number }
   | { ok: false; mensaje: string };
 
-/** Solo Gerencia escribe costos. */
-const PUEDEN_ESCRIBIR = ['gerencia'];
-
+/** Escriben costos las personas con el permiso «carga_costos». */
 async function autorizar() {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { error: 'Su sesión caducó. Vuelva a entrar.' };
-  if (!PUEDEN_ESCRIBIR.includes(usuario.rol)) {
+  if (usuario.carga_costos !== true) {
     return {
       error:
-        `Su rol (${usuario.rol}) no puede cargar costos de producción. ` +
-        'Corresponde a Gerencia, que es quien tiene los datos de compra y de planilla.',
+        'Usted no tiene permiso para cargar costos de producción. Lo da Gerencia en ' +
+        'Configuración → Usuarios, columna «Carga costos».',
     };
   }
   return { usuario };
@@ -309,4 +309,123 @@ export async function borrarCosto(sku_id: number, periodo: string): Promise<Resu
   revalidatePath('/finanzas/costos');
   revalidatePath('/finanzas/rentabilidad');
   return { ok: true, mensaje: 'Quitado. Vuelve a regir el costo anterior de este producto.' };
+}
+
+/* ==========================================================================
+   ACTUALIZACIÓN SEMANAL EN BLOQUE
+   --------------------------------------------------------------------------
+   El costo se conoce por producto, pero cuando se mueve —el precio de playa de
+   la pota, la planilla— se mueve para muchos a la vez. Tocar 191 filas una por
+   una cada semana no es viable. Esto cambia un componente para todos los
+   productos de una especie o familia, con un valor nuevo o un porcentaje, y
+   lo registra como actualización que rige DESDE HOY: lo que ya ingresó
+   conserva su costo. Cada producto queda en el historial.
+   ========================================================================== */
+export type DatosBloque = {
+  especie: string;      // '' = todas
+  familia: string;      // '' = todas (clasificación comercial)
+  componente: 'materia_prima_kg' | 'conversion_kg' | 'variable_kg';
+  modo: 'valor' | 'porcentaje';
+  cantidad: number;
+  soloContar?: boolean; // para enseñar a cuántos productos afecta antes de aplicar
+};
+
+const NOMBRE_COMPONENTE = {
+  materia_prima_kg: 'materia prima', conversion_kg: 'conversión', variable_kg: 'variable',
+} as const;
+
+export async function actualizarEnBloque(d: DatosBloque): Promise<Resultado> {
+  const permiso = await autorizar();
+  if (permiso.error) return { ok: false, mensaje: permiso.error };
+  if (!(d.componente in NOMBRE_COMPONENTE)) return { ok: false, mensaje: 'Componente no válido.' };
+  if (!Number.isFinite(d.cantidad)) return { ok: false, mensaje: 'Escriba un número.' };
+  if (d.modo === 'valor' && d.cantidad < 0) return { ok: false, mensaje: 'Un costo no puede ser negativo.' };
+  if (d.modo === 'porcentaje' && (d.cantidad <= -100 || d.cantidad > 500)) {
+    return { ok: false, mensaje: 'El porcentaje tiene que estar entre −99 % y +500 %.' };
+  }
+
+  const supabase = await crearClienteServidor();
+  const hoy = hoyEnLima();
+  const periodo = hoy.slice(0, 7);
+
+  //  Los productos del alcance.
+  let consulta = supabase.from('skus').select('id, clasificacion_comercial, especies!inner(nombre)').eq('activo', true);
+  if (d.especie) consulta = consulta.eq('especies.nombre', d.especie);
+  if (d.familia) consulta = consulta.eq('clasificacion_comercial', d.familia);
+  const { data: productos } = await consulta;
+  const ids = (productos ?? []).map((p) => Number(p.id));
+  if (!ids.length) return { ok: false, mensaje: 'Ningún producto activo coincide con ese alcance.' };
+
+  //  El costo que rige hoy de cada uno, y lo registrado este mes.
+  const [{ data: vigentes }, { data: delMes }] = await Promise.all([
+    supabase.rpc('costos_vigentes_al', { p_fecha: hoy }),
+    supabase.from('costos_mensuales').select('sku_id, tipo, vigente_desde')
+      .gte('vigente_desde', `${periodo}-01`).lte('vigente_desde', hoy).in('sku_id', ids),
+  ]);
+  type Vig = { sku_id: number; materia_prima_kg: number; conversion_kg: number; variable_kg: number };
+  const vigentePor = new Map(((vigentes ?? []) as Vig[]).map((v) => [Number(v.sku_id), v]));
+  const conCarga = new Set((delMes ?? []).filter((x) => x.tipo === 'mensual').map((x) => Number(x.sku_id)));
+  const hoyPor = new Map((delMes ?? []).filter((x) => x.vigente_desde === hoy).map((x) => [Number(x.sku_id), x.tipo as string]));
+
+  const afectados = ids.filter((id) => vigentePor.has(id));
+  const sinCosto = ids.length - afectados.length;
+  if (!afectados.length) {
+    return { ok: false, mensaje: 'Ninguno de esos productos tiene un costo cargado que actualizar. Cárguelos primero en la tabla.' };
+  }
+  const detalle = d.modo === 'valor'
+    ? `${NOMBRE_COMPONENTE[d.componente]} a US$ ${d.cantidad.toFixed(4)}/kg`
+    : `${NOMBRE_COMPONENTE[d.componente]} ${d.cantidad > 0 ? '+' : ''}${d.cantidad} %`;
+  const alcance = [d.especie, d.familia].filter(Boolean).join(' · ') || 'todos los productos';
+
+  if (d.soloContar) {
+    return {
+      ok: true, cuantos: afectados.length,
+      mensaje: `Afectará a ${afectados.length} producto${afectados.length === 1 ? '' : 's'} (${alcance})` +
+        (sinCosto ? `; ${sinCosto} sin costo cargado quedan fuera.` : '.'),
+    };
+  }
+
+  const filas = afectados.map((id) => {
+    const v = vigentePor.get(id)!;
+    const actual = Number(v[d.componente]);
+    const nuevo = d.modo === 'valor' ? d.cantidad : Math.round(actual * (1 + d.cantidad / 100) * 10000) / 10000;
+    return {
+      sku_id: id,
+      vigente_desde: hoy,
+      anio: Number(hoy.slice(0, 4)),
+      mes: Number(hoy.slice(5, 7)),
+      //  Si hoy ya había una vigencia se corrige con su mismo tipo; si no, es
+      //  la carga del mes (si aún no la tenía) o una actualización.
+      tipo: hoyPor.get(id) ?? (conCarga.has(id) ? 'actualizacion' : 'mensual'),
+      materia_prima_kg: Number(v.materia_prima_kg),
+      conversion_kg: Number(v.conversion_kg),
+      variable_kg: Number(v.variable_kg),
+      [d.componente]: nuevo,
+      registrado_por: permiso.usuario!.id,
+      observaciones: `Actualización en bloque: ${detalle} (${alcance})`,
+    };
+  });
+  if (filas.some((f) => f.materia_prima_kg + f.conversion_kg + f.variable_kg <= 0)) {
+    return { ok: false, mensaje: 'Con ese cambio algún producto quedaría con costo cero. Revise la cantidad.' };
+  }
+
+  const { error } = await supabase.from('costos_mensuales').upsert(filas, { onConflict: 'sku_id,vigente_desde' });
+  if (error) return { ok: false, mensaje: explicar(error.message) };
+
+  //  Se relee: una escritura que la política rechaza no da error.
+  const { count } = await supabase.from('costos_mensuales').select('id', { count: 'exact', head: true })
+    .eq('vigente_desde', hoy).in('sku_id', afectados);
+  if ((count ?? 0) < afectados.length) {
+    return { ok: false, mensaje: 'No se llegaron a guardar todos. Avise a soporte.' };
+  }
+
+  await supabase.rpc('costos_avisar_carga_mensual').then(() => undefined, () => undefined);
+  revalidatePath('/finanzas/costos');
+  revalidatePath('/finanzas/rentabilidad');
+  return {
+    ok: true, cuantos: afectados.length,
+    mensaje: `${afectados.length} producto${afectados.length === 1 ? '' : 's'} actualizado${afectados.length === 1 ? '' : 's'} ` +
+      `(${detalle}), desde hoy. Lo que ya ingresó conserva su costo.` +
+      (sinCosto ? ` ${sinCosto} sin costo cargado quedaron fuera.` : ''),
+  };
 }

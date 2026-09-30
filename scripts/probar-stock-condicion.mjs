@@ -49,14 +49,19 @@ try {
     const [d] = await consultar(`select count(*) as n from motivos where codigo = 'MERCADO_NACIONAL'`);
     ok(Number(d.n) === 1, 'uno solo, aunque la migración se aplique dos veces');
 
-    //  Oliver: OBS no es disponible. Mercado nacional va con OBS.
+    //  Oliver (061): «debería estar libre, con la condición de venta para
+    //  mercado nacional». Disponible, sí; y todo lo disponible, marcado como
+    //  solo nacional.
     const [b] = await consultar(`
-      select count(*) as n, coalesce(sum(v.disponible_kg), 0) as disp
+      select count(*) as n, coalesce(sum(v.disponible_kg), 0) as disp,
+             coalesce(sum(v.solo_nacional_kg), 0) as nac, coalesce(sum(v.bloqueado_kg), 0) as bloq
         from v_stock_condicion c
         join v_stock_lote v on v.lote_id = c.lote_id and v.almacen_id = c.almacen_id
        where c.condicion = 'condicionado'`);
-    ok(Number(b.n) > 0 && Number(b.disp) === 0,
-       'lo de mercado nacional no cuenta como disponible para exportar', `${b.n} pallets, ${b.disp} kg disponibles`);
+    ok(Number(b.n) > 0 && Number(b.bloq) === 0 && Number(b.disp) > 0,
+       'lo de mercado nacional está libre: no bloqueado y disponible', `${b.n} pallets, ${Number(b.disp).toFixed(0)} kg`);
+    ok(Math.abs(Number(b.nac) - Number(b.disp)) < 0.01,
+       'pero todo ese disponible va marcado «solo mercado nacional»');
   }
 
   console.log(SEC(2, 'El cuadro de stock con condición'));
@@ -183,8 +188,9 @@ try {
     ok(Number(al.n) === 1, 'uno solo aunque se ejecute tres veces', `${al.n}`);
     const [v] = await consultar(`
       select count(*) as n, count(*) filter (where condicion = 'condicionado') as nac from v_stock_condicion`);
-    ok(String(al.m).startsWith(`${v.n} pallets`) && String(al.m).includes(`${v.nac} solo para mercado nacional`),
-       'con las cifras del cuadro', String(al.m).slice(0, 100));
+    ok(new RegExp(`^[\\d.,]+ TM no se pueden exportar \\(${v.n} pallets\\)`).test(String(al.m))
+       && /solo para mercado nacional/.test(String(al.m)),
+       'con las cifras del cuadro, en toneladas', String(al.m).slice(0, 100));
     const [j] = await consultar(`select count(*) as n from cron.job where jobname = 'avisar_stock_condicion' and active`);
     ok(Number(j.n) === 1, 'y se genera solo cada mañana');
   }
@@ -203,18 +209,20 @@ try {
        'está en el menú de Almacenes');
 
     const [t] = await consultar(`
-      select (select count(*) from v_stock_por_vencer where situacion = 'vencido')    as vencidos,
-             (select count(*) from v_stock_por_vencer where situacion = 'por_vencer') as por_vencer,
+      select (select round(coalesce(sum(fisico_kg), 0) / 1000, 1) from v_stock_por_vencer where situacion = 'vencido')    as vencidos,
+             (select round(coalesce(sum(fisico_kg), 0) / 1000, 1) from v_stock_por_vencer where situacion = 'por_vencer') as por_vencer,
              (select count(*) from v_stock_por_vencer)                                as vencer,
+             (select round(coalesce(sum(fisico_kg), 0) / 1000, 1) from v_stock_condicion) as condicion_tm,
              (select count(*) from v_stock_condicion)                                 as condicion,
              (select round(sum(fisico_kg) / 1000, 1) from v_stock_condicion where condicion = 'condicionado') as nac_tm`);
     const kpi = async (etiqueta) => {
       const k = p.locator('.kpi').filter({ has: p.locator('.kpi-etiqueta', { hasText: new RegExp(`^${etiqueta}$`, 'i') }) }).first();
       return numero(await k.locator('.kpi-valor').innerText());
     };
-    ok(await kpi('Ya vencido') === Number(t.vencidos), 'tarjeta «Ya vencido»', `${t.vencidos}`);
-    ok(await kpi('Próximos a vencer') === Number(t.por_vencer), 'tarjeta «Próximos a vencer»', `${t.por_vencer}`);
-    ok(await kpi('Con condición') === Number(t.condicion), 'tarjeta «Con condición»', `${t.condicion}`);
+    //  En toneladas: «la base principal es toneladas» (Oliver).
+    ok(Math.abs(await kpi('Ya vencido') - Number(t.vencidos)) < 0.05, 'tarjeta «Ya vencido», en TM', `${t.vencidos}`);
+    ok(Math.abs(await kpi('Próximos a vencer') - Number(t.por_vencer)) < 0.05, 'tarjeta «Próximos a vencer», en TM', `${t.por_vencer}`);
+    ok(Math.abs(await kpi('Con condición') - Number(t.condicion_tm)) < 0.05, 'tarjeta «Con condición», en TM', `${t.condicion_tm}`);
     ok(Math.abs(await kpi('Solo mercado nacional') - Number(t.nac_tm)) < 0.05,
        'tarjeta «Solo mercado nacional» en TM', `${t.nac_tm}`);
 

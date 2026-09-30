@@ -212,3 +212,32 @@ export async function alternarAprobador(
       : `${destino.nombre} ya no puede aprobar cotizaciones.`,
   };
 }
+
+/* ==========================================================================
+   QUIÉN CARGA COSTOS DE PRODUCCIÓN (062)
+   Permiso de persona, como aprobar cotizaciones: hoy Marco y Oliver, que son
+   quienes conocen el costo de cada producto. Lo da o lo quita Gerencia; la
+   base lo impone también (usuarios_proteger_permisos).
+   ========================================================================== */
+export async function alternarCargaCostos(usuarioId: string, carga: boolean): Promise<ResultadoAccion> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (usuario.rol !== 'gerencia') return { ok: false, mensaje: 'Solo Gerencia puede decidir quién carga costos.' };
+
+  const supabase = await crearClienteServidor();
+  const { data: destino } = await supabase
+    .from('usuarios').select('nombre, activo').eq('id', usuarioId).maybeSingle();
+  if (!destino) return { ok: false, mensaje: 'Ese usuario ya no existe.' };
+  if (carga && !destino.activo) return { ok: false, mensaje: `${destino.nombre} está inactivo: reactívelo antes.` };
+
+  const { error } = await supabase.from('usuarios').update({ carga_costos: carga }).eq('id', usuarioId);
+  if (error) return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+
+  const { data: verif } = await supabase.from('usuarios').select('carga_costos').eq('id', usuarioId).maybeSingle();
+  if (verif?.carga_costos !== carga) {
+    return { ok: false, mensaje: 'El cambio no llegó a guardarse. Es un problema de permisos: avise a soporte.' };
+  }
+  revalidatePath('/configuracion');
+  revalidatePath('/finanzas/costos');
+  return { ok: true, mensaje: carga ? `${destino.nombre} ya puede cargar costos.` : `${destino.nombre} ya no carga costos.` };
+}

@@ -45,13 +45,19 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
     .limit(150);
   if (estado) consulta = consulta.eq('estado', estado);
 
-  const [{ data: filas }, { data: todos }, { data: bloqueadoTm }] = await Promise.all([
+  const [{ data: filas }, { data: todos }, { data: bloqueadoTm }, { data: retenido }] = await Promise.all([
     consulta,
     supabase.from('dictamenes_calidad').select('estado, motivo_texto').eq('vigente', true),
     supabase.from('v_resumen_inventario').select('bloqueado_kg').single(),
+    //  Las tarjetas en TONELADAS (Oliver: «la base es toneladas»), por la
+    //  condición más fuerte de cada pallet. Contar dictámenes no decía cuánto
+    //  producto hay: un pallet puede tener tres.
+    supabase.from('v_stock_condicion').select('condicion, fisico_kg'),
   ]);
 
-  const cuenta = (e: string) => (todos ?? []).filter((d) => d.estado === e).length;
+  const toneladas = (c: string) => (retenido ?? []).filter((r) => r.condicion === c)
+    .reduce((s, r) => s + Number(r.fisico_kg), 0);
+  const pallets = (c: string) => (retenido ?? []).filter((r) => r.condicion === c).length;
 
   // Motivos más frecuentes de observación
   const porMotivo = new Map<string, number>();
@@ -66,15 +72,19 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
     <>
       <CabeceraPagina
         titulo="Calidad"
-        descripcion="Dictámenes sanitarios por lote. Un lote observado no se puede reservar ni despachar: la restricción está en la base de datos."
+        descripcion="Dictámenes sanitarios por lote. Un lote observado no se puede reservar ni despachar; uno «Solo mercado nacional» sí, pero solo para pedidos nacionales. Las restricciones están en la base de datos."
       />
 
       <RejillaKpi>
         <Kpi etiqueta="Toneladas bloqueadas" valor={tm(bloqueadoTm?.bloqueado_kg ?? 0)} sufijo="TM" tono="critico" href="/almacenes/alertas#condicion" />
-        <Kpi etiqueta="Observados" valor={num(cuenta('observado'))} tono="atencion" href="/almacenes/calidad?estado=observado" />
-        <Kpi etiqueta="Inmovilizados" valor={num(cuenta('inmovilizado'))} tono="critico" href="/almacenes/calidad?estado=inmovilizado" />
-        <Kpi etiqueta="Esperando resultados" valor={num(cuenta('espera_resultados'))} tono="neutro" href="/almacenes/calidad?estado=espera_resultados" />
-        <Kpi etiqueta="Liberados" valor={num(cuenta('liberado'))} tono="ok" href="/almacenes/calidad?estado=liberado" />
+        <Kpi etiqueta="Observado" valor={tm(toneladas('observado'))} sufijo="TM" tono="atencion"
+             nota={`${num(pallets('observado'))} pallets`} href="/almacenes/calidad?estado=observado" />
+        <Kpi etiqueta="Inmovilizado" valor={tm(toneladas('inmovilizado'))} sufijo="TM" tono="critico"
+             nota={`${num(pallets('inmovilizado'))} pallets`} href="/almacenes/calidad?estado=inmovilizado" />
+        <Kpi etiqueta="Esperando resultados" valor={tm(toneladas('en_espera'))} sufijo="TM" tono="neutro"
+             nota={`${num(pallets('en_espera'))} pallets`} href="/almacenes/calidad?estado=espera_resultados" />
+        <Kpi etiqueta="Solo mercado nacional" valor={tm(toneladas('condicionado'))} sufijo="TM" tono="ok"
+             nota={`${num(pallets('condicionado'))} pallets · libres para pedidos nacionales`} href="/almacenes/alertas?cond=condicionado#condicion" />
       </RejillaKpi>
 
       {motivos.length > 0 && (

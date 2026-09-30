@@ -1209,3 +1209,10 @@ table.datos thead th small {
   font-size: .74rem;
   border-radius: var(--radio);
 }
+
+/* Costos · las dos tareas (carga del mes y actualización semanal), lado a lado */
+.costos-tareas { display: grid; grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); gap: 1.2rem; padding: 1rem; }
+.costos-tareas section { display: flex; flex-direction: column; gap: .5rem; }
+.costos-tareas h3 { margin: 0; font-size: .95rem; color: var(--tinta); }
+.costos-tareas h3 small { display: block; font-size: .72rem; font-weight: 400; color: var(--tinta-3); }
+.costos-tareas p { margin: 0; font-size: .82rem; color: var(--tinta-2); line-height: 1.5; }

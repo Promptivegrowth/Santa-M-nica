@@ -49,15 +49,17 @@ try {
   {
     const [r] = await consultar(`
       select
-        (select count(*) from v_anticuamiento where fisico_kg > 0 and situacion_vida_util = 'por_vencer') as por_vencer,
-        (select count(*) from v_stock_lote s where s.fisico_kg > 0 and exists (
+        (select round(coalesce(sum(fisico_kg), 0) / 1000, 1) from v_anticuamiento where fisico_kg > 0 and situacion_vida_util = 'por_vencer') as por_vencer,
+        (select round(coalesce(sum(s.fisico_kg), 0) / 1000, 1) from v_stock_lote s where s.fisico_kg > 0 and exists (
            select 1 from dictamenes_calidad d where d.lote_id = s.lote_id and d.vigente and d.estado <> 'liberado')) as condicion,
         (select count(*) from v_cobertura_familia where situacion in ('baja', 'agotada')) as cobertura,
         (select count(*) from v_control_pedidos where situacion_control = 'por_atender' and tiene_stock) as con_stock,
         (select round(sum(backorder_kg) / 1000, 1) from v_pedido_linea_cobertura) as backorder,
         (select count(*) from v_demora_pedidos where incumple_programacion or incumple_despacho) as demora`);
-    ok(Number(de('por_vencer').cifra) === Number(r.por_vencer), 'próximos a vencer', `${r.por_vencer} pallets`);
-    ok(Number(de('condicion').cifra) === Number(r.condicion), 'stock con condición', `${r.condicion} pallets`);
+    ok(Math.abs(Number(de('por_vencer').cifra) - Number(r.por_vencer)) < 0.05 && de('por_vencer').unidad === 'TM',
+       'próximos a vencer, en toneladas', `${r.por_vencer} TM`);
+    ok(Math.abs(Number(de('condicion').cifra) - Number(r.condicion)) < 0.05 && de('condicion').unidad === 'TM',
+       'stock con condición, en toneladas', `${r.condicion} TM`);
     ok(Number(de('cobertura').cifra) === Number(r.cobertura), 'familias con baja cobertura', `${r.cobertura}`);
     ok(Number(de('pendientes_con_stock').cifra) === Number(r.con_stock), 'pendientes con stock', `${r.con_stock} pedidos`);
     ok(Math.abs(Number(de('backorder').cifra) - Number(r.backorder)) < 0.05, 'backorder', `${r.backorder} TM`);

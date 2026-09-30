@@ -55,7 +55,7 @@ export async function obtenerUsuarioActual() {
 
   const { data: ficha } = await supabase
     .from('usuarios')
-    .select('id, nombre, email, rol, almacen_id, activo, aprueba_cotizaciones, ve_objetivos')
+    .select('id, nombre, email, rol, almacen_id, activo, aprueba_cotizaciones, ve_objetivos, carga_costos')
     .eq('id', user.id)
     .single();
 

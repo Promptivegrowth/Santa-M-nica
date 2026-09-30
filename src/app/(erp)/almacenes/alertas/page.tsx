@@ -38,7 +38,7 @@ type Tono = 'ok' | 'atencion' | 'critico' | 'info' | 'neutro';
  */
 const CONDICION: Record<string, { texto: string; tono: Tono; nota: string }> = {
   inmovilizado: { texto: 'Inmovilizado',          tono: 'critico',  nota: 'No se puede mover ni vender' },
-  condicionado: { texto: 'Solo mercado nacional', tono: 'info',     nota: 'Se vende, pero no se exporta' },
+  condicionado: { texto: 'Solo mercado nacional', tono: 'info',     nota: 'Disponible solo para pedidos nacionales' },
   observado:    { texto: 'Observado',             tono: 'atencion', nota: 'En revisión de Calidad' },
   en_espera:    { texto: 'En espera',             tono: 'neutro',   nota: 'Esperando resultados' },
 };
@@ -110,28 +110,29 @@ export default async function PaginaAlertasStock(props: PageProps<'/almacenes/al
 
       {/* ---------------- Vencimiento ---------------- */}
       <RejillaKpi>
+        {/* La base es la tonelada (Oliver); los pallets, el dato de apoyo. */}
         <Kpi
           etiqueta="Ya vencido"
-          valor={num(vencidos.length)}
-          sufijo="pallets"
+          valor={tm(suma(vencidos))}
+          sufijo="TM"
           tono={vencidos.length > 0 ? 'critico' : 'ok'}
-          nota={`${tm(suma(vencidos))} TM · requieren disposición`}
+          nota={`${num(vencidos.length)} pallets · requieren disposición`}
           href="/almacenes/alertas?venc=vencido#por-vencer"
         />
         <Kpi
           etiqueta="Próximos a vencer"
-          valor={num(porVencer.length)}
-          sufijo="pallets"
+          valor={tm(suma(porVencer))}
+          sufijo="TM"
           tono={porVencer.length > 0 ? 'atencion' : 'ok'}
-          nota={`${tm(suma(porVencer))} TM en ${diasAviso} días · todavía se colocan`}
+          nota={`${num(porVencer.length)} pallets en ${diasAviso} días · todavía se colocan`}
           href="/almacenes/alertas?venc=por_vencer#por-vencer"
         />
         <Kpi
           etiqueta="Con condición"
-          valor={num(condicion.length)}
-          sufijo="pallets"
+          valor={tm(suma(condicion))}
+          sufijo="TM"
           tono={condicion.length > 0 ? 'atencion' : 'ok'}
-          nota={`${tm(suma(condicion))} TM que no se pueden exportar`}
+          nota={`${num(condicion.length)} pallets que no se pueden exportar`}
           href="/almacenes/alertas#condicion"
         />
       </RejillaKpi>

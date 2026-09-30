@@ -45,6 +45,7 @@ import { uno } from '@/lib/relaciones';
 import { traerTodo } from '@/lib/traerTodo';
 import { FilaCosto } from './FilaCosto';
 import { CopiarMes } from './CopiarMes';
+import { ActualizarEnBloque } from './ActualizarEnBloque';
 import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = { title: 'Costos de producción' };
@@ -92,7 +93,8 @@ export default async function PaginaCostos(props: PageProps<'/finanzas/costos'>)
    * mejor una redirección que una pantalla vacía sin explicación.
    */
   if (!veCostos(rol)) redirect('/panel');
-  const puedeEditar = rol === 'gerencia';
+  //  Permiso de persona (062): hoy Marco y Oliver.
+  const puedeEditar = usuario?.carga_costos === true;
 
   const hoy = hoyEnLima();
   const { anio, mes } = periodoPedido(q.periodo as string | undefined, hoy);
@@ -184,6 +186,7 @@ export default async function PaginaCostos(props: PageProps<'/finanzas/costos'>)
 
   const anterior = desplazarMes(anio, mes, -1);
   const siguiente = desplazarMes(anio, mes, 1);
+  const opcionesEspecie = [...new Set(lista.map((p) => p.especie).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
   const opcionesFamilia = [...new Set((familias ?? []).map((f) => String(f.clasificacion_comercial)))]
     .sort((a, b) => a.localeCompare(b, 'es'));
 
@@ -203,8 +206,8 @@ export default async function PaginaCostos(props: PageProps<'/finanzas/costos'>)
         <div className="ficha-aviso ficha-aviso-info" role="status">
           <Icono nombre="alerta" tamano={17} />
           <span>
-            Está viendo los costos en <strong>solo lectura</strong>. Cargarlos corresponde a
-            Gerencia, que es quien tiene los datos de compra y de planilla.
+            Está viendo los costos en <strong>solo lectura</strong>. Los cargan las personas con
+            permiso (hoy Marco y Oliver); Gerencia lo da en Configuración → Usuarios.
           </span>
         </div>
       )}
@@ -248,8 +251,43 @@ export default async function PaginaCostos(props: PageProps<'/finanzas/costos'>)
   href="#productos" />
       </RejillaKpi>
 
+      {/*
+        LAS DOS TAREAS, CON NOMBRE. Oliver no encontraba dónde se actualizan
+        los costos: antes la pantalla decidía sola si un cambio era la carga
+        del mes o una actualización. Ahora cada tarea tiene su sitio.
+      */}
       {editable && (
-        <CopiarMes periodo={periodo} nombreMes={MESES[mes - 1].toLowerCase()} faltan={faltan} esMesActual={esActual} />
+        <Panel titulo="¿Qué quiere hacer?" className="mb-espacio">
+          <div className="costos-tareas" data-bloque="tareas">
+            <section>
+              <h3>1 · Carga del mes <small>obligatoria, al inicio de cada mes</small></h3>
+              <p>
+                {esActual
+                  ? <>Los costos de {MESES[mes - 1].toLowerCase()}. Rigen desde el día en que se cargan.</>
+                  : <>Se puede dejar lista la de {MESES[mes - 1].toLowerCase()} antes de que empiece: regirá desde el día 1.</>}
+                {' '}Lo más rápido: cargar todos con el costo vigente y corregir en la tabla solo los productos que cambiaron.
+              </p>
+              {faltan > 0
+                ? <CopiarMes periodo={periodo} nombreMes={MESES[mes - 1].toLowerCase()} faltan={faltan} esMesActual={esActual} />
+                : <p className="ficha-aviso ficha-aviso-ok" role="status">Los {num(lista.length)} productos ya tienen la carga de {MESES[mes - 1].toLowerCase()}.</p>}
+            </section>
+            <section>
+              <h3>2 · Actualización semanal <small>cuando un costo se mueve</small></h3>
+              {esActual ? (
+                <>
+                  <p>
+                    Rige <strong>desde hoy</strong> y solo para lo que ingrese desde hoy; lo que ya entró conserva
+                    su costo. Para <strong>un producto</strong>, escriba el nuevo valor en su fila de la tabla. Para
+                    <strong> muchos a la vez</strong> —por ejemplo, la materia prima de toda la pota—, use esto:
+                  </p>
+                  <ActualizarEnBloque especies={opcionesEspecie} familias={opcionesFamilia} hoy={hoy} />
+                </>
+              ) : (
+                <p>Las actualizaciones se hacen en el mes en curso y rigen desde el día en que se registran. Vaya a <Link href="/finanzas/costos">{MESES[Number(hoy.slice(5, 7)) - 1].toLowerCase()}</Link>.</p>
+              )}
+            </section>
+          </div>
+        </Panel>
       )}
 
       <Panel id="productos" titulo={`${num(filtrada.length)} productos`}>

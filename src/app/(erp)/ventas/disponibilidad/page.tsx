@@ -44,11 +44,14 @@ export default async function PaginaDisponibilidad(props: PageProps<'/ventas/dis
   const soloDisponible = (q.disponible as string) === 'si';
 
   /* ---- Catálogos para los desplegables de filtro ---- */
-  const [{ data: almacenes }, { data: especies }, { data: resumen }] = await Promise.all([
+  const [{ data: almacenes }, { data: especies }, { data: resumen }, { data: nacionales }] = await Promise.all([
     supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
     supabase.from('especies').select('id, nombre').order('nombre'),
     supabase.from('v_resumen_inventario').select('*').single(),
+    //  Lo «Solo mercado nacional» (061): está disponible, pero no para exportar.
+    supabase.from('v_stock_lote').select('solo_nacional_kg').gt('solo_nacional_kg', 0),
   ]);
+  const nacionalKg = (nacionales ?? []).reduce((s, x) => s + Number(x.solo_nacional_kg), 0);
 
   /* ---- Consulta principal con filtros y paginación en el servidor ---- */
   let consulta = supabase
@@ -81,7 +84,9 @@ export default async function PaginaDisponibilidad(props: PageProps<'/ventas/dis
         <Kpi etiqueta="Bloqueado" valor={tm(inv.bloqueado_kg)} sufijo="TM" tono="critico" nota="Observado por Calidad" href="/almacenes/alertas#condicion" />
         <Kpi etiqueta="Reservado" valor={tm(inv.reservado_kg)} sufijo="TM" tono="atencion" nota="Apartado para pedidos" href="/almacenes/reservas?estado=activa" />
         <Kpi etiqueta="En preparación" valor={tm(inv.preparacion_kg)} sufijo="TM" tono="atencion" nota="Ya en un contenedor" href="/logistica/packing" />
-        <Kpi etiqueta="Disponible" valor={tm(inv.disponible_kg)} sufijo="TM" tono="ok" nota="Lo que se puede vender hoy" href="/ventas/disponibilidad?disponible=si#detalle" />
+        <Kpi etiqueta="Disponible" valor={tm(inv.disponible_kg)} sufijo="TM" tono="ok"
+             nota={nacionalKg > 0 ? `Lo que se puede vender hoy · ${tm(nacionalKg)} TM solo mercado nacional` : 'Lo que se puede vender hoy'}
+             href="/ventas/disponibilidad?disponible=si#detalle" />
       </RejillaKpi>
 
       <Panel titulo="Cómo se descompone el stock" className="mb-espacio">
@@ -156,6 +161,11 @@ export default async function PaginaDisponibilidad(props: PageProps<'/ventas/dis
                           <strong style={{ color: disponible > 0 ? 'var(--ok)' : 'var(--tinta-3)' }}>
                             {tm(disponible)}
                           </strong>
+                          {Number(f.solo_nacional_kg) > 0 && (
+                            <span style={{ display: 'block', fontSize: '.66rem', color: 'var(--atencion)' }}>
+                              {tm(f.solo_nacional_kg)} solo mercado nacional
+                            </span>
+                          )}
                           {disponible === 0 && fisico > 0 && (
                             <>
                               {' '}

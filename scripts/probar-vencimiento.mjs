@@ -72,8 +72,9 @@ try {
   {
     const [base] = await consultar(`
       select
-        (select lotes from v_anticuamiento_situacion where situacion = 'vencido')     as vencidos,
-        (select lotes from v_anticuamiento_situacion where situacion = 'por_vencer')  as por_vencer,
+        --  Las tarjetas van en toneladas (la base del producto, según Oliver).
+        (select round(fisico_kg / 1000, 1) from v_anticuamiento_situacion where situacion = 'vencido')     as vencidos,
+        (select round(fisico_kg / 1000, 1) from v_anticuamiento_situacion where situacion = 'por_vencer')  as por_vencer,
         (select count(*) from v_anticuamiento where fisico_kg > 0)                    as total`);
     ok(Number(base.total) > 1000,
        'hay más de mil lotes, así que el tope de la API es un riesgo real',
@@ -89,10 +90,10 @@ try {
       return i >= 0 ? numero(kpis[i]) : null;
     };
 
-    ok(buscarKpi('YA VENCIDO') === Number(base.vencidos),
+    ok(Math.abs(buscarKpi('YA VENCIDO') - Number(base.vencidos)) < 0.05,
        'la tarjeta de vencidos cuenta TODOS, no los primeros mil',
        `${buscarKpi('YA VENCIDO')} vs ${base.vencidos}`);
-    ok(buscarKpi('POR VENCER') === Number(base.por_vencer),
+    ok(Math.abs(buscarKpi('POR VENCER') - Number(base.por_vencer)) < 0.05,
        'y la de por vencer también',
        `${buscarKpi('POR VENCER')} vs ${base.por_vencer}`);
   }
