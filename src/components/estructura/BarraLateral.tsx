@@ -48,11 +48,18 @@ export function BarraLateral({
     guardarPreferencia('local', 'barra-colapsada', colapsada ? 'no' : 'si');
   }
 
-  /** ¿Esta entrada corresponde a la pantalla actual? */
+  /*
+   * ¿Esta entrada corresponde a la pantalla actual? Gana la más específica:
+   * en /produccion/cierre se marca «Cierre semanal», no también «Necesidades
+   * de producción» (/produccion), aunque la dirección empiece igual.
+   */
+  const todas = grupos.flatMap((g) => g.entradas.map((e) => e.ruta));
+  const coincide = (d: string) => ruta === d || ruta.startsWith(d + '/');
+  const masEspecifica = todas.filter(coincide).sort((a, b) => b.length - a.length)[0];
   function activa(destino: string) {
     if (destino === '/panel') return ruta === '/panel';
     if (destino === '/trazabilidad') return ruta === '/trazabilidad';
-    return ruta === destino || ruta.startsWith(destino + '/');
+    return destino === masEspecifica;
   }
 
   return (

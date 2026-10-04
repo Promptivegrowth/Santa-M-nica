@@ -41,6 +41,8 @@ const TRAZOS: Record<string, React.ReactNode> = {
   cronometro: <><circle cx="12" cy="13.5" r="7.5" /><path d="M12 13.5V9.5M10 3h4M12 3v3M18.5 7l1.5-1.5" /></>,
   // Costos de producción: etiqueta de precio — lo que cuesta, no lo que vale
   costo: <><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1 1 0 0 1 0 1.4l-7.3 7.3a1 1 0 0 1-1.4 0z" /><circle cx="8" cy="8" r="1.4" /></>,
+  // Cierre semanal de producción: portapapeles con visto — el parte que se cierra
+  cierre: <><rect x="5" y="4" width="14" height="17" rx="1.6" /><path d="M9 4V3h6v1" /><path d="m8.5 13 2.5 2.5 4.5-5" /></>,
   // Objetivos mensuales: bandera — la meta que se clava
   bandera: <><path d="M5 21V4" /><path d="M5 4.5h11l-2.2 3.8L16 12H5" /></>,
   // Resumen de ventas: diana — el plan del mes contra lo que salió

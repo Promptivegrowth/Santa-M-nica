@@ -70,3 +70,14 @@
 @media (max-width: 720px) {
   .obj-tabla .obj-nombre { min-width: 11rem; }
 }
+
+/* ============================================================================
+   CIERRE SEMANAL DE PRODUCCIÓN (usa la tabla compacta de Objetivos)
+   ============================================================================ */
+.cierre-cabecera { display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; padding: .8rem 1rem; font-size: .86rem; color: var(--tinta-2); }
+.cierre-cabecera small { color: var(--tinta-3); }
+.obj-tabla table.datos.cierre { min-width: 1350px; }
+.obj-tabla table.cierre .obj-nombre { min-width: 13rem; }
+.obj-tabla table.cierre td[data-rojo='si'] { background: var(--critico-suave); color: var(--critico); font-weight: 600; }
+.obj-tabla table.cierre tr.cierre-total td { background: var(--atencion-suave); font-weight: 700; }
+.obj-tabla table.cierre .campo.obj-campo { width: 5.2rem; }

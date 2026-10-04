@@ -104,6 +104,8 @@ export const NAVEGACION: Grupo[] = [
     grupo: 'Producción',
     entradas: [
       { titulo: 'Necesidades de producción', ruta: '/produccion', icono: 'necesidades', ayuda: 'Lo que falta producir para completar los pedidos', roles: ['gerencia', 'operaciones', 'comercial', 'almacen', 'consulta'] },
+      /* El «Avance de plan» de Marco (063). Mismo permiso personal que Objetivos: Marco y Oliver. */
+      { titulo: 'Cierre semanal', ruta: '/produccion/cierre', icono: 'cierre', ayuda: 'Avance del plan del mes: MP, producción y ventas', roles: TODOS, permiso: 've_objetivos' },
     ],
   },
   {

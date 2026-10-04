@@ -112,6 +112,17 @@ export function fechaHora(valor: string | Date | null | undefined): string {
 /** Fecha larga legible: 25 de agosto de 2026 */
 export function fechaLarga(valor: string | Date | null | undefined): string {
   if (!valor) return '—';
+  /*
+   * Una fecha SIN hora es una casilla del calendario, no un instante (ver
+   * `fecha` más arriba). Sin esto, «2026-09-30» salía «29 de setiembre»: la
+   * medianoche UTC del 30 son las siete de la tarde del 29 en Lima. Se toma el
+   * mediodía UTC de ese día, que es el mismo día en cualquier huso de América.
+   */
+  if (typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+    return new Date(`${valor}T12:00:00Z`).toLocaleDateString(LOCALE, {
+      day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+    });
+  }
   const d = typeof valor === 'string' ? new Date(valor) : valor;
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString(LOCALE, {
