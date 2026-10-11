@@ -83,16 +83,15 @@ for (const [ruta, nombre] of [
   ok(etiquetas.some((e) => e.toUpperCase().includes('S/ POR US$')),
      'El campo dice en qué unidad va el tipo de cambio');
 
-  // El campo del tipo de cambio es el número que arranca en 3.75
-  const campo = p.locator('input[type="number"]').filter({ hasNot: p.locator('x') });
-  const total = await campo.count();
+  /*
+   * El campo del tipo de cambio. Desde octubre arranca con el de SUNAT, no con
+   * 3.75, así que se busca por su marca (data-fuente) y no por su valor.
+   */
+  const campo = p.locator('input[data-fuente]');
   let tocado = false;
-  for (let i = 0; i < total; i++) {
-    if ((await campo.nth(i).inputValue()) === '3.75') {
-      await campo.nth(i).fill('1');
-      tocado = true;
-      break;
-    }
+  if (await campo.count() === 1) {
+    await campo.fill('1');
+    tocado = true;
   }
   ok(tocado, 'se encontró el campo del tipo de cambio');
   await p.waitForTimeout(600);

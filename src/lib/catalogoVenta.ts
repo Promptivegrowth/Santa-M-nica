@@ -17,6 +17,7 @@
  * ============================================================================
  */
 import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { diasDePlazos } from '@/lib/condicionesVenta';
 
 /** Una persona de contacto del cliente, para dirigirle la cotización. */
 export type ContactoCliente = {
@@ -97,6 +98,8 @@ export async function cargarCatalogoVenta() {
         'cotizacion_validez_dias',
         'tipo_cambio_referencial',
         'descuento_max_sin_autorizacion',
+        //  Los plazos de cada prioridad (observaciones de octubre, punto 5).
+        'plazo_dias_urgente', 'plazo_dias_alta', 'plazo_dias_normal', 'plazo_dias_baja',
       ]),
     // La disponibilidad en una sola consulta agregada, no 360 individuales
     supabase.from('v_disponibilidad').select('sku_presentacion_id, disponible_kg'),
@@ -194,5 +197,6 @@ export async function cargarCatalogoVenta() {
     validezDefecto: valor('cotizacion_validez_dias', 15),
     tipoCambioDefecto: valor('tipo_cambio_referencial', 3.75),
     topeDescuento: valor('descuento_max_sin_autorizacion', 3),
+    plazos: diasDePlazos((parametros ?? []) as { clave: string; valor: unknown }[]),
   };
 }

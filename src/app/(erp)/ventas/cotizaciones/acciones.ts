@@ -20,6 +20,10 @@ import { revisarTipoCambio } from '@/lib/moneda';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 import { columnasContacto, type ContactoDocumento } from '@/lib/contactoDocumento';
 import { puedeVender, type Rol } from '@/lib/navegacion';
+import { obtenerTipoCambioSunat, type TipoCambioSunat } from '@/lib/tipoCambioSunat';
+import {
+  plazoReferencia, diasDePlazos, textoCondicionPago, type FormaPago, type Prioridad,
+} from '@/lib/condicionesVenta';
 
 export type LineaCotizacion = {
   sku_presentacion_id: number;
@@ -47,7 +51,62 @@ export type DatosCotizacion = {
   /** Opcional: identificadores de las cuentas de cobro que se imprimirán. */
   cuentas?: number[];
   lineas: LineaCotizacion[];
+
+  /* ---- Observaciones de octubre ---- */
+  /** Punto 3: de qué día es el tipo de cambio y si lo trajo SUNAT o se escribió a mano. */
+  tipo_cambio_fecha?: string | null;
+  tipo_cambio_fuente?: 'sunat' | 'manual' | null;
+  tipo_cambio_clase?: 'compra' | 'venta' | null;
+  /** Punto 4: opcional. Si está, manda sobre el plazo de la prioridad. */
+  fecha_tentativa_despacho?: string | null;
+  /** Punto 6: forma de pago, % de adelanto y lo que el cliente de verdad abonó. */
+  forma_pago?: FormaPago | null;
+  adelanto_pct?: number;
+  adelanto_abonado?: number | null;
+  adelanto_abonado_en?: string | null;
 };
+
+const FORMAS_VALIDAS: FormaPago[] = ['contado', 'adelanto_saldo', 'credito', 'carta_credito', 'cad'];
+
+/**
+ * Las condiciones nuevas (puntos 3, 4 y 6), revisadas y listas para guardar.
+ * Se usa al crear y al modificar: la misma regla en los dos caminos.
+ */
+function revisarCondiciones(d: DatosCotizacion):
+  { ok: true; columnas: Record<string, unknown> } | { ok: false; mensaje: string; campo: string } {
+  const pct = Number(d.adelanto_pct ?? 0);
+  if (!(pct >= 0 && pct <= 100)) {
+    return { ok: false, mensaje: 'El % de adelanto debe estar entre 0 y 100.', campo: 'adelanto_pct' };
+  }
+  if (d.forma_pago && !FORMAS_VALIDAS.includes(d.forma_pago)) {
+    return { ok: false, mensaje: 'Esa forma de pago no existe.', campo: 'forma_pago' };
+  }
+  if (d.forma_pago === 'adelanto_saldo' && !(pct > 0)) {
+    return { ok: false, mensaje: 'Con «Adelanto y saldo» indique el % de adelanto.', campo: 'adelanto_pct' };
+  }
+  const abonado = d.adelanto_abonado === null || d.adelanto_abonado === undefined || String(d.adelanto_abonado) === ''
+    ? null : Number(d.adelanto_abonado);
+  if (abonado !== null && !(abonado >= 0)) {
+    return { ok: false, mensaje: 'El monto abonado no puede ser negativo.', campo: 'adelanto_abonado' };
+  }
+  const tentativa = d.fecha_tentativa_despacho || null;
+  if (tentativa && !/^\d{4}-\d{2}-\d{2}$/.test(tentativa)) {
+    return { ok: false, mensaje: 'La fecha tentativa de despacho no es válida.', campo: 'fecha_tentativa_despacho' };
+  }
+  return {
+    ok: true,
+    columnas: {
+      tipo_cambio_fecha: d.tipo_cambio_fecha || null,
+      tipo_cambio_fuente: d.tipo_cambio_fuente ?? 'manual',
+      tipo_cambio_clase: d.tipo_cambio_fuente === 'sunat' ? (d.tipo_cambio_clase ?? 'venta') : null,
+      fecha_tentativa_despacho: tentativa,
+      forma_pago: d.forma_pago || null,
+      adelanto_pct: pct,
+      adelanto_abonado: abonado,
+      adelanto_abonado_en: abonado === null ? null : (d.adelanto_abonado_en || hoyEnLima()),
+    },
+  };
+}
 
 export type Resultado =
   | { ok: true; id: number; numero: string; mensaje: string }
@@ -135,6 +194,12 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
   if (problemaTc) {
     return { ok: false, mensaje: problemaTc, campo: 'tipo_cambio' };
   }
+  const condiciones = revisarCondiciones(datos);
+  if (!condiciones.ok) return condiciones;
+  //  Una fecha tentativa en el pasado no orienta nada: se avisa al crear.
+  if (datos.fecha_tentativa_despacho && datos.fecha_tentativa_despacho < hoyEnLima()) {
+    return { ok: false, mensaje: 'La fecha tentativa de despacho no puede ser anterior a hoy.', campo: 'fecha_tentativa_despacho' };
+  }
 
   for (const [i, l] of datos.lineas.entries()) {
     const n = i + 1;
@@ -205,6 +270,7 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
       estado: 'borrador',
       creado_por: usuario.id,
       ...columnasContacto(datos.contacto),
+      ...condiciones.columnas,
     })
     .select('id, numero')
     .single();
@@ -441,7 +507,19 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
    * y aparecía como «futuro» en los reportes del propio día en que se creó.
    */
   const hoy = hoyEnLima();
-  const comprometida = desplazarDias(hoy, 21);
+
+  /*
+   * LA FECHA COMPROMETIDA (puntos 4 y 5 de las observaciones de octubre).
+   * Antes eran siempre 21 días. Ahora: la fecha tentativa de despacho si la
+   * cotización la trae; si no, el plazo de su prioridad (urgente 1 semana,
+   * normal 3, baja más de 3), con los días de Configuración.
+   */
+  const { data: paramPlazos } = await supabase
+    .from('parametros').select('clave, valor').like('clave', 'plazo_dias_%');
+  const prioridadCot = (cot.prioridad ?? 'normal') as Prioridad;
+  const plazo = plazoReferencia(prioridadCot, hoy, cot.fecha_tentativa_despacho as string | null,
+    diasDePlazos((paramPlazos ?? []) as { clave: string; valor: unknown }[]));
+  const comprometida = plazo.fecha < hoy ? desplazarDias(hoy, 7) : plazo.fecha;
 
   /* ---- El pedido HEREDA todo de la cotización ---- */
   const { data: pedido, error: errPed } = await supabase
@@ -457,7 +535,20 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
       destino_id: cot.destino_id,
       tipo_despacho: cot.incoterm === 'EXW' ? 'mercado_nacional' : 'exportacion',
       dias_credito: cliente?.dias_credito ?? 0,
-      condicion_pago: (cliente?.dias_credito ?? 0) > 0 ? `Crédito ${cliente?.dias_credito} días` : 'Contado',
+      /*
+       * La forma de pago y el adelanto pactados en la cotización (punto 6)
+       * viajan a la proforma. Si la cotización no la tenía, se deduce del
+       * crédito del cliente, como antes.
+       */
+      condicion_pago: textoCondicionPago(cot.forma_pago as FormaPago | null, Number(cot.adelanto_pct ?? 0), cliente?.dias_credito ?? 0),
+      forma_pago: cot.forma_pago ?? null,
+      pago_adelanto_pct: Number(cot.adelanto_pct ?? 0) || null,
+      adelanto_abonado: cot.adelanto_abonado ?? null,
+      adelanto_abonado_en: cot.adelanto_abonado_en ?? null,
+      tipo_cambio_fecha: cot.tipo_cambio_fecha ?? null,
+      tipo_cambio_fuente: cot.tipo_cambio_fuente ?? null,
+      tipo_cambio_clase: cot.tipo_cambio_clase ?? null,
+      fecha_tentativa_despacho: cot.fecha_tentativa_despacho ?? null,
       // La urgencia se pactó con el cliente al cotizar; sería absurdo perderla
       // justo en el documento que compromete la entrega.
       prioridad: cot.prioridad ?? 'normal',
@@ -477,7 +568,14 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
       contacto_cargo: cot.contacto_cargo,
       contacto_telefono: cot.contacto_telefono,
       contacto_email: cot.contacto_email,
-      observaciones: `Generado desde la cotización ${cot.numero}`,
+      /*
+       * LAS OBSERVACIONES DE LA COTIZACIÓN PASAN TAL CUAL (punto 7).
+       * Antes aquí iba «Generado desde la cotización COT-…» y lo que había
+       * escrito el comercial se perdía. El vínculo con la cotización ya
+       * existe (cotizacion_id) y la ficha del pedido lo muestra: repetirlo en
+       * el texto sería duplicarlo.
+       */
+      observaciones: (cot.observaciones as string | null)?.trim() || null,
       creado_por: usuario.id,
     })
     .select('id, numero_proforma')
@@ -659,6 +757,8 @@ export async function actualizarCotizacion(
   if (!datos.lineas.length) {
     return { ok: false, mensaje: 'La cotización debe tener al menos un producto.', campo: 'lineas' };
   }
+  const condiciones = revisarCondiciones(datos);
+  if (!condiciones.ok) return condiciones;
 
   const { error: errCab } = await supabase
     .from('cotizaciones')
@@ -674,6 +774,7 @@ export async function actualizarCotizacion(
       validez_dias: datos.validez_dias,
       observaciones: datos.observaciones,
       ...columnasContacto(datos.contacto),
+      ...condiciones.columnas,
     })
     .eq('id', id);
 
@@ -698,4 +799,81 @@ export async function actualizarCotizacion(
   revalidatePath('/ventas/cotizaciones');
   revalidatePath(`/ventas/cotizaciones/${id}`);
   return { ok: true, id, numero: cot.numero as string, mensaje: `Cotización ${cot.numero} actualizada.` };
+}
+
+/* ==========================================================================
+   TIPO DE CAMBIO SUNAT (observaciones de octubre, punto 3)
+   --------------------------------------------------------------------------
+   El formulario lo pide al abrirse y al cambiar la fecha. Corre en el
+   servidor: SUNAT no responde a un navegador de otro dominio, y así además
+   queda guardado para todos.
+   ========================================================================== */
+export async function consultarTipoCambio(
+  fecha?: string
+): Promise<{ ok: true; tc: TipoCambioSunat } | { ok: false; mensaje: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
+  const supabase = await crearClienteServidor();
+  return obtenerTipoCambioSunat(supabase, fecha || hoyEnLima());
+}
+
+/* ==========================================================================
+   REGISTRAR LO QUE EL CLIENTE ABONÓ (punto 6)
+   --------------------------------------------------------------------------
+   El abono llega DESPUÉS de cotizar —a veces después de la proforma—, así que
+   no puede depender de poder editar la cotización entera: una aprobada ya no
+   se edita. Esto solo toca el monto abonado y su fecha. Mientras la cotización
+   no tiene pedido se guarda en ella; cuando ya lo tiene, en el pedido, que es
+   donde sigue la venta.
+   ========================================================================== */
+export async function registrarAbono(
+  tipo: 'cotizacion' | 'pedido',
+  id: number,
+  monto: number | null,
+  fecha: string | null
+): Promise<{ ok: true; mensaje: string } | { ok: false; mensaje: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
+  if (!puedeVender(usuario.rol as Rol)) {
+    return { ok: false, mensaje: 'Su rol no puede registrar abonos.' };
+  }
+  if (monto !== null && !(Number(monto) >= 0)) {
+    return { ok: false, mensaje: 'El monto abonado no puede ser negativo.' };
+  }
+  if (fecha && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { ok: false, mensaje: 'La fecha del abono no es válida.' };
+  if (fecha && fecha > hoyEnLima()) return { ok: false, mensaje: 'La fecha del abono no puede ser futura.' };
+
+  const supabase = await crearClienteServidor();
+  const tabla = tipo === 'cotizacion' ? 'cotizaciones' : 'pedidos';
+  const columnaNumero = tipo === 'cotizacion' ? 'numero' : 'numero_proforma';
+
+  if (tipo === 'cotizacion') {
+    const { data: pedido } = await supabase
+      .from('pedidos').select('numero_proforma').eq('cotizacion_id', id).maybeSingle();
+    if (pedido) {
+      return {
+        ok: false,
+        mensaje: `Esta cotización ya es el pedido ${pedido.numero_proforma}: registre el abono en el pedido.`,
+      };
+    }
+  }
+
+  const { data, error } = await supabase
+    .from(tabla)
+    .update({
+      adelanto_abonado: monto === null ? null : Math.round(Number(monto) * 100) / 100,
+      adelanto_abonado_en: monto === null ? null : (fecha || hoyEnLima()),
+    })
+    .eq('id', id)
+    .select(columnaNumero);
+
+  //  Una política que rechaza devuelve cero filas y ningún error: se comprueba.
+  if (error) return { ok: false, mensaje: `No se pudo guardar el abono: ${error.message}` };
+  if (!data?.length) return { ok: false, mensaje: 'No tiene permiso para modificar ese documento.' };
+
+  revalidatePath(tipo === 'cotizacion' ? `/ventas/cotizaciones/${id}` : `/ventas/pedidos/${id}`);
+  return {
+    ok: true,
+    mensaje: monto === null ? 'Abono borrado.' : 'Abono registrado.',
+  };
 }

@@ -102,6 +102,8 @@ await p.locator('select').first().selectOption({ index: 1 });
 await p.waitForTimeout(1500);
 await p.locator('input[type="number"]').first().fill('100');
 await p.locator('input[type="number"]').nth(1).fill('1000');
+//  Desde octubre todo ingreso dice su origen (observaciones de Oliver, punto 11).
+await p.locator('input[name="origen_ingreso"][value="produccion"]').check();
 
 // Capa 1: el navegador. El campo lleva un tope, así que ni siquiera deja
 // escribir una fecha posterior a hoy.

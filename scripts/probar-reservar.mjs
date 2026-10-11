@@ -121,7 +121,7 @@ const filasLote = await p.locator('.reservar table.datos tbody tr').count();
 comprobar('Trae lotes del mismo producto con saldo', filasLote > 0, `${filasLote} lotes`);
 
 /* ---- El orden tiene que ser del más antiguo al más nuevo ---- */
-const meses = (await p.locator('.reservar table.datos tbody tr td:nth-child(4)').allInnerTexts())
+const meses = (await p.locator('.reservar table.datos tbody tr td:nth-child(5)').allInnerTexts())
   .map((t) => Number(t.replace(',', '.')));
 const ordenado = meses.every((m, i) => i === 0 || meses[i - 1] >= m - 0.01);
 comprobar('Los lotes salen del más antiguo al más nuevo', ordenado,

@@ -17,6 +17,7 @@ import { redirect } from 'next/navigation';
 import { obtenerUsuarioActual, crearClienteServidor } from '@/lib/supabase/servidor';
 import { navegacionPara, type Rol } from '@/lib/navegacion';
 import { Marco } from '@/components/estructura/Marco';
+import { objetivosActivo } from '@/lib/modulos';
 
 export default async function LayoutErp({ children }: LayoutProps<'/'>) {
   const usuario = await obtenerUsuarioActual();
@@ -26,15 +27,19 @@ export default async function LayoutErp({ children }: LayoutProps<'/'>) {
   if (!usuario) redirect('/login');
 
   const supabase = await crearClienteServidor();
-  const { count } = await supabase
-    .from('alertas')
-    .select('id', { count: 'exact', head: true })
-    .eq('atendida', false);
+  const [{ count }, verObjetivos] = await Promise.all([
+    supabase.from('alertas').select('id', { count: 'exact', head: true }).eq('atendida', false),
+    objetivosActivo(supabase),
+  ]);
 
   return (
     <Marco
       usuario={{ nombre: usuario.nombre, email: usuario.email, rol: usuario.rol as Rol }}
-      grupos={navegacionPara(usuario.rol as Rol, { ve_objetivos: usuario.ve_objetivos === true })}
+      grupos={navegacionPara(
+        usuario.rol as Rol,
+        { ve_objetivos: usuario.ve_objetivos === true },
+        { objetivos: verObjetivos }
+      )}
       alertasPendientes={count ?? 0}
     >
       {children}

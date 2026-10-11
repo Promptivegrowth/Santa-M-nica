@@ -65,6 +65,7 @@ export default async function PaginaNuevaCotizacion() {
         tipoCambioDefecto={cat.tipoCambioDefecto}
         topeDescuento={cat.topeDescuento}
         puedeAutorizarDescuento={['gerencia', 'operaciones'].includes(rol)}
+        plazos={cat.plazos}
       />
     </>
   );

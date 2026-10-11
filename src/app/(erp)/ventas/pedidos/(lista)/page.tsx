@@ -16,6 +16,7 @@
  * ============================================================================
  */
 import Link from 'next/link';
+import { Fragment } from 'react';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import {
@@ -85,6 +86,12 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
   const campoFecha = (q.campo_fecha as string) || 'fecha_solicitada';
   const orden = (q.orden as string) ?? '';
   const porCliente = q.agrupar === 'cliente';
+  /*
+   * EL DETALLE DE PRODUCTOS DE CADA PROFORMA (observaciones de octubre,
+   * punto 9): se ve por defecto, debajo de cada pedido. Se puede ocultar
+   * para recorrer la lista más rápido.
+   */
+  const verProductos = q.productos !== 'no';
 
   /*
    * La fecha de hoy en el huso de LIMA, no en UTC.
@@ -223,12 +230,17 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
   const { data: lineasPagina } = idsPagina.length
     ? await supabase
         .from('pedido_lineas')
-        .select('pedido_id, cantidad_tm, sku_presentaciones(skus(codigo, corte))')
+        .select('id, pedido_id, cantidad_tm, precio_tm, descuento_pct, orden, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
         .in('pedido_id', idsPagina)
         .order('orden')
     : { data: [] };
 
+  type LineaDetalle = {
+    id: number; sku: string; descripcion: string; presentacion: string;
+    cantidad: number; precio: number; subtotal: number;
+  };
   const productosPorPedido = new Map<number, { texto: string; cuantos: number }>();
+  const detallePorPedido = new Map<number, LineaDetalle[]>();
   for (const l of lineasPagina ?? []) {
     const sp = uno<Record<string, unknown>>(l.sku_presentaciones);
     const sku = uno<Record<string, unknown>>(sp?.skus);
@@ -237,7 +249,24 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
     const previo = productosPorPedido.get(id);
     if (previo) previo.cuantos += 1;
     else productosPorPedido.set(id, { texto: nombre, cuantos: 1 });
+
+    //  El precio unitario es el FINAL, ya con el descuento de la línea.
+    const precio = Number(l.precio_tm ?? 0) * (1 - Number(l.descuento_pct ?? 0) / 100);
+    const lista = detallePorPedido.get(id) ?? [];
+    lista.push({
+      id: Number(l.id),
+      sku: String(sku?.codigo ?? '—'),
+      descripcion: [uno<Record<string, unknown>>(sku?.especies)?.nombre, uno<Record<string, unknown>>(sku?.formatos)?.nombre, sku?.corte]
+        .filter(Boolean).join(' · '),
+      presentacion: String(uno<Record<string, unknown>>(sp?.presentaciones)?.descripcion ?? ''),
+      cantidad: Number(l.cantidad_tm ?? 0),
+      precio,
+      subtotal: Number(l.cantidad_tm ?? 0) * precio,
+    });
+    detallePorPedido.set(id, lista);
   }
+  /* Columnas de la tabla, para que la fila del detalle las abarque todas. */
+  const columnasLista = 12 + (puedeVerCostos ? 1 : 0);
 
   /**
    * Arma la dirección conservando lo que ya está puesto.
@@ -256,6 +285,7 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
     if (hasta) p.set('hasta', hasta);
     if (orden) p.set('orden', orden);
     if (porCliente) p.set('agrupar', 'cliente');
+    if (!verProductos) p.set('productos', 'no');
 
     // Lo que llega en `cambios` manda; una cadena vacía quita el parámetro.
     for (const [k, v] of Object.entries(cambios)) {
@@ -392,6 +422,11 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
           <Link href={enlaceVista(vista, { agrupar: porCliente ? '' : 'cliente' })}>
             {porCliente ? 'Ver pedido a pedido' : 'Acumulado por cliente'}
           </Link>
+          {!porCliente && (
+            <Link href={enlaceVista(vista, { productos: verProductos ? 'no' : '' })} data-atajo="productos">
+              {verProductos ? 'Ocultar productos' : 'Ver productos de cada proforma'}
+            </Link>
+          )}
           <Link href={enlaceVista(vista, {
             campo_fecha: 'fecha_comprometida', desde: hoy, hasta: enDias(7),
           })}>Entregas de la semana</Link>
@@ -492,8 +527,11 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                 <tbody>
                   {(filas ?? []).map((p) => {
                     const avance = Number(p.avance_pct ?? 0);
+                    const detalle = detallePorPedido.get(p.id as number) ?? [];
+                    const monedaPedido = (p.moneda as 'USD' | 'PEN') ?? 'USD';
                     return (
-                      <tr key={p.id as number}>
+                      <Fragment key={p.id as number}>
+                      <tr data-pedido={p.id as number}>
                         <td><Semaforo estado={p.semaforo as never} /></td>
                         <td>
                           <Link href={`/ventas/pedidos/${p.id}`} className="enlace-dato">
@@ -608,6 +646,56 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                           />
                         </td>
                       </tr>
+                      {/*
+                        TODOS LOS PRODUCTOS DE LA PROFORMA (octubre, punto 9):
+                        SKU, descripción, cantidad, precio unitario y subtotal,
+                        y el subtotal de la proforma. Los importes, solo para
+                        quien ve importes (como la columna «Venta US$»).
+                      */}
+                      {verProductos && detalle.length > 0 && (
+                        <tr className="fila-detalle-proforma" data-detalle={p.id as number}>
+                          <td colSpan={columnasLista}>
+                            <table className="detalle-proforma">
+                              <thead>
+                                <tr>
+                                  <th>SKU</th><th>Descripción</th><th className="num">Cantidad</th>
+                                  {puedeVerCostos && <><th className="num">Precio unitario</th><th className="num">Subtotal</th></>}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {detalle.map((l) => (
+                                  <tr key={l.id} data-linea={l.id}>
+                                    <td className="mono">{l.sku}</td>
+                                    <td>{l.descripcion}{l.presentacion ? <span className="detalle-presentacion"> · {l.presentacion}</span> : null}</td>
+                                    <td className="num">{num(l.cantidad, 3)} TM</td>
+                                    {puedeVerCostos && (
+                                      <>
+                                        <td className="num">{dinero(l.precio, monedaPedido, 2)}</td>
+                                        <td className="num" data-subtotal={l.subtotal.toFixed(2)}>{dinero(l.subtotal, monedaPedido, 2)}</td>
+                                      </>
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr>
+                                  <td colSpan={2}>Subtotal de la proforma {p.numero_proforma as string}</td>
+                                  <td className="num">{num(detalle.reduce((t, l) => t + l.cantidad, 0), 3)} TM</td>
+                                  {puedeVerCostos && (
+                                    <>
+                                      <td></td>
+                                      <td className="num" data-subtotal-proforma={detalle.reduce((t, l) => t + l.subtotal, 0).toFixed(2)}>
+                                        <strong>{dinero(detalle.reduce((t, l) => t + l.subtotal, 0), monedaPedido, 2)}</strong>
+                                      </td>
+                                    </>
+                                  )}
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>

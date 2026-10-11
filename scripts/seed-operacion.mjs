@@ -144,6 +144,8 @@ export async function sembrarOperacion(ctx) {
       documento_tipo: 'ingreso',
       documento_ref: `ING-${String(l.id).padStart(6, '0')}`,
       usuario_id: uAlmacen,
+      //  Desde la 064 todo ingreso dice su origen; el sembrado es producción de planta.
+      origen_ingreso: 'produccion',
     });
 
     stock.set(l.id, {

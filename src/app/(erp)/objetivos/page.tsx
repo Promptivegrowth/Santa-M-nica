@@ -28,6 +28,7 @@ import { NOMBRE_MES, TEXTO_ESTADO, type Celda, type FilaTablero } from '@/lib/ob
 import { cargarTablero, filtrar, leerFiltros, mesDeReferencia, aConsulta } from '@/lib/objetivosDatos';
 import { uno } from '@/lib/relaciones';
 import { CeldaValor, CeldaMeta } from './Celdas';
+import { objetivosActivo } from '@/lib/modulos';
 
 export const metadata: Metadata = { title: 'Objetivos mensuales' };
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,23 @@ export default async function PaginaObjetivos(props: PageProps<'/objetivos'>) {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) redirect('/login');
   if (usuario.ve_objetivos !== true) redirect(`/panel?sinacceso=${encodeURIComponent('/objetivos')}`);
+
+  /*
+   * OCULTO TEMPORALMENTE (observaciones de octubre, punto 16). Se pidió
+   * sacarlo del menú sin borrar nada. Quien llegue por un enlace guardado ve
+   * por qué no está, en vez de un error; los datos siguen intactos.
+   */
+  if (!(await objetivosActivo(await crearClienteServidor()))) {
+    return (
+      <>
+        <CabeceraPagina titulo="Objetivos mensuales" descripcion="Módulo oculto temporalmente." />
+        <Vacio
+          titulo="Módulo oculto temporalmente"
+          mensaje="Se ocultó a pedido de Gerencia. Los objetivos, las metas y el historial siguen guardados: se vuelve a mostrar desde Configuración → Módulos."
+        />
+      </>
+    );
+  }
 
   const q = await props.searchParams;
   const hoy = hoyEnLima();

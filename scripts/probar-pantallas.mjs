@@ -34,7 +34,7 @@ async function cookieDe(rol) {
 const PANTALLAS = [
   ['/panel',                     'Control Tower'],
   ['/alertas',                   'Alertas'],
-  ['/ventas/resumen',            'Resumen de ventas'],
+  ['/ventas/resumen',            'Resumen de despachos'],
   ['/ventas/clientes',           'Clientes'],
   ['/ventas/productos',          'Productos'],
   ['/ventas/cotizaciones',       'Cotizaciones'],

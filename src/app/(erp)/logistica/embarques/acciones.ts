@@ -61,6 +61,13 @@ export type DatosEmbarque = {
   observaciones: string | null;
   /** Los pedidos que van en este embarque. */
   pedidos: number[];
+  /**
+   * Observaciones de octubre, punto 13: por cada proforma, QUÉ productos y
+   * CUÁNTO sale (despacho parcial), con el SKU realmente apartado. Si no
+   * viene —la llamada antigua, desde el planificador— el embarque lleva los
+   * pedidos enteros, como siempre.
+   */
+  lineas?: { pedido_linea_id: number; sku_presentacion_id: number; cantidad_kg: number }[];
 };
 
 export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
@@ -78,6 +85,40 @@ export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
   }
 
   const supabase = await crearClienteServidor();
+
+  /*
+   * LAS CANTIDADES POR PRODUCTO (punto 13). Se revisan antes de crear nada:
+   * que cada línea sea de un pedido elegido, que la cantidad sea positiva y
+   * que no pase de lo que queda por programar. La base lo vuelve a comprobar
+   * con un disparador —dos personas a la vez no pueden prometer de más—; esto
+   * es para poder decir el motivo con palabras.
+   */
+  const lineas = (d.lineas ?? []).filter((l) => Number(l.cantidad_kg) > 0);
+  if (d.lineas && d.pedidos.length > 0 && lineas.length === 0) {
+    return { ok: false, mensaje: 'Indique cuánto sale de al menos un producto.', campo: 'lineas' };
+  }
+  if (lineas.length) {
+    const { data: prog } = await supabase
+      .from('v_pedido_linea_programacion')
+      .select('pedido_linea_id, pedido_id, por_programar_kg')
+      .in('pedido_linea_id', [...new Set(lineas.map((l) => l.pedido_linea_id))]);
+    const de = new Map((prog ?? []).map((x) => [Number(x.pedido_linea_id), x]));
+    const porLinea = new Map<number, number>();
+    for (const l of lineas) porLinea.set(l.pedido_linea_id, (porLinea.get(l.pedido_linea_id) ?? 0) + Number(l.cantidad_kg));
+    for (const [lineaId, kg] of porLinea) {
+      const x = de.get(lineaId);
+      if (!x || !d.pedidos.includes(Number(x.pedido_id))) {
+        return { ok: false, mensaje: 'Hay una cantidad para un producto de un pedido que no está marcado.', campo: 'lineas' };
+      }
+      if (kg > Number(x.por_programar_kg) + 0.5) {
+        return {
+          ok: false,
+          mensaje: `De un producto quedan ${(Number(x.por_programar_kg) / 1000).toFixed(3)} TM por programar y se están programando ${(kg / 1000).toFixed(3)} TM.`,
+          campo: 'lineas',
+        };
+      }
+    }
+  }
 
   /*
    * El vehículo tiene que estar en regla. Un camión con el SOAT vencido no
@@ -146,11 +187,30 @@ export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
     }
   }
 
+  //  Qué productos y cuánto sale de cada uno (punto 13).
+  if (lineas.length) {
+    const { error: errLin } = await supabase.from('embarque_lineas').insert(
+      lineas.map((l) => ({
+        embarque_id: embarque.id,
+        pedido_linea_id: l.pedido_linea_id,
+        sku_presentacion_id: l.sku_presentacion_id,
+        cantidad_kg: Math.round(Number(l.cantidad_kg) * 1000) / 1000,
+        creado_por: permiso.usuario!.id,
+      }))
+    );
+    if (errLin) {
+      await supabase.from('embarque_pedidos').delete().eq('embarque_id', embarque.id);
+      await supabase.from('embarques').delete().eq('id', embarque.id);
+      return { ok: false, mensaje: `No se pudieron guardar las cantidades: ${errLin.message}` };
+    }
+  }
+
   await supabase.rpc('registrar_evento', {
     p_entidad: 'embarques',
     p_entidad_id: embarque.id,
     p_tipo: 'embarque_creado',
-    p_descripcion: `Embarque ${numero} programado para el ${d.fecha_programada} con ${d.pedidos?.length ?? 0} pedidos`,
+    p_descripcion: `Embarque ${numero} programado para el ${d.fecha_programada} con ${d.pedidos?.length ?? 0} pedidos` +
+      (lineas.length ? ` y ${(lineas.reduce((t, l) => t + Number(l.cantidad_kg), 0) / 1000).toFixed(3)} TM elegidas producto por producto` : ''),
     p_severidad: 'info',
   }).then(() => undefined, () => undefined);
 
@@ -257,19 +317,43 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
 
     const { data: reservas } = await supabase
       .from('reservas')
-      .select('lote_id, bultos, peso_neto_kg, pedido_lineas!inner(pedido_id)')
+      .select('lote_id, bultos, peso_neto_kg, pedido_linea_id, sku_reservado_id, pedido_lineas!inner(pedido_id)')
       .eq('almacen_id', Number(emb2?.almacen_id))
       .in('estado', ['activa', 'en_preparacion'])
-      .in('pedido_lineas.pedido_id', idsPedidos);
+      .in('pedido_lineas.pedido_id', idsPedidos)
+      .order('lote_id');
+
+    /*
+     * SI EL EMBARQUE DICE CUÁNTO SALE DE CADA PRODUCTO (punto 13), se precarga
+     * solo eso: las reservas de esas líneas y de ese SKU, hasta la cantidad
+     * programada. La última reserva puede entrar a medias —es un despacho
+     * parcial—, con los bultos en proporción.
+     */
+    const { data: programadas } = await supabase
+      .from('embarque_lineas').select('pedido_linea_id, sku_presentacion_id, cantidad_kg').eq('embarque_id', d.embarque_id);
+    const cupo = new Map<string, number>();
+    for (const x of programadas ?? []) {
+      const k = `${x.pedido_linea_id}-${x.sku_presentacion_id}`;
+      cupo.set(k, (cupo.get(k) ?? 0) + Number(x.cantidad_kg));
+    }
 
     /* Un pallet puede tener varias reservas del mismo embarque: viajan juntas
        en una sola línea de packing, que es como sube al contenedor. */
     const porLote = new Map<number, { bultos: number; kg: number }>();
     for (const r of reservas ?? []) {
+      let kg = Number(r.peso_neto_kg ?? 0);
+      let bultos = Number(r.bultos ?? 0);
+      if (cupo.size > 0) {
+        const k = `${r.pedido_linea_id}-${r.sku_reservado_id}`;
+        const queda = cupo.get(k) ?? 0;
+        if (queda <= 0.0005) continue;
+        if (kg > queda) { bultos = Math.max(1, Math.round(bultos * (queda / kg))); kg = queda; }
+        cupo.set(k, queda - kg);
+      }
       const id = Number(r.lote_id);
       const previo = porLote.get(id) ?? { bultos: 0, kg: 0 };
-      previo.bultos += Number(r.bultos ?? 0);
-      previo.kg += Number(r.peso_neto_kg ?? 0);
+      previo.bultos += bultos;
+      previo.kg += kg;
       porLote.set(id, previo);
     }
 
@@ -318,6 +402,31 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
 }
 
 /* ==========================================================================
+   OBSERVACIONES DEL EMBARQUE (observaciones de octubre, punto 12)
+   --------------------------------------------------------------------------
+   Se podían escribir al programar, pero después no se podían cambiar: lo
+   que pasaba en la coordinación —«el booking se movió al jueves»— no tenía
+   dónde quedar. Ahora se editan desde la ficha y el historial guarda cada
+   versión (la tabla está auditada).
+   ========================================================================== */
+export async function guardarObservacionesEmbarque(id: number, texto: string): Promise<Resultado> {
+  const permiso = await autorizar('editar embarques');
+  if (permiso.error) return { ok: false, mensaje: permiso.error };
+  const limpio = texto.trim();
+  if (limpio.length > 1000) return { ok: false, mensaje: 'Las observaciones no pueden pasar de 1000 caracteres.' };
+
+  const supabase = await crearClienteServidor();
+  const { data, error } = await supabase
+    .from('embarques').update({ observaciones: limpio || null }).eq('id', id).select('numero');
+  if (error) return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+  //  Sin filas y sin error es una política que dijo que no.
+  if (!data?.length) return { ok: false, mensaje: 'No tiene permiso para modificar este embarque.' };
+
+  refrescar(id);
+  return { ok: true, id, numero: String(data[0].numero), mensaje: limpio ? 'Observaciones guardadas.' : 'Observaciones borradas.' };
+}
+
+/* ==========================================================================
    AYUDAS PARA EL FORMULARIO
    ========================================================================== */
 
@@ -341,6 +450,83 @@ export type PedidoEmbarcable = {
   bodegas: { almacen_id: number; nombre: string; kg: number }[];
 };
 
+/**
+ * Lo que se puede programar de cada línea de un pedido (punto 13): lo pedido,
+ * lo ya programado en otros embarques, el saldo, y lo apartado POR SKU —el
+ * SKU realmente reservado, que puede ser un equivalente (punto 10)—, con la
+ * bodega donde está.
+ */
+export type LineaEmbarcable = {
+  pedido_id: number;
+  pedido_linea_id: number;
+  producto: string;
+  sku_presentacion_id: number;
+  sku: string;
+  equivalente: boolean;
+  pedido_kg: number;
+  programado_kg: number;
+  por_programar_kg: number;
+  reservado_kg: number;
+  bodegas: { almacen_id: number; kg: number }[];
+};
+
+export async function lineasParaEmbarcar(pedidoIds: number[]): Promise<LineaEmbarcable[]> {
+  if (!pedidoIds.length) return [];
+  const supabase = await crearClienteServidor();
+  const [{ data: lineas }, { data: prog }, { data: reservas }] = await Promise.all([
+    supabase.from('pedido_lineas')
+      .select('id, pedido_id, orden, sku_presentacion_id, sku_presentaciones(skus(codigo, corte, especies(nombre)), presentaciones(descripcion))')
+      .in('pedido_id', pedidoIds).order('orden'),
+    supabase.from('v_pedido_linea_programacion')
+      .select('pedido_linea_id, pedido_kg, programado_kg, por_programar_kg').in('pedido_id', pedidoIds),
+    supabase.from('reservas')
+      .select('pedido_linea_id, almacen_id, peso_neto_kg, sku_reservado_id, reservado:sku_presentaciones!reservas_sku_reservado_id_fkey(skus(codigo), presentaciones(descripcion)), pedido_lineas!inner(pedido_id)')
+      .in('estado', ['activa', 'en_preparacion'])
+      .in('pedido_lineas.pedido_id', pedidoIds),
+  ]);
+  const progDe = new Map((prog ?? []).map((x) => [Number(x.pedido_linea_id), x]));
+  const uno1 = <T,>(v: unknown) => (Array.isArray(v) ? v[0] : v) as T | undefined;
+
+  const filas: LineaEmbarcable[] = [];
+  for (const l of lineas ?? []) {
+    const sp = uno1<Record<string, unknown>>(l.sku_presentaciones);
+    const sku = uno1<Record<string, unknown>>(sp?.skus);
+    const pres = uno1<Record<string, unknown>>(sp?.presentaciones);
+    const producto = `${sku?.codigo ?? ''} · ${uno1<Record<string, unknown>>(sku?.especies)?.nombre ?? ''} ${sku?.corte ?? ''} · ${pres?.descripcion ?? ''}`;
+    const p = progDe.get(Number(l.id));
+    const base = {
+      pedido_id: Number(l.pedido_id), pedido_linea_id: Number(l.id), producto,
+      pedido_kg: Number(p?.pedido_kg ?? 0), programado_kg: Number(p?.programado_kg ?? 0),
+      por_programar_kg: Number(p?.por_programar_kg ?? 0),
+    };
+    //  Lo apartado de esta línea, agrupado por el SKU que de verdad se apartó.
+    const porSku = new Map<number, { texto: string; kg: number; bodegas: Map<number, number> }>();
+    for (const r of (reservas ?? []).filter((x) => Number(x.pedido_linea_id) === Number(l.id))) {
+      const id = Number(r.sku_reservado_id ?? l.sku_presentacion_id);
+      const rsp = uno1<Record<string, unknown>>(r.reservado);
+      const g = porSku.get(id) ?? {
+        texto: `${uno1<Record<string, unknown>>(rsp?.skus)?.codigo ?? ''} · ${uno1<Record<string, unknown>>(rsp?.presentaciones)?.descripcion ?? ''}`,
+        kg: 0, bodegas: new Map<number, number>(),
+      };
+      g.kg += Number(r.peso_neto_kg ?? 0);
+      g.bodegas.set(Number(r.almacen_id), (g.bodegas.get(Number(r.almacen_id)) ?? 0) + Number(r.peso_neto_kg ?? 0));
+      porSku.set(id, g);
+    }
+    if (porSku.size === 0) {
+      //  Sin nada apartado: se muestra igual, para que se vea el saldo, pero sin cantidad propuesta.
+      filas.push({ ...base, sku_presentacion_id: Number(l.sku_presentacion_id), sku: `${sku?.codigo ?? ''} · ${pres?.descripcion ?? ''}`,
+        equivalente: false, reservado_kg: 0, bodegas: [] });
+    }
+    for (const [id, g] of porSku) {
+      filas.push({
+        ...base, sku_presentacion_id: id, sku: g.texto, equivalente: id !== Number(l.sku_presentacion_id),
+        reservado_kg: g.kg, bodegas: [...g.bodegas.entries()].map(([almacen_id, kg]) => ({ almacen_id, kg })),
+      });
+    }
+  }
+  return filas;
+}
+
 export async function pedidosParaEmbarcar(almacenId: number): Promise<PedidoEmbarcable[]> {
   const supabase = await crearClienteServidor();
 
@@ -362,14 +548,35 @@ export async function pedidosParaEmbarcar(almacenId: number): Promise<PedidoEmba
 
   const conReserva = data ?? [];
 
-  // Los que ya están en algún embarque no se vuelven a ofrecer.
-  const { data: yaPuestos } = await supabase.from('embarque_pedidos').select('pedido_id');
-  const puestos = new Set((yaPuestos ?? []).map((x) => Number(x.pedido_id)));
+  /*
+   * Los que ya están en algún embarque, ¿se vuelven a ofrecer? Desde el punto
+   * 13, depende:
+   *   · si ese embarque dijo cuánto lleva de cada producto, el pedido vuelve
+   *     a salir mientras le quede saldo por programar (despacho parcial);
+   *   · si es un embarque de antes, que llevaba el pedido entero, no.
+   */
+  const { data: yaPuestos } = await supabase
+    .from('embarque_pedidos').select('pedido_id, embarque_id, embarques!inner(estado)').neq('embarques.estado', 'cancelado');
+  const { data: conDetalle } = await supabase.from('embarque_lineas').select('embarque_id, pedido_lineas(pedido_id)');
+  const detallados = new Set((conDetalle ?? []).map((x) => {
+    const pl = Array.isArray(x.pedido_lineas) ? x.pedido_lineas[0] : x.pedido_lineas;
+    return `${x.embarque_id}-${pl?.pedido_id}`;
+  }));
+  const puestos = new Set((yaPuestos ?? [])
+    .filter((x) => !detallados.has(`${x.embarque_id}-${x.pedido_id}`))
+    .map((x) => Number(x.pedido_id)));
 
   const almacenNum = Number(almacenId);
   void almacenNum; // La bodega ya filtra los lotes; aquí solo se listan pedidos.
 
-  const candidatos = conReserva.filter((p) => !puestos.has(Number(p.id)));
+  const candidatosTodos = conReserva.filter((p) => !puestos.has(Number(p.id)));
+  //  Y de esos, solo los que todavía tienen algo por programar.
+  const { data: saldos } = candidatosTodos.length
+    ? await supabase.from('v_pedido_linea_programacion').select('pedido_id, por_programar_kg')
+        .in('pedido_id', candidatosTodos.map((p) => Number(p.id))).gt('por_programar_kg', 0.5)
+    : { data: [] };
+  const conSaldo = new Set((saldos ?? []).map((x) => Number(x.pedido_id)));
+  const candidatos = candidatosTodos.filter((p) => conSaldo.has(Number(p.id)));
   const ids = candidatos.map((p) => Number(p.id));
 
   /* ---- Dónde está físicamente lo que se apartó a cada pedido ---- */

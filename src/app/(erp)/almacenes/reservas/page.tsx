@@ -71,7 +71,7 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
     // deduce los tipos de la consulta leyendo ese texto en tiempo de
     // compilación, y una suma de cadenas le impide hacerlo.
     .select(
-      'id, bultos, peso_neto_kg, estado, vence_el, creado_en, liberado_en, motivo_liberacion, lotes(id, codigo_pallet, fecha_produccion, sku_presentaciones(skus(codigo, corte, especies(nombre)))), almacenes(nombre), pedido_lineas(pedido_id, pedidos(numero_proforma, ciclo, clientes(id, razon_social)))',
+      'id, bultos, peso_neto_kg, estado, vence_el, creado_en, liberado_en, motivo_liberacion, sku_solicitado_id, sku_reservado_id, solicitado:sku_presentaciones!reservas_sku_solicitado_id_fkey(skus(codigo)), lotes(id, codigo_pallet, fecha_produccion, sku_presentaciones(skus(codigo, corte, especies(nombre)))), almacenes(nombre), pedido_lineas(pedido_id, pedidos(numero_proforma, ciclo, clientes(id, razon_social)))',
       { count: 'exact' }
     );
 
@@ -307,6 +307,16 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
                         </td>
                         <td style={{ fontSize: '.78rem' }}>
                           {campo(sku?.especies, 'nombre')} · {campo(sku, 'corte')}
+                          {/* SKU equivalente (octubre, punto 10): qué se pidió y qué se apartó. */}
+                          {r.sku_solicitado_id !== r.sku_reservado_id && (
+                            <>
+                              <br />
+                              <span className="pill pill-atencion">Equivalente</span>{' '}
+                              <span style={{ fontSize: '.7rem', color: 'var(--tinta-3)' }}>
+                                apartado {campo(sku, 'codigo')} · se pidió {campo(uno<Record<string, unknown>>(r.solicitado)?.skus, 'codigo')}
+                              </span>
+                            </>
+                          )}
                         </td>
                         <td style={{ fontSize: '.78rem' }}>{campo(r.almacenes, 'nombre')}</td>
                         <td className="mono">

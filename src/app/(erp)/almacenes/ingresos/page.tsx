@@ -46,11 +46,15 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
         fijos={[{ columna: 'tipo', valor: 'ingreso' }]}
         filtros={[
           { tipo: 'texto', clave: 'buscar', etiqueta: 'Pallet o documento', ancho: '13rem' },
+          //  Observaciones de octubre, punto 11: consultar por origen.
+          { tipo: 'select', clave: 'origen', etiqueta: 'Origen',
+            opciones: [{ valor: 'produccion', texto: 'Producción' }, { valor: 'compras', texto: 'Compras' }] },
           { tipo: 'fecha', clave: 'desde', etiqueta: 'Desde' },
         ]}
         filtrosAplicados={[
           { clave: 'buscar', columna: 'codigo_pallet', operador: 'contiene',
             columnas: ['codigo_pallet', 'documento_ref', 'sku_codigo'] },
+          { clave: 'origen', columna: 'origen_ingreso', operador: 'igual' },
           { clave: 'desde', columna: 'fecha', operador: 'desde' },
         ]}
         columnas={[
@@ -70,6 +74,12 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
                 <span style={{ color: 'var(--tinta-3)', fontSize: '.74rem' }}>{String(f.corte)}</span>
               </>
             ) },
+          { clave: 'origen_ingreso', titulo: 'Origen',
+            render: (f) => f.origen_ingreso === 'compras'
+              ? <span data-origen="compras"><Etiqueta texto="Compras" tono="info" />{f.proveedor ? <><br /><small style={{ color: 'var(--tinta-3)' }}>{String(f.proveedor)}</small></> : null}</span>
+              : f.origen_ingreso === 'produccion'
+                ? <span data-origen="produccion"><Etiqueta texto="Producción" tono="ok" /></span>
+                : <span data-origen="sin" style={{ color: 'var(--tinta-3)', fontSize: '.74rem' }}>Sin clasificar</span> },
           { clave: 'almacen', titulo: 'Almacén' },
           { clave: 'entrada_bultos', titulo: 'Bultos', numerica: true, render: (f) => num(Number(f.entrada_bultos)) },
           { clave: 'entrada_kg', titulo: 'Peso', numerica: true, render: (f) => `${tm(f.entrada_kg as number)} TM` },

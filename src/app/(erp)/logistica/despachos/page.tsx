@@ -7,74 +7,39 @@
  *
  *  Por eso el despacho es el hecho que cierra el ciclo: consume la reserva,
  *  escribe la salida en el Kardex y habilita la facturación.
+ *
+ *  OBSERVACIONES DE OCTUBRE
+ *   · Punto 14: un selector para elegir qué despachos —o qué ítems de un
+ *     despacho— se gestionan: Excel o reporte de carga de lo elegido.
+ *   · Puntos 15 y 17: cada despacho tiene ficha, con su guía final en PDF y
+ *     las fotos de la carga.
  * ============================================================================
  */
-import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio } from '@/components/ui/Pagina';
-import { AccionesLista } from '@/components/ui/Acciones';
-import { fechaHora } from '@/lib/formato';
+import { cargarDespachos } from '@/lib/despachosDatos';
+import { SelectorDespachos } from './SelectorDespachos';
 
 export const metadata: Metadata = { title: 'Despachos' };
 export const dynamic = 'force-dynamic';
 
 export default async function PaginaDespachos() {
   const supabase = await crearClienteServidor();
-  const { data: filas } = await supabase
-    .from('despachos')
-    .select('id, numero, fecha_salida, packing_lists(id, codigo, contenedor, guia_remision), almacenes(nombre), usuarios!despachos_encargado_id_fkey(nombre)')
-    .order('fecha_salida', { ascending: false })
-    .limit(150);
+  const despachos = await cargarDespachos(supabase, { limite: 150 });
 
   return (
     <>
       <CabeceraPagina
         titulo="Despachos"
-        descripcion="Salidas ejecutadas. Cada una consumió su reserva y escribió la salida correspondiente en el Kardex."
+        descripcion="Salidas ejecutadas. Cada una consumió su reserva y escribió la salida en el Kardex. Marque los que quiera gestionar —enteros o ítem por ítem— para sacar su Excel o su reporte de carga."
       />
 
-      <Panel titulo={`${(filas ?? []).length} despachos`}>
-        {(filas ?? []).length === 0 ? (
+      <Panel titulo={`${despachos.length} despachos`}>
+        {despachos.length === 0 ? (
           <Vacio titulo="Sin despachos" mensaje="Todavía no se ha ejecutado ningún despacho." />
         ) : (
-          <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-            <table className="datos">
-              <thead>
-                <tr><th>Despacho</th><th>Packing</th><th>Contenedor</th><th>Guía</th><th>Almacén</th><th>Encargado</th><th className="num">Salida</th><th>Acciones</th></tr>
-              </thead>
-              <tbody>
-                {(filas ?? []).map((d) => {
-                  const pk = Array.isArray(d.packing_lists) ? d.packing_lists[0] : d.packing_lists;
-                  const alm = Array.isArray(d.almacenes) ? d.almacenes[0] : d.almacenes;
-                  const usr = Array.isArray(d.usuarios) ? d.usuarios[0] : d.usuarios;
-                  return (
-                    <tr key={d.id as number}>
-                      <td className="mono">{d.numero as string}</td>
-                      <td>
-                        {pk ? (
-                          <Link href={`/logistica/packing/${pk.id}`} className="enlace-ficha">{pk.codigo as string}</Link>
-                        ) : '—'}
-                      </td>
-                      <td className="mono">{pk?.contenedor ?? '—'}</td>
-                      <td className="mono">{pk?.guia_remision ?? '—'}</td>
-                      <td>{alm?.nombre ?? '—'}</td>
-                      <td style={{ fontSize: '.78rem', color: 'var(--tinta-3)' }}>{usr?.nombre ?? '—'}</td>
-                      <td className="num">{fechaHora(d.fecha_salida as string)}</td>
-                      <td>
-                        {/* El despacho se documenta en su packing list: ahí está
-                            el contenedor, el plano de estiba y los lotes. */}
-                        <AccionesLista
-                          ver={pk ? `/logistica/packing/${pk.id}` : null}
-                          verTitulo="Ver el packing list del despacho"
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <SelectorDespachos despachos={despachos} />
         )}
       </Panel>
     </>

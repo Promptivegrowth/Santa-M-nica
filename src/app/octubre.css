@@ -1,0 +1,153 @@
+/* ==========================================================================
+   OBSERVACIONES DE OCTUBRE 2026
+   Estilos de lo que se agregó por el documento «Observaciones ERP»: el enlace
+   del tipo de cambio SUNAT, el detalle de productos por proforma, la elección
+   de cantidades del embarque, los archivos del despacho y el selector.
+   ========================================================================== */
+
+/* Un botón que se lee como enlace: para acciones pequeñas dentro de una ayuda. */
+.enlace-boton {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--acento);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.enlace-boton:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* Registrar abono: los dos campos y los botones en una fila que se acomoda. */
+.abono-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: .6rem 1rem;
+}
+.abono-form .form-campo { min-width: 10rem; }
+
+/* Contrato: el texto se revisa con letra de lectura, no de formulario. */
+.contrato-editor { display: grid; gap: .8rem; }
+.contrato-texto {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: .9rem;
+  line-height: 1.55;
+  min-height: 18rem;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+.contrato-plantilla {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 17rem;
+  gap: 1.2rem;
+  align-items: start;
+}
+.contrato-marcadores { display: grid; gap: .35rem; margin: 0; font-size: .74rem; }
+.contrato-marcadores div { display: grid; gap: .05rem; }
+.contrato-marcadores dt { color: var(--acento); font-size: .72rem; }
+.contrato-marcadores dd { margin: 0; color: var(--tinta-3); }
+@media (max-width: 900px) { .contrato-plantilla { grid-template-columns: 1fr; } }
+
+/* Productos de cada proforma, debajo de su fila en la lista de pedidos. */
+.fila-detalle-proforma > td {
+  background: var(--superficie-2);
+  padding: .35rem 1rem .7rem 3.2rem;
+}
+.detalle-proforma {
+  /* Compacta: si se estirara al ancho de la fila, el subtotal quedaría fuera de la vista. */
+  width: auto;
+  min-width: min(100%, 36rem);
+  max-width: 62rem;
+  border-collapse: collapse;
+  font-size: .74rem;
+  font-variant-numeric: tabular-nums;
+}
+.detalle-proforma th {
+  text-align: left;
+  font-weight: 600;
+  font-size: .66rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+  padding: .25rem .5rem;
+  border-bottom: 1px solid var(--linea);
+}
+.detalle-proforma td { padding: .22rem .5rem; border-bottom: 1px dashed var(--linea); }
+.detalle-proforma .num { text-align: right; white-space: nowrap; }
+.detalle-proforma tfoot td { border-bottom: 0; font-weight: 600; padding-top: .35rem; }
+.detalle-presentacion { color: var(--tinta-3); }
+
+/* Reservar con SKU equivalentes: la casilla y las filas que no son el SKU pedido. */
+.reservar-equivalentes {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  margin: .2rem 0 .6rem;
+  font-size: .78rem;
+  color: var(--tinta-2);
+  cursor: pointer;
+}
+.reservar-equivalentes input { margin-top: .15rem; }
+.reservar tr[data-equivalente="si"] td { background: var(--atencion-suave, transparent); }
+
+/* Origen del ingreso: dos tarjetas grandes, porque es lo primero que se decide. */
+.origen-opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .6rem; }
+.origen-opcion {
+  display: flex;
+  gap: .6rem;
+  align-items: flex-start;
+  padding: .7rem .8rem;
+  border: 1px solid var(--linea);
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--superficie);
+}
+.origen-opcion[data-elegida="si"] { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+.origen-opcion span { display: grid; gap: .1rem; }
+.origen-opcion small { color: var(--tinta-3); font-size: .74rem; }
+.origen-opciones[data-error="si"] .origen-opcion { border-color: var(--critico); }
+
+/* Embarque: qué sale de cada proforma, y las observaciones editables. */
+.embarque-lineas { margin-top: .9rem; display: grid; gap: .5rem; }
+.embarque-lineas tr[data-alerta="si"] td { background: var(--critico-suave); }
+.observaciones-texto { margin: 0 0 .5rem; white-space: pre-wrap; font-size: .85rem; }
+.observaciones-texto[data-vacio="si"] { color: var(--tinta-3); }
+
+/* Selector de despachos: la barra de lo elegido queda a la vista al bajar. */
+.selector-barra {
+  position: sticky;
+  top: 3.6rem;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem 1rem;
+  padding: .6rem 1rem;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--linea);
+}
+.selector-todos { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; font-weight: 600; }
+.selector-resumen { font-size: .78rem; color: var(--tinta-2); flex: 1 1 18rem; font-variant-numeric: tabular-nums; }
+.selector-acciones { display: flex; flex-wrap: wrap; gap: .4rem; }
+.selector-acciones a[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+table[data-cuadro="despachos"] tr[data-elegido="todo"] > td,
+table[data-cuadro="despachos"] tr[data-elegido="parte"] > td { background: var(--superficie-2); }
+
+/* Archivos del despacho: la guía en lista, las fotos en cuadrícula. */
+.archivos-despacho { display: grid; gap: .7rem; }
+.archivos-subir { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.archivos-subir small, .archivos-vacio, .archivos-estado { color: var(--tinta-3); font-size: .78rem; margin: 0; }
+.archivos-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.archivos-lista li { display: flex; align-items: center; gap: .6rem; padding: .5rem .6rem; border: 1px solid var(--linea); border-radius: 6px; }
+.archivos-nombre { display: grid; flex: 1; min-width: 0; }
+.archivos-nombre strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .82rem; }
+.archivos-nombre small { color: var(--tinta-3); font-size: .7rem; }
+.archivos-fotos { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: .7rem; }
+.archivos-fotos li { display: grid; gap: .25rem; }
+.archivos-fotos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid var(--linea); background: var(--superficie-2); }
+.archivos-pie { display: flex; justify-content: space-between; gap: .4rem; font-size: .7rem; color: var(--tinta-3); min-width: 0; }
+.archivos-pie small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.archivos-subir label[data-subiendo="si"] { opacity: .6; pointer-events: none; }
+.archivos-subir label:focus-within { outline: 2px solid var(--acento); outline-offset: 2px; }

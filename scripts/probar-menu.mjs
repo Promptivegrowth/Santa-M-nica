@@ -62,7 +62,7 @@ try {
     for (const [titulo, grupo] of [
       ['Clientes', 'Ventas'],
       ['Rentabilidad', 'Ventas'],
-      ['Resumen de ventas', 'Ventas'],
+      ['Resumen de despachos', 'Ventas'],
       ['Existencias', 'Stock / Inventarios'],
       ['Alertas de stock', 'Stock / Inventarios'],
       ['Necesidades de producción', 'Producción'],

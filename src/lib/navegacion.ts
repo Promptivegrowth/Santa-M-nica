@@ -32,6 +32,11 @@ export type Entrada = {
    * Oliver —dos personas, no dos roles—: otro gerente no lo tendría.
    */
   permiso?: 've_objetivos';
+  /**
+   * Módulo que se puede apagar desde Configuración sin borrar nada
+   * (observaciones de octubre, punto 16). Apagado, la entrada no aparece.
+   */
+  modulo?: 'objetivos';
 };
 
 export type Grupo = {
@@ -64,13 +69,14 @@ export const NAVEGACION: Grupo[] = [
       { titulo: 'Control Tower', ruta: '/panel',   icono: 'panel',  ayuda: 'Los indicadores del día', roles: TODOS },
       { titulo: 'Alertas',       ruta: '/alertas', icono: 'alerta', ayuda: 'Lo que necesita atención', roles: TODOS },
       /* Solo para quien tenga el permiso personal (060): hoy, Marco y Oliver. */
-      { titulo: 'Objetivos mensuales', ruta: '/objetivos', icono: 'bandera', ayuda: 'Los compromisos del mes y del año, con su semáforo', roles: TODOS, permiso: 've_objetivos' },
+      { titulo: 'Objetivos mensuales', ruta: '/objetivos', icono: 'bandera', ayuda: 'Los compromisos del mes y del año, con su semáforo', roles: TODOS, permiso: 've_objetivos', modulo: 'objetivos' },
     ],
   },
   {
     grupo: 'Ventas',
     entradas: [
-      { titulo: 'Resumen de ventas',  ruta: '/ventas/resumen',        icono: 'objetivo',       ayuda: 'Contenedores planificados contra despachados', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
+      /* Se llamaba «Resumen de ventas»; Oliver pidió «Resumen de despachos» (oct. 2026, punto 1). */
+      { titulo: 'Resumen de despachos', ruta: '/ventas/resumen',      icono: 'objetivo',       ayuda: 'Contenedores planificados contra despachados', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
       { titulo: 'Clientes',           ruta: '/ventas/clientes',       icono: 'clientes',       ayuda: 'Cartera, crédito e historial', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
       { titulo: 'Cotizaciones',       ruta: '/ventas/cotizaciones',   icono: 'cotizacion',     ayuda: 'Precios ofrecidos al cliente', roles: ['gerencia', 'operaciones', 'comercial', 'consulta'] },
       { titulo: 'Pedidos',            ruta: '/ventas/pedidos',        icono: 'pedido',         ayuda: 'Las proformas y su avance', roles: TODOS },
@@ -147,13 +153,19 @@ export const NAVEGACION: Grupo[] = [
 ];
 
 /** Filtra el menú según el rol del usuario conectado y sus permisos personales. */
-export function navegacionPara(rol: Rol, permisos: { ve_objetivos?: boolean } = {}): Grupo[] {
+export function navegacionPara(
+  rol: Rol,
+  permisos: { ve_objetivos?: boolean } = {},
+  /** Los módulos apagados en Configuración. Si no se dice, se muestran. */
+  modulos: { objetivos?: boolean } = {}
+): Grupo[] {
   return NAVEGACION
     .map((g) => ({
       ...g,
       entradas: g.entradas.filter(
         (e) => (e.roles === 'todos' || (e.roles as Rol[]).includes(rol))
           && (!e.permiso || permisos[e.permiso] === true)
+          && (!e.modulo || modulos[e.modulo] !== false)
       ),
     }))
     .filter((g) => g.entradas.length > 0);

@@ -15,6 +15,7 @@ import { hoyEnLima } from '@/lib/fechas';
 import { NOMBRE_MES } from '@/lib/objetivos';
 import { cargarTablero, describirFiltros, filtrar, leerFiltros } from '@/lib/objetivosDatos';
 import { generarExcelObjetivos } from '@/lib/excelObjetivos';
+import { objetivosActivo } from '@/lib/modulos';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,10 @@ export async function GET(req: NextRequest) {
   const q = Object.fromEntries(req.nextUrl.searchParams.entries());
   const f = leerFiltros(q, Number(hoyEnLima().slice(0, 4)));
   const supabase = await crearClienteServidor();
+  //  Oculto desde Configuración (punto 16): tampoco se descarga.
+  if (!(await objetivosActivo(supabase))) {
+    return NextResponse.json({ error: 'El módulo Objetivos mensuales está oculto temporalmente.' }, { status: 404 });
+  }
   const { filas: todas, tipoCambio } = await cargarTablero(supabase, f.anio);
   const filas = filtrar(todas, f);
 

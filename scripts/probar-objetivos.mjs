@@ -35,6 +35,12 @@ const ok = (cond, texto, detalle = '') => {
 const cerca = (a, b, tol = 0.01) => a !== null && b !== null && Math.abs(a - b) <= tol * Math.max(1, Math.abs(b));
 
 const [{ ahora: INICIO }] = await consultar(`select now() as ahora`);
+/*
+ * Desde octubre el módulo se puede ocultar (observaciones de Oliver, punto 16)
+ * y está oculto. Para probarlo se muestra durante la prueba y se deja como estaba.
+ */
+const [{ valor: MODULO_ANTES }] = await consultar(`select valor from parametros where clave = 'modulo_objetivos_activo'`);
+await consultar(`update parametros set valor = 'si' where clave = 'modulo_objetivos_activo'`);
 const cliente = async (email) => {
   const cli = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
   const { data, error } = await cli.auth.signInWithPassword({ email, password: 'SantaMonica2026' });
@@ -294,6 +300,7 @@ try {
   }
 } finally {
   await limpiar();
+  await consultar(`update parametros set valor = '${MODULO_ANTES}' where clave = 'modulo_objetivos_activo'`);
   await nav.close();
 }
 

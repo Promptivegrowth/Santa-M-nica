@@ -132,7 +132,39 @@ export type DatosReserva = {
   /** Días hasta el vencimiento. Si no viene, se usa el parámetro configurado. */
   dias?: number;
   observaciones?: string | null;
+  /**
+   * Observaciones de octubre, punto 10: permite cubrir la línea con un pallet
+   * de un SKU EQUIVALENTE (misma especie y mismo corte, otra presentación o
+   * formato). Sin esta marca, el pallet tiene que ser del SKU pedido.
+   */
+  equivalente?: boolean;
 };
+
+/**
+ * ¿Son equivalentes dos productos? Misma especie y mismo corte: es lo que el
+ * cliente compra. Cambia la presentación, el formato o la talla, que es lo que
+ * Comercial puede acordar con él. Un pallet de merluza nunca es equivalente a
+ * una línea de pota.
+ */
+async function sonEquivalentes(
+  supabase: Awaited<ReturnType<typeof crearClienteServidor>>,
+  pedido: number,
+  ofrecido: number
+): Promise<{ ok: boolean; pedidoTexto: string; ofrecidoTexto: string }> {
+  const { data } = await supabase
+    .from('sku_presentaciones')
+    .select('id, skus(codigo, corte, especie_id), presentaciones(descripcion)')
+    .in('id', [pedido, ofrecido]);
+  const de = (id: number) => {
+    const f = (data ?? []).find((x) => Number(x.id) === id);
+    const s = Array.isArray(f?.skus) ? f.skus[0] : f?.skus;
+    const pr = Array.isArray(f?.presentaciones) ? f.presentaciones[0] : f?.presentaciones;
+    return { especie: s?.especie_id, corte: String(s?.corte ?? '').trim().toLowerCase(), texto: `${s?.codigo ?? '?'} ${pr?.descripcion ?? ''}`.trim() };
+  };
+  const a = de(pedido);
+  const b = de(ofrecido);
+  return { ok: !!a.especie && a.especie === b.especie && a.corte === b.corte, pedidoTexto: a.texto, ofrecidoTexto: b.texto };
+}
 
 /** Cifra con separador de miles, para los mensajes. */
 function kg(n: number): string {
@@ -230,8 +262,26 @@ export async function crearReserva(d: DatosReserva): Promise<ResultadoReserva> {
   const { data: lote } = await supabase
     .from('lotes').select('sku_presentacion_id').eq('id', d.lote_id).maybeSingle();
 
+  /*
+   * SKU EQUIVALENTE (octubre, punto 10). Si el pallet es de otro SKU, solo
+   * pasa si se pidió expresamente y si de verdad es equivalente. La
+   * trazabilidad —qué se pidió y qué se apartó— la guarda la base sola
+   * (reservas.sku_solicitado_id / sku_reservado_id).
+   */
+  let notaEquivalente: string | null = null;
   if (Number(lote?.sku_presentacion_id) !== Number(linea.sku_presentacion_id)) {
-    return { ok: false, mensaje: `El pallet ${pallet} no es del producto de esta línea del pedido.` };
+    if (!d.equivalente) {
+      return { ok: false, mensaje: `El pallet ${pallet} no es del producto de esta línea del pedido.` };
+    }
+    const eq = await sonEquivalentes(supabase, Number(linea.sku_presentacion_id), Number(lote?.sku_presentacion_id));
+    if (!eq.ok) {
+      return {
+        ok: false,
+        mensaje: `El pallet ${pallet} (${eq.ofrecidoTexto}) no es equivalente a lo pedido (${eq.pedidoTexto}): ` +
+          'tiene que ser la misma especie y el mismo corte.',
+      };
+    }
+    notaEquivalente = `SKU equivalente: se pidió ${eq.pedidoTexto} y se apartó ${eq.ofrecidoTexto}.`;
   }
 
   const { data: yaReservado } = await supabase
@@ -276,7 +326,7 @@ export async function crearReserva(d: DatosReserva): Promise<ResultadoReserva> {
       estado: 'activa',
       vence_el: vence,
       creado_por: usuario.id,
-      observaciones: d.observaciones?.trim() || null,
+      observaciones: [notaEquivalente, d.observaciones?.trim()].filter(Boolean).join(' ') || null,
     })
     .select('id')
     .single();
@@ -289,7 +339,8 @@ export async function crearReserva(d: DatosReserva): Promise<ResultadoReserva> {
     p_tipo: 'reserva_creada',
     p_descripcion:
       `Se apartaron ${kg(d.peso_neto_kg)} del pallet ${pallet} para el pedido ` +
-      `${ped?.numero_proforma}, con vencimiento a ${dias} días`,
+      `${ped?.numero_proforma}, con vencimiento a ${dias} días` +
+      (notaEquivalente ? `. ${notaEquivalente}` : ''),
     p_severidad: 'info',
     p_metadatos: { pallet, kg: d.peso_neto_kg, bultos: d.bultos, dias },
   }).then(() => undefined, () => undefined);
@@ -302,6 +353,7 @@ export async function crearReserva(d: DatosReserva): Promise<ResultadoReserva> {
     id: creada.id as number,
     mensaje:
       `Apartados ${kg(d.peso_neto_kg)} del pallet ${pallet}. ` +
+      (notaEquivalente ? `${notaEquivalente} ` : '') +
       (restante > 0.001
         ? `Faltan ${kg(restante)} para cubrir la línea.`
         : 'La línea queda cubierta al 100 %.'),
@@ -326,6 +378,10 @@ export type LoteCandidato = {
   fisico_bultos: number;
   /** Kilos por bulto, para proponer cuántos bultos salen de los kilos. */
   kg_por_bulto: number;
+  /** El SKU del pallet y, si no es el pedido, que es un equivalente (punto 10). */
+  sku_presentacion_id: number;
+  sku: string;
+  equivalente: boolean;
 };
 
 export type OpcionesDeLinea = {
@@ -336,13 +392,17 @@ export type OpcionesDeLinea = {
   aviso: string | null;
 };
 
-export async function lotesParaLinea(pedidoLineaId: number): Promise<OpcionesDeLinea> {
+export async function lotesParaLinea(
+  pedidoLineaId: number,
+  /** Incluir pallets de SKU equivalentes (misma especie y corte). Punto 10. */
+  conEquivalentes = false
+): Promise<OpcionesDeLinea> {
   const supabase = await crearClienteServidor();
   const vacio: OpcionesDeLinea = { candidatos: [], faltaKg: 0, pedidoKg: 0, producto: '', aviso: null };
 
   const { data: linea } = await supabase
     .from('pedido_lineas')
-    .select('cantidad_tm, sku_presentacion_id, pedidos(tipo_despacho), sku_presentaciones(presentaciones(peso_bulto_kg, descripcion), skus(codigo, corte, especies(nombre)))')
+    .select('cantidad_tm, sku_presentacion_id, pedidos(tipo_despacho), sku_presentaciones(presentaciones(peso_bulto_kg, descripcion), skus(codigo, corte, especie_id, especies(nombre)))')
     .eq('id', pedidoLineaId)
     .maybeSingle();
 
@@ -372,10 +432,35 @@ export async function lotesParaLinea(pedidoLineaId: number): Promise<OpcionesDeL
    */
   const pedido = Array.isArray(linea.pedidos) ? linea.pedidos[0] : linea.pedidos;
   const esNacional = (pedido as { tipo_despacho?: string } | null)?.tipo_despacho === 'mercado_nacional';
+  /*
+   * Los productos que sirven: el pedido y, si se piden, sus equivalentes
+   * —misma especie y mismo corte—. Se traen con su presentación para saber
+   * los kilos por bulto de cada uno, que no tienen por qué ser los mismos.
+   */
+  const { data: candidatosSku } = conEquivalentes
+    ? await supabase
+        .from('sku_presentaciones')
+        .select('id, skus!inner(codigo, corte, especie_id), presentaciones(descripcion, peso_bulto_kg)')
+        .eq('skus.especie_id', Number(sku?.especie_id))
+        .ilike('skus.corte', String(sku?.corte ?? '').trim())
+    : await supabase
+        .from('sku_presentaciones')
+        .select('id, skus!inner(codigo, corte, especie_id), presentaciones(descripcion, peso_bulto_kg)')
+        .eq('id', Number(linea.sku_presentacion_id));
+  const infoSku = new Map((candidatosSku ?? []).map((x) => {
+    const s = Array.isArray(x.skus) ? x.skus[0] : x.skus;
+    const pr = Array.isArray(x.presentaciones) ? x.presentaciones[0] : x.presentaciones;
+    return [Number(x.id), {
+      texto: `${s?.codigo ?? ''} · ${pr?.descripcion ?? ''}`,
+      kgBulto: Number(pr?.peso_bulto_kg ?? 0) || kgPorBulto,
+    }];
+  }));
+  const idsSku = [...new Set([Number(linea.sku_presentacion_id), ...infoSku.keys()])];
+
   let consultaLotes = supabase
     .from('v_stock_lote')
-    .select('lote_id, almacen_id, codigo_pallet, fecha_produccion, disponible_kg, fisico_bultos, meses_almacenado')
-    .eq('sku_presentacion_id', linea.sku_presentacion_id)
+    .select('lote_id, almacen_id, codigo_pallet, fecha_produccion, disponible_kg, fisico_bultos, meses_almacenado, sku_presentacion_id')
+    .in('sku_presentacion_id', idsSku)
     .gt('disponible_kg', 0);
   if (!esNacional) consultaLotes = consultaLotes.eq('solo_nacional_kg', 0);
   const { data: lotes } = await consultaLotes
@@ -389,19 +474,28 @@ export async function lotesParaLinea(pedidoLineaId: number): Promise<OpcionesDeL
 
   const nombreAlmacen = new Map((almacenes ?? []).map((a) => [a.id as number, a.nombre as string]));
 
-  const candidatos: LoteCandidato[] = (lotes ?? []).map((l) => ({
-    lote_id: l.lote_id as number,
-    almacen_id: l.almacen_id as number,
-    codigo_pallet: l.codigo_pallet as string,
-    almacen: nombreAlmacen.get(l.almacen_id as number) ?? '—',
-    fecha_produccion: String(l.fecha_produccion),
-    meses: Number(l.meses_almacenado ?? 0),
-    disponible_kg: Number(l.disponible_kg),
-    fisico_bultos: Number(l.fisico_bultos ?? 0),
-    kg_por_bulto: kgPorBulto,
-  }));
+  const candidatos: LoteCandidato[] = (lotes ?? []).map((l) => {
+    const spId = Number(l.sku_presentacion_id);
+    return {
+      lote_id: l.lote_id as number,
+      almacen_id: l.almacen_id as number,
+      codigo_pallet: l.codigo_pallet as string,
+      almacen: nombreAlmacen.get(l.almacen_id as number) ?? '—',
+      fecha_produccion: String(l.fecha_produccion),
+      meses: Number(l.meses_almacenado ?? 0),
+      disponible_kg: Number(l.disponible_kg),
+      fisico_bultos: Number(l.fisico_bultos ?? 0),
+      kg_por_bulto: infoSku.get(spId)?.kgBulto ?? kgPorBulto,
+      sku_presentacion_id: spId,
+      sku: infoSku.get(spId)?.texto ?? '',
+      equivalente: spId !== Number(linea.sku_presentacion_id),
+    };
+  })
+    //  Primero los del SKU pedido; los equivalentes, después. Dentro de cada
+    //  grupo, del más antiguo al más nuevo.
+    .sort((a, b) => Number(a.equivalente) - Number(b.equivalente) || a.fecha_produccion.localeCompare(b.fecha_produccion));
 
-  const totalDisponible = candidatos.reduce((s, c) => s + c.disponible_kg, 0);
+  const totalDisponible = candidatos.filter((c) => !c.equivalente).reduce((s, c) => s + c.disponible_kg, 0);
 
   /*
    * El aviso se calcula aquí y no en la pantalla porque necesita el total
@@ -477,6 +571,8 @@ export async function apartarTodoDisponible(pedidoLineaId: number): Promise<Resu
 
   for (const lote of opciones.candidatos) {
     if (porCubrir <= 0.001) break;
+    //  «Apartar todo» solo toma el SKU pedido: un equivalente se elige a mano.
+    if (lote.equivalente) continue;
 
     // Del pallet se toma lo que falte, o todo lo que tenga si es menos.
     const kilos = Math.round(Math.min(porCubrir, lote.disponible_kg) * 10) / 10;

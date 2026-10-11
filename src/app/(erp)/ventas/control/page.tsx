@@ -30,6 +30,10 @@
  *  Cada tarjeta se pulsa y abre su detalle. En Backorder el detalle va por
  *  PRODUCTO, porque es lo que pidió el documento: «mostrar los pedidos,
  *  clientes, productos y cantidades que generan ese valor».
+ *
+ *  EL ORDEN (observaciones de octubre, punto 2): del pedido MÁS RECIENTE al
+ *  más antiguo, siempre —al entrar y al actualizar—. Lo decide el servidor,
+ *  así que no depende de lo que el navegador recuerde.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -132,9 +136,21 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
    * día habrá más de mil pedidos y las tarjetas empezarían a mentir en
    * silencio.
    */
-  const pedidos = await traerTodo<FilaControl>((d, h) =>
-    supabase.from('v_control_pedidos').select('*').range(d, h)
-  );
+  const [pedidosSinOrden, creados] = await Promise.all([
+    traerTodo<FilaControl>((d, h) =>
+      supabase.from('v_control_pedidos').select('*').order('id').range(d, h)),
+    /*
+     * La fecha de creación de cada pedido, para ordenar del más reciente al
+     * más antiguo (punto 2). La vista no la trae y es más barato pedirla que
+     * rehacer la vista.
+     */
+    traerTodo<{ id: number; creado_en: string }>((d, h) =>
+      supabase.from('pedidos').select('id, creado_en').order('id').range(d, h)),
+  ]);
+  const creadoDe = new Map(creados.map((p) => [Number(p.id), String(p.creado_en)]));
+  const masReciente = (a: number, b: number) =>
+    (creadoDe.get(b) ?? '').localeCompare(creadoDe.get(a) ?? '') || b - a;
+  const pedidos = [...pedidosSinOrden].sort((a, b) => masReciente(a.id, b.id));
 
   const abiertos = pedidos.filter((p) => p.situacion_control === 'por_atender');
   const completosTodos = pedidos.filter((p) => p.situacion_control === 'completo');
@@ -180,9 +196,11 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
       supabase.from('v_pedido_linea_cobertura')
         .select('pedido_id, pedido_kg, con_stock_kg, backorder_kg, sku_presentacion_id')
         .gt('backorder_kg', 0.5)
-        .order('backorder_kg', { ascending: false })
+        .order('linea_id')
         .range(d, h)
     );
+    //  También aquí, el pedido más reciente primero (punto 2).
+    lineas.sort((a, b) => masReciente(Number(a.pedido_id), Number(b.pedido_id)));
     const idsProd = [...new Set(lineas.map((l) => Number(l.sku_presentacion_id)))];
     const { data: prods } = idsProd.length
       ? await supabase.from('sku_presentaciones')

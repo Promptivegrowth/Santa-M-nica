@@ -69,11 +69,18 @@ export function FilaCobertura({
   const [elegido, setElegido] = useState<LoteCandidato | null>(null);
   const [kilos, setKilos] = useState(0);
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'mal'; texto: string } | null>(null);
+  /*
+   * SKU EQUIVALENTES (observaciones de octubre, punto 10). Apagado, se ofrece
+   * solo el SKU pedido, como siempre. Encendido, también los pallets de la
+   * misma especie y el mismo corte con otra presentación o formato; al
+   * apartar uno, queda registrado qué se pidió y qué se apartó.
+   */
+  const [equivalentes, setEquivalentes] = useState(false);
 
-  function abrir() {
+  function abrir(conEquivalentes = equivalentes) {
     setAviso(null);
     iniciarCarga(async () => {
-      const datos = await lotesParaLinea(pedidoLineaId);
+      const datos = await lotesParaLinea(pedidoLineaId, conEquivalentes);
       setOpciones(datos);
       setElegido(null);
       setKilos(0);
@@ -105,7 +112,7 @@ export function FilaCobertura({
       });
       setElegido(null);
       router.refresh();
-      setOpciones(await lotesParaLinea(pedidoLineaId));
+      setOpciones(await lotesParaLinea(pedidoLineaId, equivalentes));
     });
   }
 
@@ -122,6 +129,7 @@ export function FilaCobertura({
         // cámara, así que se redondea hacia arriba al bulto completo.
         bultos: Math.max(1, Math.ceil(kilos / elegido.kg_por_bulto)),
         peso_neto_kg: kilos,
+        equivalente: elegido.equivalente,
       });
 
       if (!r.ok) { setAviso({ tipo: 'mal', texto: r.mensaje }); return; }
@@ -130,21 +138,21 @@ export function FilaCobertura({
       setElegido(null);
       router.refresh();
       // Se recargan los candidatos: el disponible acaba de cambiar.
-      const datos = await lotesParaLinea(pedidoLineaId);
+      const datos = await lotesParaLinea(pedidoLineaId, equivalentes);
       setOpciones(datos);
     });
   }
 
   return (
     <>
-      <tr data-abierta={opciones ? 'si' : 'no'}>
+      <tr data-abierta={opciones ? 'si' : 'no'} data-linea={pedidoLineaId}>
         {celdas}
         <td>
           {puede && (
             <button
               type="button"
               className="btn btn-secundario btn-chico"
-              onClick={opciones ? () => setOpciones(null) : abrir}
+              onClick={opciones ? () => setOpciones(null) : () => abrir()}
               disabled={cargando}
             >
               <Icono nombre="reservas" tamano={14} />
@@ -178,6 +186,15 @@ export function FilaCobertura({
                       : <b className="cubierta">línea cubierta al 100 %</b>}
                   </span>
                 </div>
+
+                <label className="reservar-equivalentes">
+                  <input type="checkbox" name="equivalentes" checked={equivalentes} disabled={cargando}
+                         onChange={(e) => { setEquivalentes(e.target.checked); abrir(e.target.checked); }} />
+                  <span>
+                    Incluir <b>SKU equivalentes</b> · misma especie y mismo corte, otra presentación o formato.
+                    Queda registrado qué se pidió y qué se apartó.
+                  </span>
+                </label>
 
                 {opciones.aviso && (
                   <p className="reservar-aviso">
@@ -218,6 +235,7 @@ export function FilaCobertura({
                         <thead>
                           <tr>
                             <th>Pallet</th>
+                            <th>SKU</th>
                             <th>Almacén</th>
                             <th className="num">Producido</th>
                             <th className="num">Meses</th>
@@ -231,8 +249,13 @@ export function FilaCobertura({
                               elegido?.lote_id === l.lote_id && elegido?.almacen_id === l.almacen_id;
                             return (
                               <tr key={`${l.lote_id}-${l.almacen_id}`}
-                                  data-elegido={elegidoAqui ? 'si' : 'no'}>
+                                  data-elegido={elegidoAqui ? 'si' : 'no'}
+                                  data-equivalente={l.equivalente ? 'si' : 'no'}>
                                 <td className="mono">{l.codigo_pallet}</td>
+                                <td style={{ fontSize: '.74rem' }}>
+                                  {l.sku}
+                                  {l.equivalente && <> <span className="pill pill-atencion">Equivalente</span></>}
+                                </td>
                                 <td style={{ fontSize: '.78rem' }}>{l.almacen}</td>
                                 <td className="num mono" style={{ fontSize: '.74rem' }}>
                                   {l.fecha_produccion.slice(0, 10).split('-').reverse().join('/')}
@@ -262,6 +285,7 @@ export function FilaCobertura({
                     <div className="reservar-campo">
                       <label htmlFor={`kg-${pedidoLineaId}`}>
                         Kilos a apartar del pallet <b className="mono">{elegido.codigo_pallet}</b>
+                        {elegido.equivalente && <> · <span className="pill pill-atencion">SKU equivalente: {elegido.sku}</span></>}
                       </label>
                       <input
                         id={`kg-${pedidoLineaId}`}

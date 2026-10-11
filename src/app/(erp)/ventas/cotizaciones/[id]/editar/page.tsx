@@ -46,7 +46,7 @@ export default async function PaginaEditarCotizacion(
   const [{ data: cot }, { data: lineas }, { data: pedido }, { data: cuentas }] = await Promise.all([
     supabase
       .from('cotizaciones')
-      .select('id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, prioridad, observaciones, contacto_id, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email')
+      .select('id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, prioridad, observaciones, contacto_id, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, tipo_cambio_fecha, tipo_cambio_fuente, tipo_cambio_clase, fecha_tentativa_despacho, forma_pago, adelanto_pct, adelanto_abonado, adelanto_abonado_en')
       .eq('id', cotId)
       .single(),
     supabase
@@ -81,6 +81,15 @@ export default async function PaginaEditarCotizacion(
     validez_dias: Number(cot.validez_dias ?? 15),
     prioridad: (cot.prioridad as 'baja' | 'normal' | 'alta' | 'urgente') ?? 'normal',
     observaciones: (cot.observaciones as string) ?? null,
+    //  Observaciones de octubre: tipo de cambio, entrega y pago, tal como se guardaron.
+    tipo_cambio_fecha: (cot.tipo_cambio_fecha as string) ?? null,
+    tipo_cambio_fuente: (cot.tipo_cambio_fuente as 'sunat' | 'manual') ?? null,
+    tipo_cambio_clase: (cot.tipo_cambio_clase as 'compra' | 'venta') ?? null,
+    fecha_tentativa_despacho: (cot.fecha_tentativa_despacho as string) ?? null,
+    forma_pago: (cot.forma_pago as DatosEdicion['forma_pago']) ?? null,
+    adelanto_pct: Number(cot.adelanto_pct ?? 0),
+    adelanto_abonado: cot.adelanto_abonado === null || cot.adelanto_abonado === undefined ? null : Number(cot.adelanto_abonado),
+    adelanto_abonado_en: (cot.adelanto_abonado_en as string) ?? null,
     // Se recupera tal cual estaba: al reabrir un documento no se le cambia el
     // contacto por debajo, porque quizá ya se envió con ese.
     contacto: {
@@ -132,6 +141,7 @@ export default async function PaginaEditarCotizacion(
         tipoCambioDefecto={cat.tipoCambioDefecto}
         topeDescuento={cat.topeDescuento}
         puedeAutorizarDescuento={['gerencia', 'operaciones'].includes(rol)}
+        plazos={cat.plazos}
       />
     </>
   );

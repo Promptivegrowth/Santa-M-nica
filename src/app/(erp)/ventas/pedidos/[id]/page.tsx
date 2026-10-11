@@ -33,10 +33,13 @@ import { Historial } from '@/components/ui/Historial';
 import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { EsqueletoKpi, EsqueletoPestanas, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { tm, num, fecha, dinero, pct, etiquetaEstado } from '@/lib/formato';
-import { veCostos, type Rol } from '@/lib/navegacion';
+import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
 import { RestriccionPeso } from './RestriccionPeso';
 import { uno, campo } from '@/lib/relaciones';
 import { BotonFacturar } from './Facturar';
+import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
+import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
+import { hoyEnLima } from '@/lib/fechas';
 
 export const dynamic = 'force-dynamic';
 
@@ -158,7 +161,7 @@ async function CuerpoPedido({
    * El contacto y las cuentas se piden aparte porque el tablero es una VISTA
    * y no los incluye. Son dos consultas diminutas por clave.
    */
-  const [{ data: cabecera }, { data: filasCuentas }] = await Promise.all([
+  const [{ data: cabecera }, { data: filasCuentas }, { data: parametros }] = await Promise.all([
     supabase
       .from('pedidos')
       /*
@@ -167,14 +170,19 @@ async function CuerpoPedido({
        * y quien abre una proforma necesita poder volver a la oferta que la
        * originó —es donde está la negociación—.
        */
-      .select('contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, cotizacion_id, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, restricciones_en, cotizaciones(numero, fecha, estado), usuarios!pedidos_restricciones_por_fkey(nombre)')
+      .select('contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, cotizacion_id, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, restricciones_en, observaciones, prioridad, tipo_cambio, tipo_cambio_fecha, tipo_cambio_fuente, tipo_cambio_clase, fecha_tentativa_despacho, fecha_solicitada, forma_pago, condicion_pago, pago_adelanto_pct, adelanto_abonado, adelanto_abonado_en, cotizaciones(numero, fecha, estado, observaciones), usuarios!pedidos_restricciones_por_fkey(nombre)')
       .eq('id', pedidoId)
       .single(),
     supabase
       .from('pedido_cuentas')
       .select('cuentas_bancarias(banco, tipo, moneda, numero, cci, swift)')
       .eq('pedido_id', pedidoId),
+    //  IGV y plazos por prioridad, para el bloque «Entrega y pago» (octubre, puntos 5 y 6).
+    supabase.from('parametros').select('clave, valor')
+      .or('clave.eq.igv_porcentaje,clave.like.plazo_dias_%'),
   ]);
+  const igvPct = Number((parametros ?? []).find((p) => p.clave === 'igv_porcentaje')?.valor ?? 18);
+  const plazos = diasDePlazos((parametros ?? []) as { clave: string; valor: unknown }[]);
 
   // `?? {}` deja el tipo en objeto vacío y TypeScript no encuentra los campos;
   // se declara lo que de verdad llega.
@@ -218,7 +226,7 @@ async function CuerpoPedido({
       .eq('pedido_id', pedidoId).order('orden'),
     supabase
       .from('reservas')
-      .select('id, pedido_linea_id, bultos, peso_neto_kg, estado, vence_el, creado_en, motivo_liberacion, lotes(codigo_pallet, fecha_produccion), almacenes(nombre), pedido_lineas!inner(pedido_id)')
+      .select('id, pedido_linea_id, bultos, peso_neto_kg, estado, vence_el, creado_en, motivo_liberacion, observaciones, sku_solicitado_id, sku_reservado_id, reservado:sku_presentaciones!reservas_sku_reservado_id_fkey(skus(codigo), presentaciones(descripcion)), solicitado:sku_presentaciones!reservas_sku_solicitado_id_fkey(skus(codigo), presentaciones(descripcion)), lotes(codigo_pallet, fecha_produccion), almacenes(nombre), pedido_lineas!inner(pedido_id)')
       .eq('pedido_lineas.pedido_id', pedidoId).order('creado_en', { ascending: false }),
     supabase
       .from('embarque_pedidos')
@@ -309,6 +317,26 @@ async function CuerpoPedido({
                   )}
                 </dd>
               </div>
+              {/*
+                LAS OBSERVACIONES (octubre, punto 7). Las de la cotización pasan
+                a la proforma al convertir; aquí se ven, y se dice de dónde
+                vienen si coinciden con las de la oferta.
+              */}
+              <div data-campo="observaciones">
+                <dt>Observaciones</dt>
+                <dd>
+                  {cabecera?.observaciones ? (
+                    <>
+                      {String(cabecera.observaciones)}
+                      {origen?.observaciones && String(origen.observaciones).trim() === String(cabecera.observaciones).trim() && (
+                        <><br /><small style={{ color: 'var(--tinta-3)' }}>De la cotización {String(origen.numero)}</small></>
+                      )}
+                    </>
+                  ) : (
+                    <span style={{ color: 'var(--tinta-3)' }}>Sin observaciones</span>
+                  )}
+                </dd>
+              </div>
             </dl>
           </Panel>
 
@@ -334,6 +362,24 @@ async function CuerpoPedido({
               </div>
             </dl>
           </Panel>
+
+          {/* ---- Entrega y pago (octubre, puntos 3 a 6), heredado de la cotización ---- */}
+          {cabecera && (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <BloqueCondiciones
+                tipo="pedido"
+                id={pedidoId}
+                moneda={moneda}
+                total={totalConImpuesto(Number(pedido.venta ?? 0), pedido.pais as string, igvPct)}
+                doc={cabecera as unknown as Record<string, unknown>}
+                desde={String(cabecera.fecha_solicitada ?? hoyEnLima())}
+                plazos={plazos}
+                hoy={hoyEnLima()}
+                puedeRegistrarAbono={puedeVender((usuario?.rol ?? 'consulta') as Rol)}
+                puedeVerImportes={puedeVerCostos}
+              />
+            </div>
+          )}
 
           {/* ---- Lo que sale impreso en la proforma ---- */}
           <Panel titulo="Dirigido a">
@@ -494,7 +540,7 @@ async function CuerpoPedido({
               <table className="datos">
                 <thead>
                   <tr>
-                    <th>Estado</th><th>Lote</th><th>Almacén</th>
+                    <th>Estado</th><th>Lote</th><th>SKU apartado</th><th>Almacén</th>
                     <th className="num">Bultos</th><th className="num">Peso</th>
                     <th className="num">Vence</th><th>Observación</th>
                   </tr>
@@ -514,6 +560,19 @@ async function CuerpoPedido({
                           <span style={{ color: 'var(--tinta-3)', fontSize: '.7rem' }}>
                             prod. {fecha(campo(r.lotes, 'fecha_produccion', ''))}
                           </span>
+                        </td>
+                        {/* SKU pedido y SKU apartado (octubre, punto 10). */}
+                        <td style={{ fontSize: '.74rem' }} data-sku-equivalente={r.sku_solicitado_id !== r.sku_reservado_id ? 'si' : 'no'}>
+                          {campo(uno<Record<string, unknown>>(r.reservado)?.skus, 'codigo')} · {campo(uno<Record<string, unknown>>(r.reservado)?.presentaciones, 'descripcion')}
+                          {r.sku_solicitado_id !== r.sku_reservado_id && (
+                            <>
+                              <br />
+                              <span className="pill pill-atencion">Equivalente</span>{' '}
+                              <span style={{ color: 'var(--tinta-3)' }}>
+                                se pidió {campo(uno<Record<string, unknown>>(r.solicitado)?.skus, 'codigo')} · {campo(uno<Record<string, unknown>>(r.solicitado)?.presentaciones, 'descripcion')}
+                              </span>
+                            </>
+                          )}
                         </td>
                         <td>{campo(r.almacenes, 'nombre')}</td>
                         <td className="num">{num(r.bultos)}</td>

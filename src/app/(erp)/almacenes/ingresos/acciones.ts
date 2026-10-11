@@ -52,6 +52,13 @@ export type DatosIngreso = {
   peso_neto_kg: number;
   costo_unitario: number;
   observaciones: string | null;
+  /**
+   * Observaciones de octubre, punto 11: de dónde viene el producto.
+   * Producción = planta propia o maquila; Compras = adquirido a un tercero.
+   * Se guarda en el MOVIMIENTO y se puede consultar en Ingresos y en el Kardex.
+   */
+  origen_ingreso: 'produccion' | 'compras' | '';
+  proveedor: string | null;
 };
 
 function refrescar() {
@@ -73,6 +80,12 @@ function validar(d: DatosIngreso): { mensaje: string; campo: string } | null {
     return { mensaje: 'El código de pallet es demasiado largo.', campo: 'codigo_pallet' };
   }
   if (!d.sku_presentacion_id) return { mensaje: 'Elija qué producto entró.', campo: 'sku_presentacion_id' };
+  if (d.origen_ingreso !== 'produccion' && d.origen_ingreso !== 'compras') {
+    return { mensaje: 'Indique el origen del ingreso: Producción o Compras.', campo: 'origen_ingreso' };
+  }
+  if (d.origen_ingreso === 'compras' && !d.proveedor?.trim()) {
+    return { mensaje: 'Un ingreso por compra necesita el proveedor: es a quien se reclama si sale mal.', campo: 'proveedor' };
+  }
   if (!d.almacen_id) return { mensaje: 'Elija a qué bodega entró.', campo: 'almacen_id' };
   if (!d.fecha_produccion) return { mensaje: 'Falta la fecha de producción.', campo: 'fecha_produccion' };
 
@@ -189,6 +202,8 @@ export async function registrarIngreso(d: DatosIngreso): Promise<Resultado> {
     documento_ref: `ING-${String(lote.id).padStart(6, '0')}`,
     usuario_id: permiso.usuario!.id,
     observaciones: d.observaciones?.trim() || null,
+    origen_ingreso: d.origen_ingreso,
+    proveedor: d.origen_ingreso === 'compras' ? d.proveedor?.trim() || null : null,
   });
 
   if (errorMov) {

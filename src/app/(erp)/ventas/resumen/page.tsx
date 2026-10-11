@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  RESUMEN DE VENTAS · el plan del mes contra lo que salió
+ *  RESUMEN DE DESPACHOS · el plan del mes contra lo que salió
  * ============================================================================
  *  Documento de mejoras, punto 2.1 — «Ventas → Dashboard/Resumen de Ventas»:
  *
@@ -13,6 +13,13 @@
  *  056; aquí solo se enseñan, y cada tarjeta abre los contenedores que la
  *  forman (punto 7 del documento: «las tarjetas deben permitir hacer clic y
  *  ver el detalle»).
+ *
+ *  OBSERVACIONES DE OCTUBRE (punto 1)
+ *   · Se llama «Resumen de despachos» —antes «Resumen de ventas»—: lo que
+ *     mide son contenedores que salen. La dirección no cambia, para no romper
+ *     enlaces guardados.
+ *   · Las proformas salen de la MÁS RECIENTE a la más antigua, por su fecha
+ *     de creación: lo último que se vendió es lo primero que se busca.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -24,7 +31,7 @@ import { traerTodo } from '@/lib/traerTodo';
 import { enlaceEntidad } from '@/lib/enlaces';
 import { num, pct, fecha } from '@/lib/formato';
 
-export const metadata: Metadata = { title: 'Resumen de ventas' };
+export const metadata: Metadata = { title: 'Resumen de despachos' };
 export const dynamic = 'force-dynamic';
 
 type Mes = {
@@ -82,6 +89,20 @@ export default async function PaginaResumenVentas(props: PageProps<'/ventas/resu
           .order('fecha_programada').order('embarque_id').range(d, h))
     : [];
 
+  /*
+   * EL ORDEN: la proforma más reciente primero (punto 1). La vista no trae la
+   * fecha de creación del pedido, así que se pide aparte, solo para los
+   * pedidos de este mes. Un contenedor sin proforma va al final.
+   */
+  const idsPedidos = [...new Set(contenedores.map((c) => c.pedido_id).filter((x): x is number => !!x))];
+  const { data: creados } = idsPedidos.length
+    ? await supabase.from('pedidos').select('id, creado_en').in('id', idsPedidos)
+    : { data: [] as { id: number; creado_en: string }[] };
+  const creadoDe = new Map((creados ?? []).map((p) => [Number(p.id), String(p.creado_en)]));
+  const creadoDeContenedor = (c: Contenedor) => (c.pedido_id ? creadoDe.get(c.pedido_id) ?? '' : '');
+  contenedores.sort((a, b) =>
+    creadoDeContenedor(b).localeCompare(creadoDeContenedor(a)) || b.embarque_id - a.embarque_id);
+
   const delPlan = contenedores.filter((c) => c.mes_plan === inicio);
   const detalle = {
     planificados: delPlan,
@@ -97,8 +118,8 @@ export default async function PaginaResumenVentas(props: PageProps<'/ventas/resu
   return (
     <>
       <CabeceraPagina
-        titulo="Resumen de ventas"
-        descripcion="Contenedores planificados en el Planificador contra los que tuvieron salida dentro del mes."
+        titulo="Resumen de despachos"
+        descripcion="Contenedores planificados en el Planificador contra los que tuvieron salida dentro del mes. Las proformas van de la más reciente a la más antigua."
       />
 
       <Panel titulo="Mes" className="mb-espacio">
@@ -180,6 +201,7 @@ export default async function PaginaResumenVentas(props: PageProps<'/ventas/resu
                         <th className="num">Programado</th>
                         <th className="num">Salida</th>
                         <th>Proforma</th>
+                        <th className="num">Creada</th>
                         <th>Cliente</th>
                         <th>Destino</th>
                         <th>Situación</th>
@@ -204,6 +226,9 @@ export default async function PaginaResumenVentas(props: PageProps<'/ventas/resu
                               {c.pedido_id
                                 ? <Link href={`/ventas/pedidos/${c.pedido_id}`} className="enlace-ficha">{c.proformas}</Link>
                                 : (c.proformas ?? '—')}
+                            </td>
+                            <td className="num" data-creada={creadoDeContenedor(c)}>
+                              {creadoDeContenedor(c) ? fecha(creadoDeContenedor(c)) : '—'}
                             </td>
                             <td>{c.clientes ?? '—'}</td>
                             <td>{c.destino ?? '—'}</td>

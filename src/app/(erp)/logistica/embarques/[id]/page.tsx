@@ -26,6 +26,7 @@ import { aDolares } from '@/lib/moneda';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
 import { NuevoPacking } from './NuevoPacking';
+import { ObservacionesEmbarque } from './ObservacionesEmbarque';
 
 export const dynamic = 'force-dynamic';
 
@@ -139,7 +140,8 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
   const usuario = await obtenerUsuarioActual();
   const puedeVerImportes = veCostos((usuario?.rol ?? 'consulta') as Rol);
 
-  const [{ data: vinculos }, { data: packings }] = await Promise.all([
+  const puedeEditar = ['gerencia', 'operaciones', 'comex', 'almacen'].includes(usuario?.rol ?? '');
+  const [{ data: vinculos }, { data: packings }, { data: programadas }] = await Promise.all([
     supabase
       .from('embarque_pedidos')
       .select('pedidos(id, numero_proforma, ciclo, cobertura, situacion, moneda, tipo_cambio, fecha_comprometida, clientes(id, razon_social, pais), pedido_lineas(cantidad_tm, precio_tm, descuento_pct))')
@@ -148,7 +150,19 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
       .from('packing_lists')
       .select('id, codigo, estado, contenedor, precinto')
       .eq('embarque_id', embId),
+    //  Qué productos y cuánto sale (octubre, punto 13).
+    supabase
+      .from('embarque_lineas')
+      .select('id, cantidad_kg, pedido_linea_id, sku_presentacion_id, sale:sku_presentaciones(skus(codigo), presentaciones(descripcion)), pedido_lineas(pedido_id, cantidad_tm, sku_presentacion_id, sku_presentaciones(skus(codigo, corte, especies(nombre)), presentaciones(descripcion)), pedidos(numero_proforma))')
+      .eq('embarque_id', embId)
+      .order('id'),
   ]);
+  //  El saldo que le queda a cada línea, contando TODOS los embarques vivos.
+  const idsLineas = [...new Set((programadas ?? []).map((x) => Number(x.pedido_linea_id)))];
+  const { data: saldos } = idsLineas.length
+    ? await supabase.from('v_pedido_linea_programacion').select('pedido_linea_id, programado_kg, por_programar_kg').in('pedido_linea_id', idsLineas)
+    : { data: [] };
+  const saldoDe = new Map((saldos ?? []).map((s) => [Number(s.pedido_linea_id), s]));
 
   const estado = e.estado as string;
   const pedidos = (vinculos ?? [])
@@ -253,8 +267,13 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
             <div><dt>Booking</dt><dd className="mono">{(e.booking as string) ?? 'Sin booking'}</dd></div>
             <div><dt>Naviera</dt><dd>{(e.naviera as string) ?? '—'}</dd></div>
             <div><dt>Fecha programada</dt><dd>{e.fecha_programada ? fecha(e.fecha_programada as string) : '—'}</dd></div>
-            {e.observaciones ? <div><dt>Observaciones</dt><dd>{e.observaciones as string}</dd></div> : null}
           </dl>
+          {/* Editables después de programar (octubre, punto 12). */}
+          <div style={{ padding: '.2rem 1rem .9rem' }}>
+            <span className="etiqueta" style={{ display: 'block', marginBottom: '.25rem' }}>Observaciones</span>
+            <ObservacionesEmbarque id={embId} texto={(e.observaciones as string) ?? null}
+                                   puede={puedeEditar && estado !== 'cancelado'} />
+          </div>
         </Panel>
 
         <Panel titulo="Transporte terrestre">
@@ -347,6 +366,61 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
                         <Link href={`/ventas/pedidos/${p.id}`} className="accion-btn" title="Ver el pedido">
                           <Icono nombre="ver" tamano={15} />
                         </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      {/* ══════ QUÉ SALE EN ESTE EMBARQUE (octubre, punto 13) ══════ */}
+      <Panel id="productos" titulo={`Productos programados · ${(programadas ?? []).length}`} className="mb-espacio">
+        {(programadas ?? []).length === 0 ? (
+          <Vacio
+            titulo="Sin detalle por producto"
+            mensaje="Este embarque lleva sus pedidos enteros: se programó antes de poder elegir producto por producto, o desde el calendario."
+          />
+        ) : (
+          <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+            <table className="datos" data-cuadro="embarque-lineas">
+              <thead>
+                <tr>
+                  <th>Proforma</th><th>Producto pedido</th><th>SKU que sale</th>
+                  <th className="num">Pedido</th><th className="num">Sale en este</th>
+                  <th className="num">Programado en total</th><th className="num">Pendiente</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(programadas ?? []).map((x) => {
+                  const pl = uno<Record<string, unknown>>(x.pedido_lineas);
+                  const sp = uno<Record<string, unknown>>(pl?.sku_presentaciones);
+                  const sku = uno<Record<string, unknown>>(sp?.skus);
+                  const sale = uno<Record<string, unknown>>(x.sale);
+                  const s = saldoDe.get(Number(x.pedido_linea_id));
+                  const equivalente = Number(x.sku_presentacion_id) !== Number(pl?.sku_presentacion_id);
+                  return (
+                    <tr key={x.id as number} data-linea={x.pedido_linea_id as number}>
+                      <td className="mono">
+                        <Link href={`/ventas/pedidos/${pl?.pedido_id}`} className="enlace-ficha">
+                          {String(uno<Record<string, unknown>>(pl?.pedidos)?.numero_proforma ?? '—')}
+                        </Link>
+                      </td>
+                      <td style={{ fontSize: '.76rem' }}>
+                        {String(sku?.codigo ?? '')} · {campo(sku?.especies, 'nombre')} {String(sku?.corte ?? '')} · {campo(sp?.presentaciones, 'descripcion')}
+                      </td>
+                      <td style={{ fontSize: '.76rem' }}>
+                        {campo(sale?.skus, 'codigo')} · {campo(sale?.presentaciones, 'descripcion')}
+                        {equivalente && <> <Etiqueta texto="Equivalente" tono="atencion" /></>}
+                      </td>
+                      <td className="num">{num(Number(pl?.cantidad_tm ?? 0), 3)} TM</td>
+                      <td className="num"><strong>{tm(Number(x.cantidad_kg), 3)} TM</strong></td>
+                      <td className="num">{tm(Number(s?.programado_kg ?? 0), 3)} TM</td>
+                      <td className="num" data-pendiente={Number(s?.por_programar_kg ?? 0).toFixed(3)}
+                          style={{ color: Number(s?.por_programar_kg ?? 0) > 0.5 ? 'var(--atencion)' : 'var(--ok)' }}>
+                        {Number(s?.por_programar_kg ?? 0) > 0.5 ? `${tm(Number(s?.por_programar_kg), 3)} TM` : 'Completo'}
                       </td>
                     </tr>
                   );

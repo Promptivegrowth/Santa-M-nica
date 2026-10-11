@@ -104,7 +104,7 @@ try {
   {
     await p.goto(`${BASE}/ventas/pedidos?orden=prioridad`, { waitUntil: 'networkidle' });
     await p.waitForTimeout(1800);
-    const prioridades = (await p.locator('table.datos tbody tr td:nth-last-child(2)').allInnerTexts())
+    const prioridades = (await p.locator('table.datos > tbody > tr[data-pedido] > td:nth-last-child(2)').allInnerTexts())
       .map((t) => t.trim().toUpperCase());
     ok(prioridades[0] === 'URGENTE',
        'la primera fila es urgente', prioridades.slice(0, 3).join(' · '));

@@ -26,6 +26,9 @@ import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, dinero, pct, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
+import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
+import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
+import { hoyEnLima } from '@/lib/fechas';
 
 export const dynamic = 'force-dynamic';
 
@@ -213,6 +216,16 @@ async function CuerpoCotizacion({
 
   const cuentasDoc = await cuentasDelDocumento(supabase, 'cotizacion_cuentas', 'cotizacion_id', cotId);
 
+  //  El IGV y los plazos de cada prioridad (observaciones de octubre, puntos 5 y 6).
+  const [{ data: parametros }, { data: contratos }] = await Promise.all([
+    supabase.from('parametros').select('clave, valor')
+      .or('clave.eq.igv_porcentaje,clave.like.plazo_dias_%'),
+    supabase.from('contratos').select('id, numero, generado_en').eq('cotizacion_id', cotId)
+      .order('generado_en', { ascending: false }),
+  ]);
+  const igvPct = Number((parametros ?? []).find((p) => p.clave === 'igv_porcentaje')?.valor ?? 18);
+  const plazos = diasDePlazos((parametros ?? []) as { clave: string; valor: unknown }[]);
+
   const { data: lineas } = await supabase
     .from('cotizacion_lineas')
     .select('id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct, orden, sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
@@ -232,6 +245,9 @@ async function CuerpoCotizacion({
   const toneladas = filas.reduce((s, l) => s + Number(l.cantidad_tm ?? 0), 0);
   const bruto = filas.reduce((s, l) => s + Number(l.cantidad_tm) * Number(l.precio_lista_tm), 0);
   const descuentoTotal = bruto - subtotal;
+  //  Lo que paga el cliente: con IGV solo si es nacional, como el PDF.
+  const totalDocumento = totalConImpuesto(subtotal, cliente?.pais as string, igvPct);
+  const aprobadaAlgunaVez = Boolean(cot.aprobada_en);
 
   /* ---- Vigencia ---- */
   const diasValidez = Number(cot.validez_dias ?? 15);
@@ -311,6 +327,26 @@ async function CuerpoCotizacion({
             </Link>
           )}
 
+          {/*
+            EL CONTRATO (observaciones de octubre, punto 8). Solo cuando la
+            oferta ya está aprobada: un contrato sobre un precio que nadie
+            autorizó no sirve.
+          */}
+          {aprobadaAlgunaVez && (
+            <Link href={`/ventas/cotizaciones/${cotId}/contrato`} className="ficha-enlace" data-enlace="contrato">
+              <Icono nombre="cotizacion" tamano={15} />
+              <span>
+                <strong>Contrato</strong>
+                <br />
+                <small>
+                  {(contratos ?? []).length
+                    ? `${contratos![0].numero} · ${(contratos ?? []).length} generado${(contratos ?? []).length === 1 ? '' : 's'}`
+                    : 'Generar desde la plantilla'}
+                </small>
+              </span>
+            </Link>
+          )}
+
           <Link href="/ventas/disponibilidad" className="ficha-enlace">
             <Icono nombre="disponibilidad" tamano={15} />
             <span>
@@ -321,6 +357,20 @@ async function CuerpoCotizacion({
         </div>
       </Panel>
 
+
+      {/* ---- Entrega y pago (observaciones de octubre, puntos 3 a 6) ---- */}
+      <BloqueCondiciones
+        tipo="cotizacion"
+        id={cotId}
+        moneda={moneda}
+        total={totalDocumento}
+        doc={cot}
+        desde={String(cot.fecha ?? '').slice(0, 10) || hoyEnLima()}
+        plazos={plazos}
+        hoy={hoyEnLima()}
+        puedeRegistrarAbono={!pedido && puedeVender((usuario?.rol ?? 'consulta') as Rol)}
+        puedeVerImportes={puedeVerImportes}
+      />
 
       {/* ---- Contacto y cuentas: lo que sale impreso en el documento ---- */}
       <div className="rejilla-2 mb-espacio">

@@ -24,11 +24,14 @@
  *  se pueda decidir si compensa.
  * ============================================================================
  */
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
-import { crearEmbarque, type DatosEmbarque, type PedidoEmbarcable } from '../acciones';
+import {
+  crearEmbarque, lineasParaEmbarcar,
+  type DatosEmbarque, type PedidoEmbarcable, type LineaEmbarcable,
+} from '../acciones';
 import { consolidarEnBodega } from '@/app/(erp)/almacenes/traslados/acciones';
 
 const cifra = (n: number, d = 1) =>
@@ -80,6 +83,39 @@ export function FormularioEmbarque({
 
   /** Si el usuario ya eligió bodega a mano, no se le vuelve a mover. */
   const [bodegaTocada, setBodegaTocada] = useState(false);
+
+  /* ----------------------------------------------------------------------
+     QUÉ SALE DE CADA PROFORMA (observaciones de octubre, punto 13)
+     ----------------------------------------------------------------------
+     Al marcar un pedido se traen sus productos: lo pedido, lo que ya va en
+     otros embarques, el saldo y lo apartado por SKU —el que de verdad se
+     apartó, que puede ser un equivalente—. Se propone sacar lo apartado en la
+     bodega de salida, sin pasar del saldo. Se puede bajar: eso es un despacho
+     parcial, y lo que no sale queda pendiente para el próximo embarque.
+     ---------------------------------------------------------------------- */
+  const [lineas, setLineas] = useState<LineaEmbarcable[]>([]);
+  /** TM que salen, por «línea-SKU». Texto, para poder dejar el campo vacío mientras se escribe. */
+  const [cantidades, setCantidades] = useState<Record<string, string>>({});
+  const [tocadas, setTocadas] = useState<Set<string>>(new Set());
+  const clave = (l: LineaEmbarcable) => `${l.pedido_linea_id}-${l.sku_presentacion_id}`;
+  const idsElegidos = d.pedidos.join(',');
+
+  useEffect(() => {
+    let vigente = true;
+    const ids = idsElegidos ? idsElegidos.split(',').map(Number) : [];
+    lineasParaEmbarcar(ids).then((ls) => { if (vigente) setLineas(ls); });
+    return () => { vigente = false; };
+  }, [idsElegidos]);
+
+  /** Lo que se propone sacar: lo apartado en la bodega de salida, sin pasar del saldo. */
+  const propuesta = (l: LineaEmbarcable) => {
+    const enBodega = l.bodegas.filter((b) => b.almacen_id === d.almacen_id).reduce((t, b) => t + b.kg, 0);
+    return Math.max(0, Math.min(enBodega, l.por_programar_kg)) / 1000;
+  };
+  const tmDe = (l: LineaEmbarcable) => {
+    const k = clave(l);
+    return tocadas.has(k) ? Number(cantidades[k] || 0) : propuesta(l);
+  };
 
   function alternarPedido(id: number) {
     setD((p) => {
@@ -168,7 +204,13 @@ export function FormularioEmbarque({
     e.preventDefault();
     setProblema(null);
     iniciar(async () => {
-      const r = await crearEmbarque(d);
+      const r = await crearEmbarque({
+        ...d,
+        lineas: lineas
+          .filter((l) => d.pedidos.includes(l.pedido_id))
+          .map((l) => ({ pedido_linea_id: l.pedido_linea_id, sku_presentacion_id: l.sku_presentacion_id, cantidad_kg: Math.round(tmDe(l) * 1000 * 1000) / 1000 }))
+          .filter((l) => l.cantidad_kg > 0),
+      });
       if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: r.campo }); return; }
 
       /*
@@ -344,6 +386,64 @@ export function FormularioEmbarque({
                     );
                   })}
                 </ul>
+
+                {/* ══════ QUÉ SALE DE CADA PROFORMA (punto 13) ══════ */}
+                <div className="embarque-lineas" data-bloque="embarque-lineas">
+                  <div className="decision-cab">
+                    <strong>Qué sale de cada proforma</strong>
+                    <span>Se propone lo apartado en {nombreBodega}. Bájelo para un despacho parcial.</span>
+                  </div>
+                  <div className="tabla-envoltorio">
+                    <table className="datos">
+                      <thead>
+                        <tr>
+                          <th>Proforma</th>
+                          <th>Producto pedido</th>
+                          <th>SKU apartado</th>
+                          <th className="num">Pedido</th>
+                          <th className="num">En otros embarques</th>
+                          <th className="num">Apartado</th>
+                          <th className="num">Sale ahora (TM)</th>
+                          <th className="num">Queda pendiente</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lineas.filter((l) => d.pedidos.includes(l.pedido_id)).map((l) => {
+                          const k = clave(l);
+                          //  Una línea puede tener dos SKU apartados: el saldo es de la LÍNEA.
+                          const saleLinea = lineas.filter((x) => x.pedido_linea_id === l.pedido_linea_id).reduce((t, x) => t + tmDe(x), 0);
+                          const pendiente = Math.max(0, l.por_programar_kg / 1000 - saleLinea);
+                          const excede = saleLinea * 1000 > l.por_programar_kg + 0.5;
+                          return (
+                            <tr key={k} data-linea={k} data-alerta={excede ? 'si' : 'no'}>
+                              <td className="mono">{pedidos.find((p) => p.id === l.pedido_id)?.numero}</td>
+                              <td style={{ fontSize: '.74rem' }}>{l.producto}</td>
+                              <td style={{ fontSize: '.74rem' }}>
+                                {l.reservado_kg > 0 ? l.sku : <span style={{ color: 'var(--tinta-3)' }}>Sin apartar</span>}
+                                {l.equivalente && <> <span className="pill pill-atencion">Equivalente</span></>}
+                              </td>
+                              <td className="num mono">{cifra(l.pedido_kg / 1000, 3)}</td>
+                              <td className="num mono">{l.programado_kg > 0 ? cifra(l.programado_kg / 1000, 3) : '—'}</td>
+                              <td className="num mono">{cifra(l.reservado_kg / 1000, 3)}</td>
+                              <td className="num">
+                                <input className="campo form-mini" type="number" min="0" step="0.001"
+                                       name={`sale-${k}`}
+                                       value={tocadas.has(k) ? cantidades[k] ?? '' : String(Math.round(propuesta(l) * 1000) / 1000)}
+                                       onChange={(e) => {
+                                         setTocadas((t) => new Set(t).add(k));
+                                         setCantidades((c) => ({ ...c, [k]: e.target.value }));
+                                         setProblema(null);
+                                       }} />
+                                {excede && <><br /><span className="pill pill-critico">Más que el saldo</span></>}
+                              </td>
+                              <td className="num mono" data-pendiente={pendiente.toFixed(3)}>{cifra(pendiente, 3)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
 
                 {tmVaradas > 0.005 ? (
                   <div className="decision-falta">

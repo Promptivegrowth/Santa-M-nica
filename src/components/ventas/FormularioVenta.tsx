@@ -35,6 +35,7 @@ import {
   crearCotizacion,
   actualizarCotizacion,
   consultarPrecio,
+  consultarTipoCambio,
 } from '@/app/(erp)/ventas/cotizaciones/acciones';
 import { crearPedidoDirecto } from '@/app/(erp)/ventas/pedidos/acciones';
 import { detalleProductos, type DetalleProducto } from '@/app/(erp)/ventas/productos/acciones';
@@ -42,6 +43,11 @@ import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, tm } from '@/lib/formato';
 import { revisarTipoCambio, TIPO_CAMBIO_MINIMO, TIPO_CAMBIO_MAXIMO } from '@/lib/moneda';
 import type { ContactoDocumento } from '@/lib/contactoDocumento';
+import type { TipoCambioSunat } from '@/lib/tipoCambioSunat';
+import {
+  FORMAS_PAGO, PIDE_ADELANTO, PLAZO_DIAS_DEFECTO, calcularAdelanto, plazoReferencia,
+  type FormaPago, type Prioridad,
+} from '@/lib/condicionesVenta';
 
 export type Modo = 'cotizacion' | 'pedido';
 
@@ -115,6 +121,15 @@ export type DatosEdicion = {
   observaciones: string | null;
   /** Lo que tenía guardado; se respeta tal cual al reabrir el documento. */
   contacto?: ContactoDocumento;
+  /* Observaciones de octubre: tipo de cambio, entrega y pago. */
+  tipo_cambio_fecha?: string | null;
+  tipo_cambio_fuente?: 'sunat' | 'manual' | null;
+  tipo_cambio_clase?: 'compra' | 'venta' | null;
+  fecha_tentativa_despacho?: string | null;
+  forma_pago?: FormaPago | null;
+  adelanto_pct?: number;
+  adelanto_abonado?: number | null;
+  adelanto_abonado_en?: string | null;
   cuentas?: number[];
   lineas: {
     sku_presentacion_id: number;
@@ -146,9 +161,18 @@ function resaltar(texto: string, busca: string): React.ReactNode {
 }
 
 const nuevaClave = () => Math.random().toString(36).slice(2, 9);
-const hoyISO = () => new Date().toISOString().slice(0, 10);
-const enDiasISO = (dias: number) =>
-  new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10);
+/*
+ * «Hoy» es el de LIMA, no el de UTC. Con toISOString(), de siete de la noche
+ * en adelante el formulario ya vivía en el día siguiente: la fecha de
+ * solicitud salía con mañana y el plazo de un urgente se corría un día. Lo
+ * destapó la prueba del plazo por prioridad (observaciones de octubre).
+ */
+const hoyISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+const enDiasISO = (dias: number) => {
+  const d = new Date(`${hoyISO()}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+};
 
 export function FormularioVenta({
   modo,
@@ -165,6 +189,7 @@ export function FormularioVenta({
   topeDescuento,
   puedeAutorizarDescuento,
   edicion,
+  plazos = PLAZO_DIAS_DEFECTO,
 }: {
   modo: Modo;
   clientes: (Opcion & { pais: string; moneda: string; bloqueado: boolean })[];
@@ -181,6 +206,8 @@ export function FormularioVenta({
   puedeAutorizarDescuento: boolean;
   /** Presente solo cuando se está corrigiendo una cotización existente. */
   edicion?: DatosEdicion;
+  /** Días de plazo de cada prioridad, de Configuración (punto 5). */
+  plazos?: Record<Prioridad, number>;
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
@@ -217,6 +244,48 @@ export function FormularioVenta({
 
   /* ---- Solo cotización ---- */
   const [validez, setValidez] = useState(edicion?.validez_dias ?? validezDefecto);
+
+  /* ----------------------------------------------------------------------
+     TIPO DE CAMBIO SUNAT (observaciones de octubre, punto 3)
+     ----------------------------------------------------------------------
+     Al abrir una cotización nueva se pide a SUNAT el del día y se pone solo.
+     Si alguien lo cambia a mano, deja de ser «SUNAT» y pasa a «manual»: así
+     el documento dice siempre la verdad sobre de dónde salió el número.
+     ---------------------------------------------------------------------- */
+  const [tcFuente, setTcFuente] = useState<'sunat' | 'manual'>(edicion?.tipo_cambio_fuente ?? 'manual');
+  const [tcSunat, setTcSunat] = useState<Pick<TipoCambioSunat, 'compra' | 'venta' | 'publicado_el' | 'clase' | 'fecha'> | null>(
+    edicion?.tipo_cambio_fuente === 'sunat' && edicion.tipo_cambio_fecha
+      ? { compra: NaN, venta: NaN, publicado_el: edicion.tipo_cambio_fecha, clase: edicion.tipo_cambio_clase ?? 'venta', fecha: edicion.tipo_cambio_fecha }
+      : null
+  );
+  const [tcConsulta, setTcConsulta] = useState<{ estado: 'consultando' | 'error'; texto?: string } | null>(null);
+
+  async function traerTipoCambioSunat() {
+    setTcConsulta({ estado: 'consultando' });
+    const r = await consultarTipoCambio();
+    if (!r.ok) { setTcConsulta({ estado: 'error', texto: r.mensaje }); return; }
+    setTipoCambio(r.tc.valor);
+    setTcSunat(r.tc);
+    setTcFuente('sunat');
+    setTcConsulta(null);
+  }
+
+  //  Solo al CREAR: una cotización que se reabre conserva el tipo con que se hizo.
+  const pedidoSunat = useRef(false);
+  useEffect(() => {
+    if (esEdicion || pedidoSunat.current) return;
+    pedidoSunat.current = true;
+    void traerTipoCambioSunat();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ---- Entrega y pago (puntos 4, 5 y 6) ---- */
+  const [fechaTentativa, setFechaTentativa] = useState(edicion?.fecha_tentativa_despacho ?? '');
+  const [formaPago, setFormaPago] = useState<FormaPago | ''>(edicion?.forma_pago ?? '');
+  const [adelantoPct, setAdelantoPct] = useState(edicion?.adelanto_pct ?? 0);
+  const [abonado, setAbonado] = useState(
+    edicion?.adelanto_abonado === null || edicion?.adelanto_abonado === undefined ? '' : String(edicion.adelanto_abonado)
+  );
 
   /* ---- Solo pedido ---- */
   const [ocCliente, setOcCliente] = useState('');
@@ -374,16 +443,29 @@ export function FormularioVenta({
     return () => { vigente = false; clearTimeout(temporizador); };
   }, [idsVisibles, clienteId]);
 
-  /* ---- Totales, recalculados con cada cambio ---- */
+  /*
+   * TOTALES, recalculados con cada cambio.
+   * El IGV solo grava la venta NACIONAL: la exportación no lo lleva. Es la
+   * misma regla que aplica el PDF (cliente de fuera del Perú → sin IGV). Antes
+   * el formulario lo sumaba siempre y el total en pantalla no coincidía con el
+   * del documento; ahora, además, el adelanto se calcula sobre ese total.
+   */
+  const esNacional = cliente ? cliente.pais === 'Perú' : true;
+  const igvAplicado = esNacional ? igv : 0;
   const totales = useMemo(() => {
     const subtotal = lineas.reduce(
       (s, l) => s + l.cantidad_tm * l.precio_tm * (1 - l.descuento_pct / 100),
       0
     );
     const toneladas = lineas.reduce((s, l) => s + l.cantidad_tm, 0);
-    const impuesto = subtotal * (igv / 100);
+    const impuesto = subtotal * (igvAplicado / 100);
     return { subtotal, impuesto, total: subtotal + impuesto, toneladas };
-  }, [lineas, igv]);
+  }, [lineas, igvAplicado]);
+
+  /* Punto 6: el adelanto sale del total; la diferencia, de lo abonado. */
+  const adelanto = calcularAdelanto(totales.total, adelantoPct, abonado === '' ? null : Number(abonado));
+  /* Punto 5: la fecha de referencia, la tentativa si la hay. */
+  const plazo = plazoReferencia(prioridad, hoyISO(), fechaTentativa || null, plazos);
 
   /**
    * Al cambiar lo escrito, la marca vuelve al primer resultado. Si no se hace,
@@ -517,6 +599,22 @@ export function FormularioVenta({
       setMensaje({ ok: false, texto: 'La fecha comprometida no puede ser anterior a la de solicitud.' });
       return;
     }
+    if (!esPedido && formaPago === 'adelanto_saldo' && !(adelantoPct > 0)) {
+      setMensaje({ ok: false, texto: 'Con «Adelanto y saldo» indique el % de adelanto.' });
+      return;
+    }
+
+    /* Lo nuevo de octubre: viaja igual al crear que al modificar. */
+    const condiciones = {
+      tipo_cambio_fecha: tcFuente === 'sunat' ? (tcSunat?.publicado_el ?? null) : hoyISO(),
+      tipo_cambio_fuente: tcFuente,
+      tipo_cambio_clase: tcFuente === 'sunat' ? (tcSunat?.clase ?? 'venta') : null,
+      fecha_tentativa_despacho: fechaTentativa || null,
+      forma_pago: formaPago || null,
+      adelanto_pct: adelantoPct,
+      adelanto_abonado: abonado === '' ? null : Number(abonado),
+      adelanto_abonado_en: abonado === '' ? null : (edicion?.adelanto_abonado_en ?? null),
+    };
 
     // Se descartan las tres ayudas de pantalla —la clave de React, el
     // disponible y el indicador de consulta en curso— porque son del
@@ -540,6 +638,7 @@ export function FormularioVenta({
             contacto,
             cuentas: cuentasElegidas,
             lineas: lineasLimpias,
+            ...condiciones,
           })
         : esPedido
         ? await crearPedidoDirecto({
@@ -573,6 +672,7 @@ export function FormularioVenta({
             contacto,
             cuentas: cuentasElegidas,
             lineas: lineasLimpias,
+            ...condiciones,
           });
 
       if (r.ok) {
@@ -716,14 +816,26 @@ export function FormularioVenta({
               className="campo" type="number" step="0.001"
               min={TIPO_CAMBIO_MINIMO} max={TIPO_CAMBIO_MAXIMO}
               value={tipoCambio}
-              onChange={(e) => setTipoCambio(Number(e.target.value))}
+              data-fuente={tcFuente}
+              onChange={(e) => { setTipoCambio(Number(e.target.value)); setTcFuente('manual'); }}
             />
             {revisarTipoCambio(tipoCambio) ? (
               <span className="form-aviso-campo">{revisarTipoCambio(tipoCambio)}</span>
+            ) : tcConsulta?.estado === 'consultando' ? (
+              <small data-tc="consultando">Consultando SUNAT…</small>
+            ) : tcFuente === 'sunat' && tcSunat ? (
+              <small data-tc="sunat">
+                <b>SUNAT · {tcSunat.clase}</b> publicado el {tcSunat.publicado_el.split('-').reverse().join('/')}
+                {Number.isFinite(tcSunat.compra) && (
+                  <> · compra {num(tcSunat.compra, 3)} · venta {num(tcSunat.venta, 3)}</>
+                )}
+              </small>
             ) : (
-              <small>
-                La cotización del día. Se usa para expresar este documento en dólares
-                {moneda === 'PEN' ? ' en los reportes y comparaciones' : ' y en soles cuando haga falta'}.
+              <small data-tc="manual">
+                {tcConsulta?.estado === 'error' ? tcConsulta.texto : 'Escrito a mano.'}{' '}
+                <button type="button" className="enlace-boton" onClick={() => void traerTipoCambioSunat()}>
+                  Traer el de SUNAT
+                </button>
               </small>
             )}
           </label>
@@ -827,6 +939,77 @@ export function FormularioVenta({
           </label>
         </div>
       </section>
+
+      {/* ══════ ENTREGA Y PAGO (observaciones de octubre, puntos 4, 5 y 6) ══════
+        La fecha tentativa es opcional: si está, orienta la planificación; si
+        no, manda el plazo de la prioridad. El adelanto y la diferencia se
+        calculan, no se escriben: así no se descuadran al cambiar una línea.
+      */}
+      {!esPedido && (
+        <section className="panel mb-espacio" data-bloque="entrega-pago">
+          <div className="panel-cabecera">
+            <span className="panel-titulo">Entrega y pago</span>
+            <span className="form-nota-cab">Viajan a la proforma al convertir</span>
+          </div>
+          <div className="form-rejilla">
+            <label className="form-campo">
+              <span className="etiqueta">Fecha tentativa de despacho <span className="form-etiqueta-opcional">opcional</span></span>
+              <input
+                className="campo" type="date" name="fecha_tentativa_despacho"
+                min={esEdicion ? undefined : hoyISO()}
+                value={fechaTentativa}
+                onChange={(e) => setFechaTentativa(e.target.value)}
+              />
+              <small data-plazo={plazo.origen}>
+                {plazo.origen === 'tentativa'
+                  ? <>Manda esta fecha. Prioridad {plazo.texto.toLowerCase()}.</>
+                  : <>Sin fecha: rige la prioridad ({plazo.texto.toLowerCase()}) → referencia <b>{plazo.fecha.split('-').reverse().join('/')}</b>.</>}
+              </small>
+            </label>
+
+            <label className="form-campo">
+              <span className="etiqueta">Forma de pago</span>
+              <select className="campo" name="forma_pago" value={formaPago}
+                      onChange={(e) => setFormaPago(e.target.value as FormaPago | '')}>
+                <option value="">Sin definir</option>
+                {(Object.keys(FORMAS_PAGO) as FormaPago[]).map((f) => (
+                  <option key={f} value={f}>{FORMAS_PAGO[f]}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="form-campo">
+              <span className="etiqueta">
+                % de adelanto{formaPago && PIDE_ADELANTO.includes(formaPago as FormaPago) ? ' *' : ''}
+              </span>
+              <input className="campo" type="number" name="adelanto_pct" min="0" max="100" step="1"
+                     value={adelantoPct}
+                     onChange={(e) => setAdelantoPct(Number(e.target.value))} />
+              <small>
+                Adelanto: <b data-adelanto="monto">{dinero(adelanto.monto, moneda, 2)}</b> del total de {dinero(totales.total, moneda, 2)}
+              </small>
+            </label>
+
+            <label className="form-campo">
+              <span className="etiqueta">Monto efectivamente abonado <span className="form-etiqueta-opcional">opcional</span></span>
+              <input className="campo" type="number" name="adelanto_abonado" min="0" step="0.01"
+                     placeholder="Lo que el cliente ya depositó"
+                     value={abonado}
+                     onChange={(e) => setAbonado(e.target.value)} />
+              {adelanto.diferencia !== null && (
+                <small data-diferencia={adelanto.diferencia}
+                       style={{ color: adelanto.diferencia < -0.005 ? 'var(--critico)' : adelanto.diferencia > 0.005 ? 'var(--atencion)' : 'var(--ok)' }}>
+                  {adelanto.diferencia < -0.005
+                    ? <>Faltan {dinero(-adelanto.diferencia, moneda, 2)} para completar el adelanto.</>
+                    : adelanto.diferencia > 0.005
+                      ? <>Abonó {dinero(adelanto.diferencia, moneda, 2)} más que el adelanto.</>
+                      : <>El abono cubre el adelanto exacto.</>}
+                </small>
+              )}
+            </label>
+          </div>
+        </section>
+      )}
 
       {/* ══════ CONTACTO ══════
         Opcional a propósito. Se pidió que no bloquee, y es lo correcto: una
@@ -1222,7 +1405,10 @@ export function FormularioVenta({
         <div className="form-totales-cifras">
           <div><span>Toneladas</span><strong>{num(totales.toneladas, 3)} TM</strong></div>
           <div><span>Subtotal</span><strong>{dinero(totales.subtotal, moneda, 2)}</strong></div>
-          <div><span>IGV ({igv} %)</span><strong>{dinero(totales.impuesto, moneda, 2)}</strong></div>
+          <div>
+            <span>{esNacional ? `IGV (${igv} %)` : 'IGV (exportación: no aplica)'}</span>
+            <strong>{dinero(totales.impuesto, moneda, 2)}</strong>
+          </div>
           <div className="destacado"><span>Total</span><strong>{dinero(totales.total, moneda, 2)}</strong></div>
         </div>
         <div className="form-totales-acciones">

@@ -73,6 +73,9 @@ export function FormularioIngreso({
     peso_neto_kg: 0,
     costo_unitario: 0,
     observaciones: '',
+    //  Sin valor por defecto a propósito: que se elija, no que se herede sin mirar.
+    origen_ingreso: '',
+    proveedor: '',
   });
 
   /** Si se escribe el peso por bulto, el total se calcula solo. */
@@ -181,6 +184,35 @@ export function FormularioIngreso({
           <span>{problema.mensaje}</span>
         </div>
       )}
+
+      {/* ---------------- Origen (observaciones de octubre, punto 11) ---------------- */}
+      <fieldset className="form-bloque" data-bloque="origen-ingreso">
+        <legend>Origen del ingreso <b className="req">*</b></legend>
+        <div className="origen-opciones" role="radiogroup" aria-label="Origen del ingreso" data-error={error('origen_ingreso')}>
+          {([
+            ['produccion', 'Producción', 'Lo procesó la planta (propia o maquila).'],
+            ['compras', 'Compras', 'Producto terminado comprado a un tercero.'],
+          ] as const).map(([valor, titulo, ayuda]) => (
+            <label key={valor} className="origen-opcion" data-elegida={d.origen_ingreso === valor ? 'si' : 'no'}>
+              <input type="radio" name="origen_ingreso" value={valor}
+                     checked={d.origen_ingreso === valor}
+                     onChange={() => campo('origen_ingreso', valor)} />
+              <span><strong>{titulo}</strong><small>{ayuda}</small></span>
+            </label>
+          ))}
+        </div>
+        {d.origen_ingreso === 'compras' && (
+          <div className="form-rejilla" style={{ marginTop: '.7rem' }}>
+            <label className="form-campo form-campo-ancho">
+              <span>Proveedor <b className="req">*</b></span>
+              <input className="campo" name="proveedor" value={d.proveedor ?? ''} maxLength={120}
+                     data-error={error('proveedor')}
+                     onChange={(e) => campo('proveedor', e.target.value)}
+                     placeholder="Razón social de a quién se compró" />
+            </label>
+          </div>
+        )}
+      </fieldset>
 
       {/* ---------------- Qué entró ---------------- */}
       <fieldset className="form-bloque">
