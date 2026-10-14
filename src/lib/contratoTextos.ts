@@ -1,0 +1,66 @@
+/**
+ * ============================================================================
+ *  TEXTO FIJO DEL CONTRATO DE VENTA INTERNACIONAL
+ * ============================================================================
+ *  Copiado TAL CUAL del modelo institucional que envió Oliver (contrato
+ *  SM26-378, «Rev.»), párrafo por párrafo, en inglés y castellano. Lo generó
+ *  un script desde el propio Word para no transcribirlo a mano: un contrato
+ *  no admite una coma de diferencia con el que revisó el área legal.
+ *
+ *  Aquí solo va lo que NO cambia entre ventas. Lo variable —número, comprador,
+ *  producto, cantidad, precio, empaque, periodo, puertos, forma de pago y
+ *  banco— lo arma `contratoVenta.ts` con los datos de la proforma.
+ * ============================================================================
+ */
+export type Bilingue = { en: string; es: string };
+
+
+export const ENTREGA: Bilingue = { en: "In accordance with the agreed Incoterm, for the purpose of this contract delivery will be understood to have been fulfilled at the time when the Seller places the cargo on board of the ocean-going vessel at any Peruvian port. After delivery in accordance with this provision has been made, Buyer shall bear all costs and risks of loss of or damage to the product.", es: "De acuerdo con el Incoterm pactado, para efectos del presente contrato, se entenderá que la entrega se ha realizado efectivamente en el momento que el Vendedor coloque la carga a bordo de la embarcación oceánica en cualquier puerto peruano. Una vez realizada la entrega de conformidad con esta disposición, el Comprador asumirá todos los costos y riesgos de pérdida o daños al producto." };
+
+export const SEGURO: Bilingue = { en: "Buyer undertakes the obligation to insure cargo and agrees to indemnify, hold harmless and defend Seller from any and all claims, suits, proceedings, actions, damages, liabilities, losses, expenses and attorney’s fees (including, but not limited to issues resulting from general averages, salvages, collisions, etc.) of whatever nature arising from such failure to take cargo insurance coverage.", es: "El Comprador asume la obligación de asegurar la carga y acepta indemnizar, eximir de responsabilidad y defender al Vendedor de todos y cada uno de los reclamos, demandas, procedimientos, acciones, daños, responsabilidades, pérdidas, gastos y honorarios de abogados (incluidos entre otros, los problemas que resulten de averías generales, salvamentos, colisiones, etc.) de cualquier naturaleza, que surjan de dicha falta de cobertura de seguro de carga." };
+
+/** Va debajo de la forma de pago, siempre. */
+export const PAGO_FIJO: Bilingue = { en: "The Seller must receive the full payment of any transaction. Buyer should instruct \"OUR\" in field 71A, which indicates that Buyer will pay all transfer charges.", es: "El Vendedor debe recibir el pago total de cualquier transacción. El Comprador debe indicar “OUR” en el campo 71A, lo que indica que el comprador pagará todos los cargos de transferencia." };
+
+/** Documentos A–E. El F (certificado de captura) es opcional y va aparte. */
+export const DOCUMENTOS: Bilingue[] = [
+  { en: "Commercial Invoice", es: "Factura Comercial" },
+  { en: "Bill of Lading / Seaway Bill", es: "Conocimiento de Embarque / Factura de vía marítima" },
+  { en: "Certificate of origin indicating the country of origin and emitted by the Chamber of Commerce.", es: "Certificado de origen indicando el país de origen y emitido por la Cámara de Comercio." },
+  { en: "Health Certificate issued by ORGANISMO NACIONAL DE SANIDAD PESQUERA – SANIPES", es: "Certificado Sanitario emitido por el ORGANISMO NACIONAL DE SANIDAD PESQUERA – SANIPES" },
+  { en: "Packing list indicating production date, lots, sizes and boxes per container.", es: "Lista de empaque indicando fecha de producción, lotes, tamaños y cajas por contenedor." },
+];
+
+export const OTRAS_CONDICIONES: Bilingue[] = [
+  { en: "“The customer declares that this commercial transaction does not involve any illegal activity such as corruption, money laundering, bribery, terrorism financing, environmental contamination. Moreover, the client is responsible for the security in the supply chain outside the scope of the INCOTERMS and undertakes to carry out specific controls towards security”.", es: "“El cliente declara que esta transacción comercial no implica ninguna actividad ilegal como corrupción, lavado de dinero, soborno, financiamiento del terrorismo, contaminación ambiental, Además, el cliente es responsable de la seguridad en la cadena de suministro fuera del ámbito de aplicación de los INCOTERMS y se compromete a realizar controles específicos en materia de seguridad”." },
+  { en: "The Buyer is responsible for the cargo insurance.", es: "El Comprador es responsable del seguro de la carga." },
+  { en: "Health Certificate issued by SANIPES in electronic format is acceptable.", es: "Certificado Sanitario emitido por SANIPES en formato electrónico aceptable." },
+];
+
+export const TITULO_DECLARACIONES = "COMBINED DECLARATIONS OF SANTA MONICA AND THE CLIENT / DECLARACIONES COMBINADAS DE SANTA MÓNICA Y EL CLIENTE:";
+
+export const DECLARACIONES: Bilingue[] = [
+  { en: "Industrial Pesquera Santa Monica and the undersigned client both solemnly declare, under oath, that they do not engage in activities related to money laundering, drug trafficking, or terrorism.", es: "Industrial Pesquera Santa Mónica y el cliente declaran solemnemente, bajo juramento, que no participan en actividades relacionadas con el lavado de dinero, el narcotráfico o el terrorismo." },
+  { en: "Industrial Pesquera Santa Monica and the undersigned client jointly assert that they will not employ or endorse the use of child labor, either directly or indirectly.", es: "Industrial Pesquera Santa Mónica y el cliente afirman conjuntamente que no emplearán ni respaldarán el uso de mano de obra infantil, ni directa ni indirectamente." },
+  { en: "Industrial Pesquera Santa Monica and the undersigned client affirm that they will not use or support the use of forced labor.", es: "Industrial Pesquera Santa Mónica y el cliente afirman que no usarán o apoyarán el uso de trabajo forzado." },
+  { en: "Industrial Pesquera Santa Monica and the undersigned client state that they will not carry out or endorse any form of discrimination based on attributes such as race, nationality, religion, disability, gender, sexual orientation, union participation, political affiliation, or age in the hiring, remuneration, training, promotion, termination, or retirement of their personnel.", es: "Industrial Pesquera Santa Mónica y el cliente declaran que no realizarán ni respaldarán ninguna forma de discriminación basada en atributos como la raza, nacionalidad, religión, discapacidad, género, orientación sexual, afiliación política o edad en la contratación, remuneración, capacitación, promoción, despido o jubilación de su personal." },
+  { en: "Both Industrial Pesquera Santa Monica and the undersigned client pledge to abide by the declarations in all their operations, ensuring a commitment to ethical practices and non-discrimination across their organizations.", es: "Tanto Industrial Pesquera Santa Mónica como el cliente se comprometen a cumplir las declaraciones en todas sus operaciones, garantizando un compromiso con las prácticas éticas y la no discriminación en todas sus organizaciones." },
+];
+
+export const ANEXO_TITULO: Bilingue = { en: "Annex N°2: Anti-Bribery and Corruption Provision", es: "Anexo N° 2: Disposiciones Antisoborno y Anticorrupción" };
+
+export const ANEXO: ({ tipo: 'parrafo' | 'subtitulo' } & Bilingue)[] = [
+  { tipo: 'parrafo', ...{ en: "This annex regulates the provisions against bribery and corruption applicable to the attached contract, being an integral part thereof. The provisions of this annex are incorporated into the contract and will complement its terms. In the event of conflict or inconsistency, the provisions of this annex shall prevail over the provisions of the contract.", es: "El presente anexo regula las disposiciones contra el cohecho y la corrupción aplicables al contrato adjunto, formando parte integrante del mismo. Las disposiciones de este anexo se incorporan al contrato y complementarán sus términos. En caso de conflicto o inconsistencia las disposiciones de este anexo prevalecerán sobre las disposiciones del contrato." } },
+  { tipo: 'parrafo', ...{ en: "For the purposes of this annex, the following terms shall have the meanings defined below:", es: "Para efectos de este anexo, los siguientes términos tendrán los significados que se definen a continuación:" } },
+  { tipo: 'parrafo', ...{ en: "“Contract” refers to the purchase agreement to which this annex is attached, including other annexes and amendments thereto, as well as, individually, any underlying agreement based on purchase orders entered under the contract.", es: "“Contrato” se refiere al contrato de compra al que se adjunta este anexo, incluidos otros anexos y modificaciones a los mismos, así como, individualmente, cualquier acuerdo subyacente basado en órdenes de compra realizadas conforme al contrato." } },
+  { tipo: 'parrafo', ...{ en: "“Client” means the company that is a party to the contract and/or the company acting as a client of Industrial Pesquera Santa Monica under the contract.", es: "“Cliente” se refiere a la empresa que es parte del contrato y/o la empresa que actúa como cliente de Industrial Pesquera Santa Mónica conforme al contrato." } },
+  { tipo: 'subtitulo', en: "Client’s Ethical Commitment:", es: '' },
+  { tipo: 'parrafo', ...{ en: "The Client, its employees, and representatives commit to refraining at all times from engaging in illegal or unethical conduct, including corruption, extortion, money laundering, tax evasion, fraud, or embezzlement.", es: "El Cliente, sus empleados y representantes se compromete a abstenerse en todo momento de incurrir en conductas ilegales o poco éticas, incluyendo corrupción, extorsión, lavado de dinero, evasión fiscal, fraude o malversación de fondos." } },
+  { tipo: 'subtitulo', en: "Integrity in Commercial Relations:", es: '' },
+  { tipo: 'parrafo', ...{ en: "The Client ensures that, in relation to this Contract and its relationship with Industrial Pesquera Santa Monica, they will not make undue payments or provide benefits to gain undue advantages. They commit to ensuring that their personnel, associates, and representatives act in accordance with these statements and warranties.", es: "El Cliente garantiza que, en relación con este Contrato y su relación con Industrial Pesquera Santa Mónica, no realizará pagos indebidos ni brindará beneficios para obtener ventajas indebidas. Se compromete a garantizar que su personal, asociados y representantes actúen de conformidad con estas declaraciones y garantías." } },
+  { tipo: 'subtitulo', en: "Transparent Relations with Public Officials:", es: '' },
+  { tipo: 'parrafo', ...{ en: "The Client ensures that, unless disclosed in writing to Industrial Pesquera Santa Monica before the execution of the contract, no Public Official directly or indirectly holds shares or an interest in the Client. They commit to maintaining detailed records and allowing audits to verify compliance with these provisions.", es: "El Cliente garantiza que, a menos que se le informe por escrito a Industrial Pesquera Santa Mónica antes de la ejecución del contrato, ningún funcionario público posee acciones o intereses en el Cliente, ya sea directa o indirectamente. Se compromete a mantener registros detallados y permitir auditorías para verificar el cumplimiento de estas disposiciones." } },
+  { tipo: 'subtitulo', en: "Cooperation and Notification:", es: '' },
+  { tipo: 'parrafo', ...{ en: "The Client commits not to interact with Public Officials on behalf of Industrial Pesquera Santa Monica without prior written consent. Additionally, they commit to promptly notifying Industrial Pesquera Santa Monica in writing of any violation or suspicion of violation of the provisions of this Annex. The Client agrees that payments related to the Contract will be made only to the bank account specified in the invoices issued by the Client.", es: "El Cliente se compromete a no interactuar con funcionarios públicos en nombre de Industrial Pesquera Santa Mónica sin el consentimiento previo por escrito. Además, se compromete a notificar de inmediato a Industrial Pesquera Santa Mónica por escrito sobre cualquier violación o sospecha de violación de las disposiciones de este Anexo. El Cliente acepta que los pagos relacionados con el Contrato se realizarán únicamente a la cuenta bancaria especificada en las facturas emitidas por el Cliente." } },
+  { tipo: 'parrafo', ...{ en: "These provisions are binding on both parties, and Industrial Pesquera Santa Monica reserves the right to retain payments and take appropriate measures in case of non-compliance. Both parties agree to cooperate to prevent and address any non-compliance effectively.", es: "Estas disposiciones son vinculantes para ambas partes, y Industrial Pesquera Santa Mónica se reserva el derecho de retener los pagos y tomar las medidas adecuadas en caso de incumplimiento. Ambas partes acuerdan cooperar para prevenir y abordar cualquier incumplimiento de manera eficaz." } },
+];

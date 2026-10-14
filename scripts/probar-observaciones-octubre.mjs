@@ -198,7 +198,7 @@ try {
     await p.goto(`${BASE}/ventas/cotizaciones/${cotId}`, { waitUntil: 'networkidle' });
   }
 
-  console.log(SEC(8, 'Contrato al aprobar la cotización'));
+  console.log(SEC(8, 'Contrato al aprobar la cotización (el detalle, en probar-contrato.mjs)'));
   {
     ok(await p.locator('[data-enlace="contrato"]').count() === 0, 'sin aprobar no se ofrece el contrato');
     const r0 = await p.request.get(`${BASE}/ventas/cotizaciones/${cotId}/contrato`);
@@ -209,29 +209,8 @@ try {
     ok(await p.locator('[data-enlace="contrato"]').count() === 1, 'aprobada: aparece «Contrato»');
     await p.locator('[data-enlace="contrato"]').click();
     await p.waitForURL(/\/contrato$/, { timeout: 20000 });
-    const texto = await p.locator('textarea[name="cuerpo_contrato"]').inputValue();
-    const [d] = await consultar(`select c.numero, cl.razon_social from cotizaciones c join clientes cl on cl.id = c.cliente_id where c.id = ${cotId}`);
-    ok(texto.includes(d.razon_social) && texto.includes(d.numero), 'se completa solo con el cliente y la cotización');
-    ok(/TM a US\$ /.test(texto) && /30 % de adelanto/.test(texto) && /Fecha tentativa de despacho/.test(texto),
-       'con productos, cantidades, precios, la forma de pago y la entrega');
-    ok(texto.includes('Prueba octubre: empaque con doble etiqueta'), 'y las observaciones de la cotización');
-    ok(!/\{\{/.test(texto), 'no queda ningún marcador sin llenar');
-
-    //  Un marcador desconocido no se cuela en un contrato que se firma.
-    await p.fill('textarea[name="cuerpo_contrato"]', texto + '\n\nPuerto: {{puerto}}');
-    await p.locator('[data-accion="generar-contrato"]').click();
-    await p.waitForTimeout(1500);
-    ok(/Quedan datos sin completar/.test(await p.locator('.form-mensaje.error').innerText()), 'un {{marcador}} sin llenar impide generarlo');
-    await p.fill('textarea[name="cuerpo_contrato"]', texto + '\n\nNota revisada en pantalla.');
-    await p.locator('[data-accion="generar-contrato"]').click();
-    await p.waitForTimeout(3000);
-    ok(await p.locator('table[data-cuadro="contratos"] tbody tr').count() === 1, 'generado: aparece en la lista con su número');
-    const [ctr] = await consultar(`select id, numero, cuerpo from contratos where cotizacion_id = ${cotId}`);
-    ok(/^CTR-\d{4}-\d{4}$/.test(ctr.numero) && ctr.cuerpo.endsWith('Nota revisada en pantalla.'), 'se guarda el texto revisado, con lo corregido', ctr.numero);
-    const pdf = await p.request.get(`${BASE}/api/contratos/${ctr.id}`);
-    const bytes = await pdf.body();
-    ok(pdf.status() === 200 && bytes.slice(0, 4).toString() === '%PDF' && bytes.length > 2000, 'se descarga en PDF', `${bytes.length} bytes`);
-    ok(await p.locator('[data-bloque="plantilla-editor"]').count() === 1, 'Gerencia ve y puede cambiar la plantilla institucional');
+    ok(/falta la proforma/i.test(await p.locator('main').innerText()) && await p.locator('[data-accion="proforma-y-contrato"]').count() === 1,
+       'el contrato lleva el número de la proforma: ofrece generarla y pasar al contrato');
   }
 
   console.log(SEC(7, 'Las observaciones de la cotización pasan a la proforma'));
@@ -252,6 +231,11 @@ try {
     ok(await p.locator('[data-bloque="condiciones"]').count() === 1, 'el pedido muestra el mismo bloque de entrega y pago');
     const [{ n }] = await consultar(`select count(*)::int n from pedidos where observaciones like 'Generado desde la cotización%'`);
     ok(n === 0, 'ninguna proforma quedó con el texto viejo en lugar de las observaciones');
+    //  Con proforma, el contrato de la cotización lleva al de la proforma, con su número.
+    await p.goto(`${BASE}/ventas/cotizaciones/${cotId}/contrato`, { waitUntil: 'networkidle' });
+    const [np] = await consultar(`select numero_proforma from pedidos where id = ${pedidoId}`);
+    ok(await p.locator('[data-siguiente]').getAttribute('data-siguiente') === np.numero_proforma.replace(/^SM(\d{2})-(\d+)$/, 'SM-20$1-$2'),
+       'el contrato sale de la proforma, con su número', np.numero_proforma);
   }
 } catch (e) {
   console.error(e);

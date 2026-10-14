@@ -279,8 +279,13 @@ const MESES_EN = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
 
 function mesEnIngles(v: string | null | undefined): string {
   if (!v) return '';
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? '' : `${MESES_EN[d.getMonth()]} ${d.getFullYear()}`;
+  /*
+   * Se lee el texto «AAAA-MM-DD» tal cual. Con new Date(), el 1 de febrero era
+   * la medianoche UTC, o sea el 31 de enero en Lima, y la proforma decía
+   * «JANUARY». Lo destapó el contrato, que usa el mismo mes.
+   */
+  const m = /^(\d{4})-(\d{2})/.exec(String(v));
+  return m ? `${MESES_EN[Number(m[2]) - 1]} ${m[1]}` : '';
 }
 
 /**

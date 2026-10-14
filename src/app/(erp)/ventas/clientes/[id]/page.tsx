@@ -29,6 +29,9 @@ import { veCostos, type Rol } from '@/lib/navegacion';
 import { campo } from '@/lib/relaciones';
 import { AccionesMaestro } from '@/components/ui/AccionesMaestro';
 import { cambiarEstadoCliente, eliminarCliente } from '../acciones';
+import { NuevaVerificacion } from './NuevaVerificacion';
+import { hoyEnLima } from '@/lib/fechas';
+import { FORMAS_PAGO, type FormaPago } from '@/lib/condicionesVenta';
 
 export const dynamic = 'force-dynamic';
 
@@ -139,7 +142,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
   const usuario = await obtenerUsuarioActual();
   const puedeVerImportes = veCostos((usuario?.rol ?? 'consulta') as Rol);
 
-  const [{ data: pedidos }, { data: cotizaciones }, { data: facturas }] =
+  const [{ data: pedidos }, { data: cotizaciones }, { data: facturas }, { data: basc }, { data: verificaciones }] =
     await Promise.all([
       supabase
         .from('pedidos')
@@ -159,6 +162,11 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
         .eq('cliente_id', cliId)
         .order('fecha_emision', { ascending: false })
         .limit(25),
+      //  Verificación BASC (lista de Comex, 065): lo último de cada control y la historia.
+      supabase.from('v_cliente_basc').select('*').eq('cliente_id', cliId).maybeSingle(),
+      supabase.from('cliente_verificaciones')
+        .select('id, control, resultado, fecha, enviado_el, firmado_el, responsable, fuente')
+        .eq('cliente_id', cliId).order('fecha', { ascending: false }).limit(40),
     ]);
 
   /* ---- Deuda viva: lo facturado menos lo cobrado, sin contar anuladas ---- */
@@ -260,8 +268,11 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
             <div><dt>Código</dt><dd className="mono">{c.codigo as string}</dd></div>
             <div><dt>Razón social</dt><dd>{c.razon_social as string}</dd></div>
             <div><dt>Nombre corto</dt><dd>{(c.nombre_corto as string) ?? '—'}</dd></div>
-            <div><dt>País</dt><dd>{c.pais as string}</dd></div>
-            <div><dt>Identificación fiscal</dt><dd className="mono">{(c.ruc_tax_id as string) ?? '—'}</dd></div>
+            <div><dt>País</dt><dd>{c.pais as string}{c.continente ? <span style={{ color: 'var(--tinta-3)' }}> · {String(c.continente)}</span> : null}</dd></div>
+            <div><dt>Dirección</dt><dd>{(c.direccion as string) || '—'}</dd></div>
+            <div><dt>Identificación fiscal</dt><dd className="mono">{c.ruc_tax_id ? `${c.etiqueta_tax_id ? `${c.etiqueta_tax_id}: ` : ''}${c.ruc_tax_id}` : '—'}</dd></div>
+            {c.condicion ? <div><dt>Condición</dt><dd>{String(c.condicion)}</dd></div> : null}
+            {c.web ? <div><dt>Página web</dt><dd><a href={/^https?:/.test(String(c.web)) ? String(c.web) : `https://${c.web}`} target="_blank" rel="noreferrer">{String(c.web)}</a></dd></div> : null}
             <div><dt>Contacto</dt><dd>{(c.contacto as string) ?? '—'}</dd></div>
             <div><dt>Correo</dt><dd>{(c.email as string) ?? '—'}</dd></div>
             <div><dt>Teléfono</dt><dd>{(c.telefono as string) ?? '—'}</dd></div>
@@ -273,6 +284,15 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
         <Panel id="condiciones" titulo="Condiciones comerciales">
           <dl className="ficha">
             <div><dt>Moneda</dt><dd>{c.moneda as string}</dd></div>
+            {/* La forma de pago habitual de la lista de Comex: se propone al cotizar. */}
+            <div data-campo="forma-pago-habitual">
+              <dt>Forma de pago habitual</dt>
+              <dd>
+                {c.forma_pago ? FORMAS_PAGO[c.forma_pago as FormaPago] : '—'}
+                {c.adelanto_pct !== null && c.adelanto_pct !== undefined && Number(c.adelanto_pct) > 0 && Number(c.adelanto_pct) < 100 ? ` · ${Number(c.adelanto_pct)} % de adelanto` : ''}
+                {c.forma_pago_habitual ? <><br /><small style={{ color: 'var(--tinta-3)' }}>Comex: «{String(c.forma_pago_habitual)}»</small></> : null}
+              </dd>
+            </div>
             <div><dt>Días de crédito</dt><dd>{num(Number(c.dias_credito))} días</dd></div>
             <div>
               <dt>Línea de crédito</dt>
@@ -306,6 +326,54 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
           )}
         </Panel>
       </div>
+
+      {/* ---- Verificación BASC (lista de Comex, formato BASC.F.15.01) ---- */}
+      <Panel id="basc" titulo="Verificación BASC" className="mb-espacio"
+        acciones={['gerencia', 'operaciones', 'comercial', 'comex'].includes(usuario?.rol ?? '') ? <NuevaVerificacion clienteId={cliId} hoy={hoyEnLima()} /> : undefined}>
+        <div className="basc-resumen" data-al-dia={basc?.al_dia ? 'si' : 'no'}>
+          {([
+            ['Lista Clinton', basc?.clinton, basc?.clinton_fecha, /^ok/i],
+            ['ONU · terrorismo', basc?.onu_terrorismo, basc?.onu_terrorismo_fecha, /^negativo/i],
+            ['ONU · armas', basc?.onu_armas, basc?.onu_armas_fecha, /^negativo/i],
+          ] as const).map(([titulo, res, f, bien]) => (
+            <div key={titulo} className="basc-control">
+              <span className="basc-titulo">{titulo}</span>
+              {res ? <Etiqueta texto={String(res)} tono={bien.test(String(res)) ? 'ok' : 'critico'} /> : <Etiqueta texto="Sin verificar" tono="atencion" />}
+              <small>{f ? fecha(String(f)) : '—'}</small>
+            </div>
+          ))}
+          <div className="basc-control">
+            <span className="basc-titulo">Acuerdo de seguridad</span>
+            {basc?.acuerdo_firmado
+              ? <Etiqueta texto="Firmado" tono="ok" />
+              : basc?.acuerdo_enviado ? <Etiqueta texto="Enviado, sin firmar" tono="atencion" /> : <Etiqueta texto="Sin acuerdo" tono="atencion" />}
+            <small>{basc?.acuerdo_firmado ? fecha(String(basc.acuerdo_firmado)) : basc?.acuerdo_enviado ? `enviado ${fecha(String(basc.acuerdo_enviado))}` : '—'}</small>
+          </div>
+          <div className="basc-control">
+            <span className="basc-titulo">Estado</span>
+            <Etiqueta texto={basc?.al_dia ? 'Al día' : 'Pendiente'} tono={basc?.al_dia ? 'ok' : 'atencion'} />
+            <small>{basc?.al_dia ? 'las tres listas en el último año y acuerdo firmado' : 'falta algún control o está vencido'}</small>
+          </div>
+        </div>
+        {(verificaciones ?? []).length > 0 && (
+          <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+            <table className="datos" data-cuadro="verificaciones">
+              <thead><tr><th>Control</th><th>Resultado</th><th className="num">Fecha</th><th>Responsable</th><th>Fuente</th></tr></thead>
+              <tbody>
+                {(verificaciones ?? []).map((v) => (
+                  <tr key={v.id as number}>
+                    <td>{({ lista_clinton: 'Lista Clinton', onu_terrorismo: 'ONU · terrorismo', onu_armas: 'ONU · armas', acuerdo_seguridad: 'Acuerdo de seguridad' } as Record<string, string>)[String(v.control)]}</td>
+                    <td>{String(v.resultado)}{v.control === 'acuerdo_seguridad' && v.firmado_el ? ` · firmado ${fecha(String(v.firmado_el))}` : ''}</td>
+                    <td className="num">{v.fecha ? fecha(String(v.fecha)) : '—'}</td>
+                    <td>{(v.responsable as string) ?? '—'}</td>
+                    <td style={{ fontSize: '.72rem', color: 'var(--tinta-3)' }}>{String(v.fuente)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
 
       {/* ---- Pedidos ---- */}
       <Panel id="pedidos"

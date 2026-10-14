@@ -54,7 +54,7 @@ export async function guardarParametro(
    * empresa que aún no ha digitalizado la firma. Sin esta excepción, quitarla
    * sería imposible una vez subida.
    */
-  if (limpio === '' && clave !== 'firmante_firma') {
+  if (limpio === '' && !clave.startsWith('firmante_firma')) {
     return { ok: false, mensaje: `${parametro.etiqueta} no puede quedar vacío.` };
   }
 
@@ -63,7 +63,7 @@ export async function guardarParametro(
    * en la pantalla: el navegador es del usuario y lo que llega al servidor
    * puede no ser lo que el formulario envió.
    */
-  if (clave === 'firmante_firma' && limpio !== '') {
+  if (clave.startsWith('firmante_firma') && limpio !== '') {
     if (!/^data:image\/(png|jpeg);base64,/.test(limpio)) {
       return {
         ok: false,

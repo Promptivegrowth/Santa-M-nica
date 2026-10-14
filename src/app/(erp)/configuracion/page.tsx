@@ -300,8 +300,9 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                             de texto con treinta kilobytes de imagen dentro no
                             se puede ni leer ni corregir.
                           */}
-                          {p.clave === 'firmante_firma' ? (
+                          {p.clave === 'firmante_firma' || p.clave === 'firmante_firma_contrato' ? (
                             <SubirFirma
+                              clave={p.clave as 'firmante_firma' | 'firmante_firma_contrato'}
                               valorInicial={String(p.valor ?? '')}
                               editable={rol === 'gerencia'}
                             />

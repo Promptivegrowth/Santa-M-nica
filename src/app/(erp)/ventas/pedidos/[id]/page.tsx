@@ -116,6 +116,10 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
           id={pedidoId}
           numero={String(pedido.numero_proforma)}
         />
+        {/* El contrato de venta con el modelo de Santa Mónica (octubre, punto 8). */}
+        <Link href={`/ventas/pedidos/${pedidoId}/contrato`} className="btn btn-secundario" data-enlace="contrato">
+          Contrato
+        </Link>
         <BotonFacturar pedidoId={pedidoId} puede={puedeFacturar} />
       </CabeceraPagina>
 

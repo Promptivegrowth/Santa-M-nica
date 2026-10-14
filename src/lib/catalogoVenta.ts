@@ -17,7 +17,7 @@
  * ============================================================================
  */
 import { crearClienteServidor } from '@/lib/supabase/servidor';
-import { diasDePlazos } from '@/lib/condicionesVenta';
+import { diasDePlazos, type FormaPago } from '@/lib/condicionesVenta';
 
 /** Una persona de contacto del cliente, para dirigirle la cotización. */
 export type ContactoCliente = {
@@ -75,7 +75,7 @@ export async function cargarCatalogoVenta() {
   ] = await Promise.all([
     supabase
       .from('clientes')
-      .select('id, razon_social, pais, moneda, bloqueado')
+      .select('id, razon_social, pais, moneda, bloqueado, forma_pago, adelanto_pct')
       .eq('activo', true)
       .order('razon_social'),
     supabase.from('vendedores').select('id, nombre').eq('activo', true).order('nombre'),
@@ -157,6 +157,9 @@ export async function cargarCatalogoVenta() {
       pais: (c.pais as string) ?? '—',
       moneda: (c.moneda as string) ?? 'USD',
       bloqueado: Boolean(c.bloqueado),
+      //  Forma de pago habitual (lista de Comex, 065): la cotización la propone.
+      forma_pago: (c.forma_pago as FormaPago | null) ?? null,
+      adelanto_pct: c.adelanto_pct === null || c.adelanto_pct === undefined ? null : Number(c.adelanto_pct),
     })),
     vendedores: (vendedores ?? []).map((v) => ({
       id: v.id as number,

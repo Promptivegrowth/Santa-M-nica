@@ -40,9 +40,15 @@ const FORMATOS = ['image/png', 'image/jpeg'];
 export function SubirFirma({
   valorInicial,
   editable,
+  clave = 'firmante_firma',
 }: {
   valorInicial: string;
   editable: boolean;
+  /**
+   * Qué firma: la del gerente (proforma) o el bloque firmado del contrato, que
+   * en el modelo de Santa Mónica lleva debajo nombre, cargo, empresa y RUC.
+   */
+  clave?: 'firmante_firma' | 'firmante_firma_contrato';
 }) {
   const [firma, setFirma] = useState(valorInicial);
   const [estado, setEstado] = useState<{ ok: boolean; mensaje: string } | null>(null);
@@ -76,7 +82,7 @@ export function SubirFirma({
         return;
       }
       iniciar(async () => {
-        const r = await guardarParametro('firmante_firma', dato);
+        const r = await guardarParametro(clave, dato);
         if (r.ok) setFirma(dato);
         avisar(r.ok, r.ok ? 'Firma guardada. Las próximas proformas saldrán con ella.' : r.mensaje);
       });
@@ -86,7 +92,7 @@ export function SubirFirma({
 
   function quitar() {
     iniciar(async () => {
-      const r = await guardarParametro('firmante_firma', '');
+      const r = await guardarParametro(clave, '');
       if (r.ok) setFirma('');
       avisar(r.ok, r.ok ? 'Firma quitada. La proforma saldrá con la raya para firmar a mano.' : r.mensaje);
     });

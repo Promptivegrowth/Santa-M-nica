@@ -151,3 +151,13 @@ table[data-cuadro="despachos"] tr[data-elegido="parte"] > td { background: var(-
 
 .archivos-subir label[data-subiendo="si"] { opacity: .6; pointer-events: none; }
 .archivos-subir label:focus-within { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* Contrato: los campos del modelo en dos columnas. */
+.contrato-rejilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: .7rem 1rem; }
+.contrato-campo textarea { resize: vertical; font-family: inherit; }
+
+/* Verificación BASC del cliente: los cuatro controles de un vistazo. */
+.basc-resumen { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: .6rem; padding: .8rem 1rem; }
+.basc-control { display: grid; gap: .25rem; justify-items: start; padding: .55rem .7rem; border: 1px solid var(--linea); border-radius: 6px; }
+.basc-titulo { font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; color: var(--tinta-3); }
+.basc-control small { color: var(--tinta-3); font-size: .72rem; }

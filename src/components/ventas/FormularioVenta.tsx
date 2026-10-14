@@ -192,7 +192,7 @@ export function FormularioVenta({
   plazos = PLAZO_DIAS_DEFECTO,
 }: {
   modo: Modo;
-  clientes: (Opcion & { pais: string; moneda: string; bloqueado: boolean })[];
+  clientes: (Opcion & { pais: string; moneda: string; bloqueado: boolean; forma_pago?: FormaPago | null; adelanto_pct?: number | null })[];
   vendedores: Opcion[];
   destinos: (Opcion & { pais: string })[];
   listas: (Opcion & { moneda: string; incoterm: string })[];
@@ -724,6 +724,14 @@ export function FormularioVenta({
                 if (c) {
                   setMoneda(c.moneda as 'USD' | 'PEN');
                   setIncoterm(c.moneda === 'PEN' ? 'EXW' : 'FOB');
+                  /*
+                   * La forma de pago habitual del cliente (lista de Comex): se
+                   * propone al crear, no al reabrir una cotización ya hecha.
+                   */
+                  if (!esEdicion && c.forma_pago) {
+                    setFormaPago(c.forma_pago);
+                    setAdelantoPct(Number(c.adelanto_pct ?? 0));
+                  }
                 }
                 // Los precios dependen del cliente: hay que rehacerlos
                 if (lineas.length) {

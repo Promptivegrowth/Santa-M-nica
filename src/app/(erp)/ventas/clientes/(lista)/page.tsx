@@ -48,7 +48,8 @@ export default async function PaginaClientes(props: PageProps<'/ventas/clientes'
       </CabeceraPagina>
 
       <Listado
-        vista="clientes"
+        //  La vista agrega el estado de la verificación BASC de Comex (065).
+        vista="v_clientes_lista"
         ficha={{ base: '/ventas/clientes', titulo: 'Ver la ficha del cliente' }}
         parametros={q as Record<string, string | undefined>}
         orden="razon_social"
@@ -60,12 +61,15 @@ export default async function PaginaClientes(props: PageProps<'/ventas/clientes'
             opciones: listaPaises.map((p) => ({ valor: p, texto: p })) },
           { tipo: 'select', clave: 'bloqueado', etiqueta: 'Mostrar',
             opciones: [{ valor: 'si', texto: 'Solo bloqueados' }] },
+          { tipo: 'select', clave: 'basc', etiqueta: 'BASC',
+            opciones: [{ valor: 'si', texto: 'Solo al día' }] },
         ]}
         filtrosAplicados={[
           { clave: 'buscar', columna: 'razon_social', operador: 'contiene',
             columnas: ['razon_social', 'codigo', 'nombre_corto'] },
           { clave: 'pais', columna: 'pais', operador: 'igual' },
           { clave: 'bloqueado', columna: 'bloqueado', operador: 'verdadero' },
+          { clave: 'basc', columna: 'basc_al_dia', operador: 'verdadero' },
         ]}
         columnas={[
           { clave: 'codigo', titulo: 'Código', mono: true },
@@ -82,6 +86,12 @@ export default async function PaginaClientes(props: PageProps<'/ventas/clientes'
               </>
             ) },
           { clave: 'pais', titulo: 'País' },
+          { clave: 'basc_al_dia', titulo: 'BASC',
+            render: (f) => f.basc_al_dia
+              ? <span data-basc="al-dia"><Etiqueta texto="Al día" tono="ok" /></span>
+              : f.basc_verificado
+                ? <span data-basc="pendiente"><Etiqueta texto="Pendiente" tono="atencion" /></span>
+                : <span data-basc="sin" style={{ fontSize: '.72rem', color: 'var(--tinta-3)' }}>Sin verificar</span> },
           { clave: 'moneda', titulo: 'Moneda', mono: true },
           ...(puedeVerCostos ? [{
             clave: 'linea_credito', titulo: 'Línea de crédito', numerica: true,
