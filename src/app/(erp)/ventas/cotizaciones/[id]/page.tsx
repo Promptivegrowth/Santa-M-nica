@@ -25,6 +25,7 @@ import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, dinero, pct, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
+import { ROLES_RECHAZAN_COTIZACION } from '@/lib/permisosVentas';
 import { uno, campo } from '@/lib/relaciones';
 import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
 import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
@@ -95,7 +96,10 @@ const TONO: Record<string, 'ok' | 'atencion' | 'critico' | 'info' | 'neutro'> = 
  */
 export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaciones/[id]'>) {
   const { id } = await props.params;
+  const q = await props.searchParams;
   const cotId = Number(id);
+  /* Si se llegó rebotado desde «editar», se dice por qué (antes volvía en silencio). */
+  const noEditable = typeof q.nohayeditar === 'string' ? q.nohayeditar : null;
 
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
@@ -146,6 +150,7 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
             aprobada={aprobada}
             requiereAprobacion={requiereAprobacion}
             puedeAprobar={puedeAprobar}
+            puedeRechazar={ROLES_RECHAZAN_COTIZACION.includes((usuario?.rol ?? 'consulta') as Rol)}
           />
         )}
       </CabeceraPagina>
@@ -155,15 +160,27 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
         documento: si está esperando aprobación, eso es lo único que importa
         de esta pantalla ahora mismo.
       */}
+      {noEditable && (
+        <div className="ficha-aviso ficha-aviso-atencion" role="alert" data-aviso="no-editable">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>Esta cotización no se puede editar.</strong>{' '}
+            {noEditable === 'convertida'
+              ? 'Ya generó un pedido: los precios de una venta cerrada no se cambian.'
+              : `Está ${etiquetaEstado(noEditable).toLowerCase()}: solo se corrige una cotización en borrador, aprobada o enviada. Si necesita otra oferta, cree una nueva.`}
+          </span>
+        </div>
+      )}
+
       {estado === 'borrador' && requiereAprobacion && !aprobada && (
-        <div className="ficha-aviso ficha-aviso-atencion" role="status">
+        <div className="ficha-aviso ficha-aviso-atencion" role="status" data-aviso="esperando-aprobacion">
           <Icono nombre="alerta" tamano={17} />
           <span>
             <strong>Esperando aprobación.</strong> Esta oferta no puede salir al cliente hasta que
-            Gerencia autorice el precio.{' '}
+            una persona autorizada a aprobar cotizaciones revise el precio.{' '}
             {puedeAprobar
-              ? 'Use el botón «Aprobar» de arriba.'
-              : 'Avise a Gerencia para que la revise.'}
+              ? 'Usted tiene esa facultad: use el botón «Aprobar» de arriba.'
+              : 'Avise a quien aprueba cotizaciones para que la revise.'}
           </span>
         </div>
       )}
@@ -228,7 +245,7 @@ async function CuerpoCotizacion({
 
   const { data: lineas } = await supabase
     .from('cotizacion_lineas')
-    .select('id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct, orden, sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
+    .select('id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct, costo_estimado_tm, orden, sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion))')
     .eq('cotizacion_id', cotId)
     .order('orden');
 
@@ -444,6 +461,7 @@ async function CuerpoCotizacion({
                       <th className="num">Desc.</th>
                       <th className="num">Precio final</th>
                       <th className="num">Importe</th>
+                      <th className="num">Costo est. US$/TM</th>
                     </>
                   )}
                 </tr>
@@ -476,6 +494,12 @@ async function CuerpoCotizacion({
                           </td>
                           <td className="num">{num(l.precio_tm, 2)}</td>
                           <td className="num"><strong>{dinero(importe, moneda, 2)}</strong></td>
+                          {/* El costo vigente al cotizar (067): pasa al pedido al convertir. */}
+                          <td className="num" data-costo-estimado={l.costo_estimado_tm == null ? 'sin-costo' : Number(l.costo_estimado_tm)}>
+                            {l.costo_estimado_tm == null
+                              ? <Etiqueta texto="Sin costo estimado" tono="atencion" />
+                              : num(Number(l.costo_estimado_tm), 2)}
+                          </td>
                         </>
                       )}
                     </tr>
@@ -499,6 +523,7 @@ async function CuerpoCotizacion({
                     <td className="num">
                       <strong style={{ color: 'var(--acento)' }}>{dinero(subtotal, moneda, 2)}</strong>
                     </td>
+                    <td className="num"></td>
                   </tr>
                 </tfoot>
               )}

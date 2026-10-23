@@ -8,6 +8,11 @@
  *  y llevarlo a la dirección web, para que el servidor haga la búsqueda contra
  *  la base de datos.
  *
+ *  La misma caja sirve a dos pantallas: el Buscador universal y el Retiro
+ *  sanitario. Cada una dice A DÓNDE va la búsqueda (`destino`); antes la caja
+ *  del retiro mandaba siempre al buscador universal y el usuario perdía la
+ *  pantalla en la que estaba.
+ *
  *  Se validan dos cosas antes de buscar:
  *   · Que haya al menos 2 caracteres (con uno solo, la búsqueda devolvería
  *     medio sistema y sería inútil).
@@ -18,7 +23,21 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 
-export function BuscadorTrazabilidad({ valorInicial = '' }: { valorInicial?: string }) {
+export function BuscadorTrazabilidad({
+  valorInicial = '',
+  destino = '/trazabilidad',
+  placeholder = 'Pallet, proforma, contenedor, guía, factura o cliente…',
+  etiqueta = 'Buscar en todo el sistema',
+  vacio = 'Escriba un código para buscar: un pallet, una proforma, un contenedor, una guía o un cliente.',
+}: {
+  valorInicial?: string;
+  /** Pantalla que recibe la búsqueda como ?q=… */
+  destino?: string;
+  placeholder?: string;
+  etiqueta?: string;
+  /** Qué decir si se pulsa Buscar con la caja vacía. */
+  vacio?: string;
+}) {
   const router = useRouter();
   const [texto, setTexto] = useState(valorInicial);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -29,7 +48,7 @@ export function BuscadorTrazabilidad({ valorInicial = '' }: { valorInicial?: str
     const q = texto.trim();
 
     if (q.length === 0) {
-      setAviso('Escriba un código para buscar: un pallet, una proforma, un contenedor, una guía o un cliente.');
+      setAviso(vacio);
       return;
     }
     if (q.length < 2) {
@@ -38,7 +57,7 @@ export function BuscadorTrazabilidad({ valorInicial = '' }: { valorInicial?: str
     }
 
     setAviso(null);
-    iniciar(() => router.push(`/trazabilidad?q=${encodeURIComponent(q)}`));
+    iniciar(() => router.push(`${destino}?q=${encodeURIComponent(q)}`));
   }
 
   return (
@@ -50,8 +69,8 @@ export function BuscadorTrazabilidad({ valorInicial = '' }: { valorInicial?: str
           className="buscador-traza-input"
           value={texto}
           onChange={(e) => { setTexto(e.target.value); if (aviso) setAviso(null); }}
-          placeholder="Pallet, proforma, contenedor, guía, factura o cliente…"
-          aria-label="Buscar en todo el sistema"
+          placeholder={placeholder}
+          aria-label={etiqueta}
           aria-invalid={aviso ? 'true' : 'false'}
           autoFocus={!valorInicial}
         />

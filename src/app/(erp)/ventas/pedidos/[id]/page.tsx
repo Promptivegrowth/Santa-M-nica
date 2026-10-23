@@ -14,7 +14,7 @@
  *    Embarques      → ¿cuándo sale?
  *    Despachos      → ¿qué ya salió?
  *    Facturas       → ¿qué documenté?
- *    Cobranza       → ¿me pagaron?
+ *    Cobranza       → ¿me pagaron? (adelanto, pagos, saldo y vencidos)
  *    Rentabilidad   → ¿gané dinero?
  *    Historial      → ¿quién tocó esto y cuándo?
  *
@@ -33,7 +33,8 @@ import { Historial } from '@/components/ui/Historial';
 import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { EsqueletoKpi, EsqueletoPestanas, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { tm, num, fecha, dinero, pct, etiquetaEstado } from '@/lib/formato';
-import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
+import { veCostos, puedeVender, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
+import { puedeFijarRestriccionPeso } from '@/lib/permisosVentas';
 import { RestriccionPeso } from './RestriccionPeso';
 import { uno, campo } from '@/lib/relaciones';
 import { BotonFacturar } from './Facturar';
@@ -162,6 +163,10 @@ async function CuerpoPedido({
   const usuario = await obtenerUsuarioActual();
   const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
   const puedeReservar = ['gerencia', 'operaciones', 'comercial', 'almacen'].includes(usuario?.rol ?? '');
+  //  Quién fija la restricción de peso: la MISMA lista que usa el servidor.
+  const puedeRestriccion = puedeFijarRestriccionPeso(usuario?.rol);
+  //  El enlace al comprobante solo para quien puede abrir Facturación.
+  const veFacturacion = rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, '/finanzas/facturas');
 
   const moneda = pedido.moneda as 'USD' | 'PEN';
 
@@ -259,6 +264,45 @@ async function CuerpoPedido({
   ]);
 
   const avance = Number(pedido.avance_pct ?? 0);
+  // Margen solo con lo que tiene costo; sin ningún costo no hay margen que mostrar.
+  const sinNingunCosto = Number(rentabilidad?.venta_con_costo ?? 0) <= 0;
+  const margenPct = Number(rentabilidad?.margen_con_costo_pct ?? 0);
+
+  /*
+   * LA COBRANZA DEL PEDIDO.
+   * Antes las pestañas Facturas y Cobranza enseñaban la misma tabla de
+   * comprobantes, y «¿me pagaron?» no tenía respuesta en la ficha: había que
+   * ir a Finanzas. Ahora Cobranza muestra lo cobrado de verdad —los pagos que
+   * Finanzas registró contra cada comprobante (`registrarCobranza`)— y el
+   * adelanto que Comercial anotó en el pedido. Solo se consulta en esa pestaña.
+   */
+  const hoy = hoyEnLima();
+  const vigentes = (facturas ?? []).filter((f) => f.estado !== 'anulada');
+  const { data: pagos } = pestana === 'cobranza' && vigentes.length
+    ? await supabase
+        .from('cobranzas')
+        .select('id, factura_id, monto, fecha, medio, referencia, usuarios!cobranzas_registrado_por_fkey(nombre)')
+        .in('factura_id', vigentes.map((f) => f.id as number))
+        // Un cobro anulado (070b) no es dinero recibido: no cuenta aquí.
+        .eq('anulada', false)
+        .order('fecha', { ascending: false })
+    : { data: [] as Record<string, unknown>[] };
+  const cobradoDe = (facturaId: number) =>
+    (pagos ?? []).filter((c) => Number(c.factura_id) === facturaId).reduce((s, c) => s + Number(c.monto ?? 0), 0);
+  const saldos = vigentes.map((f) => {
+    const cobrado = cobradoDe(f.id as number);
+    const saldo = Math.max(0, Math.round((Number(f.total ?? 0) - cobrado) * 100) / 100);
+    const vencida = saldo > 0.01 && String(f.fecha_vencimiento ?? '') < hoy;
+    const diasVencida = vencida
+      ? Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${String(f.fecha_vencimiento)}T12:00:00Z`)) / 86400000)
+      : 0;
+    return { f, cobrado, saldo, vencida, diasVencida };
+  });
+  const totalFacturado = saldos.reduce((s, x) => s + Number(x.f.total ?? 0), 0);
+  const totalCobrado = saldos.reduce((s, x) => s + x.cobrado, 0);
+  const totalSaldo = saldos.reduce((s, x) => s + x.saldo, 0);
+  const totalVencido = saldos.filter((x) => x.vencida).reduce((s, x) => s + x.saldo, 0);
+  const adelanto = cabecera?.adelanto_abonado == null ? null : Number(cabecera.adelanto_abonado);
 
   return (
     <>
@@ -302,7 +346,21 @@ async function CuerpoPedido({
               <div><dt>País</dt><dd>{pedido.pais ?? '—'}</dd></div>
               <div><dt>Destino</dt><dd>{pedido.destino ?? '—'}{pedido.destino_pais ? `, ${pedido.destino_pais}` : ''}</dd></div>
               <div><dt>Incoterm</dt><dd>{pedido.incoterm}</dd></div>
-              <div><dt>Moneda</dt><dd>{moneda} · TC {num(Number(pedido.tipo_cambio), 2)}</dd></div>
+              <div>
+                <dt>Moneda</dt>
+                <dd data-tc-origen={cabecera?.tipo_cambio_fuente ?? 'sin-dato'}>
+                  {moneda} · TC {num(Number(pedido.tipo_cambio), 3)}
+                  {/* De dónde salió el tipo de cambio: también en el pedido directo. */}
+                  <br />
+                  <small style={{ color: 'var(--tinta-3)' }}>
+                    {cabecera?.tipo_cambio_fuente === 'sunat'
+                      ? `SUNAT · ${cabecera.tipo_cambio_clase ?? 'venta'} · publicado el ${fecha(cabecera.tipo_cambio_fecha as string)}`
+                      : cabecera?.tipo_cambio_fuente === 'manual'
+                        ? `Escrito a mano${cabecera.tipo_cambio_fecha ? ` el ${fecha(cabecera.tipo_cambio_fecha as string)}` : ''}`
+                        : 'Anterior al tipo de cambio automático'}
+                  </small>
+                </dd>
+              </div>
               <div><dt>Prioridad</dt><dd><Etiqueta texto={etiquetaEstado(pedido.prioridad as string)} tono={pedido.prioridad === 'urgente' ? 'critico' : 'neutro'} /></dd></div>
               {/*
                 De dónde vino. Un pedido nacido de una oferta enlaza con ella;
@@ -453,7 +511,7 @@ async function CuerpoPedido({
               netoKg={restriccionNeto}
               brutoKg={restriccionBruto}
               nota={(contacto.nota_restricciones as string) ?? null}
-              puede={puedeReservar}
+              puede={puedeRestriccion}
               yaSalio={['despachado', 'cerrado', 'cancelado'].includes(String(pedido.ciclo))}
             />
           </Panel>
@@ -503,7 +561,7 @@ async function CuerpoPedido({
                 <tr>
                   <th>SKU</th><th>Producto</th><th>Presentación</th>
                   <th className="num">Cantidad</th>
-                  {puedeVerCostos && <><th className="num">Precio lista</th><th className="num">Descuento</th><th className="num">Precio</th><th className="num">Venta</th></>}
+                  {puedeVerCostos && <><th className="num">Precio lista</th><th className="num">Descuento</th><th className="num">Precio</th><th className="num">Venta</th><th className="num">Costo est. US$/TM</th></>}
                 </tr>
               </thead>
               <tbody>
@@ -527,6 +585,12 @@ async function CuerpoPedido({
                           <td className="num">{Number(l.descuento_pct) > 0 ? pct(l.descuento_pct) : '—'}</td>
                           <td className="num">{num(l.precio_tm, 2)}</td>
                           <td className="num"><strong>{dinero(venta, moneda, 0)}</strong></td>
+                          {/* El costo vigente al vender (067); si no había, se dice. */}
+                          <td className="num" data-costo-estimado={Number(l.costo_estimado_tm ?? 0) > 0 ? Number(l.costo_estimado_tm) : 'sin-costo'}>
+                            {Number(l.costo_estimado_tm ?? 0) > 0
+                              ? num(Number(l.costo_estimado_tm), 2)
+                              : <Etiqueta texto="Sin costo estimado" tono="atencion" />}
+                          </td>
                         </>
                       )}
                     </tr>
@@ -535,6 +599,13 @@ async function CuerpoPedido({
               </tbody>
             </table>
           </div>
+          {puedeVerCostos && (lineas ?? []).some((l) => !(Number(l.costo_estimado_tm ?? 0) > 0)) && (
+            <p className="pie-explicativo" style={{ padding: '0 1rem 1rem' }}>
+              <strong>Sin costo estimado</strong>: cuando se registró la línea, Finanzas › Costos no tenía
+              costo vigente para ese producto, o el pedido es anterior a que el costo se tomara solo.
+              Esa línea no entra en el margen estimado de Rentabilidad.
+            </p>
+          )}
         </Panel>
       )}
 
@@ -806,21 +877,25 @@ async function CuerpoPedido({
         </>
       )}
 
-      {/* ══════ FACTURAS y COBRANZA ══════ */}
-      {(pestana === 'facturas' || pestana === 'cobranza') && (
+      {/* ══════ FACTURAS: lo que se documentó ══════ */}
+      {pestana === 'facturas' && (
         <Panel titulo={`${(facturas ?? []).length} documentos emitidos`}>
           {(facturas ?? []).length === 0 ? (
             <Vacio titulo="Sin facturas" mensaje="Este pedido todavía no se ha facturado." />
           ) : (
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-              <table className="datos">
+              <table className="datos" data-tabla="facturas">
                 <thead>
                   <tr><th>Documento</th><th>Emisión</th><th>Vencimiento</th><th className="num">Total</th><th>Estado</th></tr>
                 </thead>
                 <tbody>
                   {(facturas ?? []).map((f) => (
                     <tr key={f.id as number}>
-                      <td className="mono">{f.numero}</td>
+                      <td className="mono">
+                        {veFacturacion
+                          ? <Link href={`/finanzas/facturas/${f.id}`} className="enlace-dato">{f.numero}</Link>
+                          : f.numero}
+                      </td>
                       <td className="mono">{fecha(f.fecha_emision as string)}</td>
                       <td className="mono">{fecha(f.fecha_vencimiento as string)}</td>
                       <td className="num">{dinero(f.total, f.moneda as 'USD' | 'PEN', 2)}</td>
@@ -837,6 +912,104 @@ async function CuerpoPedido({
             </div>
           )}
         </Panel>
+      )}
+
+      {/* ══════ COBRANZA: lo que de verdad se cobró ══════ */}
+      {pestana === 'cobranza' && (
+        vigentes.length === 0 && adelanto === null ? (
+          <Panel titulo="Cobranza">
+            <Vacio
+              titulo="Sin cobros"
+              mensaje="Este pedido no tiene comprobantes emitidos ni adelanto registrado: todavía no hay nada cobrado ni por cobrar."
+            />
+          </Panel>
+        ) : (
+          <div data-bloque="cobranza">
+            <RejillaKpi>
+              <Kpi etiqueta="Facturado" valor={dinero(totalFacturado, moneda, 2)} nota={`${vigentes.length} comprobante${vigentes.length === 1 ? '' : 's'}`} />
+              <Kpi etiqueta="Cobrado" valor={dinero(totalCobrado, moneda, 2)} tono="ok" nota={`${(pagos ?? []).length} pago${(pagos ?? []).length === 1 ? '' : 's'} registrado${(pagos ?? []).length === 1 ? '' : 's'}`} />
+              <Kpi etiqueta="Saldo por cobrar" valor={dinero(totalSaldo, moneda, 2)} tono={totalSaldo > 0.01 ? 'atencion' : 'ok'} />
+              <Kpi etiqueta="Vencido" valor={dinero(totalVencido, moneda, 2)} tono={totalVencido > 0.01 ? 'critico' : 'ok'}
+                   nota={totalVencido > 0.01 ? 'Pasó su fecha de vencimiento' : 'Nada vencido'} />
+              <Kpi etiqueta="Adelanto registrado" valor={adelanto === null ? '—' : dinero(adelanto, moneda, 2)}
+                   nota={adelanto === null ? 'Sin adelanto anotado' : `Abonado el ${fecha(cabecera?.adelanto_abonado_en as string)}`} />
+            </RejillaKpi>
+
+            <Panel titulo={`Pagos registrados · ${(pagos ?? []).length}`} className="mb-espacio">
+              {(pagos ?? []).length === 0 ? (
+                <Vacio
+                  titulo="Sin pagos registrados"
+                  mensaje={vigentes.length
+                    ? 'Todavía no se registró ningún pago contra los comprobantes de este pedido. Los pagos los registra Finanzas desde el comprobante.'
+                    : 'El pedido aún no tiene comprobantes: los pagos se registran contra la factura cuando se emite.'}
+                />
+              ) : (
+                <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+                  <table className="datos" data-tabla="pagos">
+                    <thead>
+                      <tr><th>Fecha</th><th>Comprobante</th><th>Medio</th><th>Referencia</th><th>Registró</th><th className="num">Monto</th></tr>
+                    </thead>
+                    <tbody>
+                      {(pagos ?? []).map((c) => {
+                        const fac = vigentes.find((f) => Number(f.id) === Number(c.factura_id));
+                        return (
+                          <tr key={c.id as number}>
+                            <td className="mono">{fecha(c.fecha as string)}</td>
+                            <td className="mono">{String(fac?.numero ?? '—')}</td>
+                            <td>{(c.medio as string) || '—'}</td>
+                            <td className="mono">{(c.referencia as string) || '—'}</td>
+                            <td>{campo(c.usuarios, 'nombre')}</td>
+                            <td className="num"><strong>{dinero(Number(c.monto), (fac?.moneda as 'USD' | 'PEN') ?? moneda, 2)}</strong></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Panel>
+
+            {vigentes.length > 0 && (
+              <Panel titulo="Saldo de cada comprobante" className="mb-espacio">
+                <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
+                  <table className="datos" data-tabla="saldos">
+                    <thead>
+                      <tr><th>Documento</th><th>Vence</th><th className="num">Total</th><th className="num">Cobrado</th><th className="num">Saldo</th><th>Situación</th></tr>
+                    </thead>
+                    <tbody>
+                      {saldos.map(({ f, cobrado, saldo, vencida, diasVencida }) => (
+                        <tr key={f.id as number}>
+                          <td className="mono">
+                            {veFacturacion
+                              ? <Link href={`/finanzas/facturas/${f.id}`} className="enlace-dato">{f.numero}</Link>
+                              : f.numero}
+                          </td>
+                          <td className="mono" style={{ color: vencida ? 'var(--critico)' : undefined }}>{fecha(f.fecha_vencimiento as string)}</td>
+                          <td className="num">{dinero(f.total, f.moneda as 'USD' | 'PEN', 2)}</td>
+                          <td className="num">{dinero(cobrado, f.moneda as 'USD' | 'PEN', 2)}</td>
+                          <td className="num"><strong>{dinero(saldo, f.moneda as 'USD' | 'PEN', 2)}</strong></td>
+                          <td>
+                            <Etiqueta
+                              texto={saldo <= 0.01 ? 'Cobrada' : vencida ? `Vencida hace ${diasVencida} d` : cobrado > 0 ? 'Parcialmente cobrada' : 'Por cobrar'}
+                              tono={saldo <= 0.01 ? 'ok' : vencida ? 'critico' : 'atencion'}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Panel>
+            )}
+
+            <p className="pie-explicativo">
+              <strong>Cobrado</strong> son los pagos que Finanzas registró contra cada comprobante.
+              El <strong>adelanto registrado</strong> es lo que Comercial anotó que el cliente depositó
+              (pestaña General, bloque Entrega y pago); se muestra aparte y no se suma a lo cobrado,
+              para no contarlo dos veces cuando Finanzas lo aplica a la factura.
+            </p>
+          </div>
+        )
       )}
 
       {/* ══════ DESPACHOS ══════ */}
@@ -864,7 +1037,31 @@ async function CuerpoPedido({
                 <div><dt>Venta</dt><dd>{dinero(rentabilidad?.venta, 'USD', 2)}</dd></div>
                 <div><dt>Costo estimado</dt><dd>{dinero(rentabilidad?.costo_estimado, 'USD', 2)}</dd></div>
                 <div><dt>Costo real de los lotes despachados</dt><dd>{dinero(rentabilidad?.costo_real, 'USD', 2)}</dd></div>
-                <div><dt>Margen</dt><dd><strong>{dinero(rentabilidad?.margen, 'USD', 2)}</strong></dd></div>
+                {/*
+                  El margen se calcula SOLO con las líneas que tienen costo
+                  (migración 071). Antes una línea sin costo contaba como 100 %
+                  de margen y el pedido parecía mucho más rentable de lo que era.
+                */}
+                <div>
+                  <dt>Margen</dt>
+                  <dd>
+                    {sinNingunCosto
+                      ? <Etiqueta texto="Sin costo" tono="atencion" />
+                      : <strong>{dinero(rentabilidad?.margen_con_costo, 'USD', 2)}</strong>}
+                  </dd>
+                </div>
+                {Number(rentabilidad?.venta_sin_costo ?? 0) > 0 && (
+                  <div data-aviso="venta-sin-costo">
+                    <dt>Venta sin costo, fuera del margen</dt>
+                    <dd>
+                      {dinero(rentabilidad?.venta_sin_costo, 'USD', 2)} · {num(Number(rentabilidad?.tm_sin_costo ?? 0), 2)} TM
+                      <br />
+                      <small style={{ color: 'var(--atencion)' }}>
+                        {Number(rentabilidad?.lineas_sin_costo ?? 0)} línea(s) sin costo estimado ni costo real: cargue el costo para que cuenten.
+                      </small>
+                    </dd>
+                  </div>
+                )}
                 {moneda !== 'USD' && (
                   <div>
                     <dt>Venta según la proforma</dt>
@@ -881,10 +1078,14 @@ async function CuerpoPedido({
                 <div>
                   <dt>Margen %</dt>
                   <dd>
-                    <strong style={{ color: Number(rentabilidad?.margen_pct) < 8 ? 'var(--critico)' : 'var(--ok)' }}>
-                      {pct(rentabilidad?.margen_pct)}
-                    </strong>
-                    {Number(rentabilidad?.margen_pct) < 8 && <> · <Etiqueta texto="Margen bajo" tono="critico" /></>}
+                    {sinNingunCosto ? '—' : (
+                      <>
+                        <strong style={{ color: margenPct < 8 ? 'var(--critico)' : 'var(--ok)' }}>
+                          {pct(margenPct)}
+                        </strong>
+                        {margenPct < 8 && <> · <Etiqueta texto="Margen bajo" tono="critico" /></>}
+                      </>
+                    )}
                   </dd>
                 </div>
               </dl>

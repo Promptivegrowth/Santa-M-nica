@@ -231,6 +231,17 @@ export function Cabecera({
                   Mis alertas
                   <span className="cabecera-opcion-valor">{alertasPendientes}</span>
                 </Link>
+                {/* Cada uno cambia la suya (070): no hay correo de recuperación. */}
+                <Link
+                  href="/cuenta/clave"
+                  className="cabecera-opcion"
+                  role="menuitem"
+                  data-accion="cambiar-mi-clave"
+                  onClick={() => setMenuAbierto(false)}
+                >
+                  <Icono nombre="editar" tamano={15} />
+                  Cambiar mi contraseña
+                </Link>
               </div>
 
               {/* --- Salir --- */}

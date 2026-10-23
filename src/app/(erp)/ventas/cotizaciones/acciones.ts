@@ -20,6 +20,7 @@ import { revisarTipoCambio } from '@/lib/moneda';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 import { columnasContacto, type ContactoDocumento } from '@/lib/contactoDocumento';
 import { puedeVender, type Rol } from '@/lib/navegacion';
+import { puedeCotizar, ROLES_RECHAZAN_COTIZACION } from '@/lib/permisosVentas';
 import { obtenerTipoCambioSunat, type TipoCambioSunat } from '@/lib/tipoCambioSunat';
 import {
   plazoReferencia, diasDePlazos, textoCondicionPago, type FormaPago, type Prioridad,
@@ -108,6 +109,109 @@ function revisarCondiciones(d: DatosCotizacion):
   };
 }
 
+/**
+ * Las líneas, revisadas con la misma regla al crear y al modificar.
+ *
+ * Antes solo se revisaban al crear: al editar se podía guardar una línea con
+ * cantidad cero o un descuento de 150 %, y la base lo aceptaba. Devuelve el
+ * primer problema encontrado, o null si está todo bien.
+ */
+function revisarLineas(lineas: LineaCotizacion[]): { ok: false; mensaje: string; campo: string } | null {
+  if (!lineas.length) {
+    return { ok: false, mensaje: 'Agregue al menos un producto a la cotización.', campo: 'lineas' };
+  }
+  const vistos = new Set<number>();
+  for (const [i, l] of lineas.entries()) {
+    const n = i + 1;
+    if (!l.sku_presentacion_id) {
+      return { ok: false, mensaje: `La línea ${n} no tiene producto seleccionado.`, campo: 'lineas' };
+    }
+    //  Un mismo producto dos veces: la aprobación y el descuento se siguen por producto.
+    if (vistos.has(l.sku_presentacion_id)) {
+      return { ok: false, mensaje: `El producto de la línea ${n} está repetido. Junte las cantidades en una sola línea.`, campo: 'lineas' };
+    }
+    vistos.add(l.sku_presentacion_id);
+    if (!(l.cantidad_tm > 0)) {
+      return { ok: false, mensaje: `La cantidad de la línea ${n} debe ser mayor que cero.`, campo: 'lineas' };
+    }
+    if (l.precio_tm < 0) {
+      return { ok: false, mensaje: `El precio de la línea ${n} no puede ser negativo.`, campo: 'lineas' };
+    }
+    if (l.descuento_pct < 0 || l.descuento_pct > 100) {
+      return { ok: false, mensaje: `El descuento de la línea ${n} debe estar entre 0 y 100 %.`, campo: 'lineas' };
+    }
+  }
+  return null;
+}
+
+/** Quién puede autorizar un descuento por encima del tope. */
+const AUTORIZAN_DESCUENTO = ['gerencia', 'operaciones'];
+
+/** Una línea tal como estaba guardada antes de editar. */
+type LineaPrevia = {
+  sku_presentacion_id: number;
+  cantidad_tm: number;
+  precio_tm: number;
+  descuento_pct: number;
+  descuento_autorizado_por: string | null;
+};
+
+/**
+ * EL CONTROL DE DESCUENTO, IGUAL AL CREAR QUE AL MODIFICAR.
+ *
+ * Por encima del tope de Configuración (3 % por defecto) solo guardan
+ * Gerencia u Operaciones, y en la línea queda quién lo autorizó. Antes este
+ * control solo corría al crear: editando, un vendedor podía subir el
+ * descuento al 20 % y el servidor lo aceptaba sin preguntar. Lo encontró la
+ * revisión de la Guía de uso.
+ *
+ * Al MODIFICAR se respeta lo ya autorizado: si una línea mantiene el mismo
+ * producto y un descuento igual o menor al que alguien autorizó, conserva esa
+ * autorización. Sin esto, un vendedor no podría corregir ni las observaciones
+ * de una oferta con un descuento que Gerencia ya había firmado.
+ *
+ * Devuelve, por cada línea, quién autorizó su descuento (o null si no lo
+ * necesitaba).
+ */
+async function controlarDescuentos(
+  supabase: Awaited<ReturnType<typeof crearClienteServidor>>,
+  usuario: { id: string; rol: string },
+  lineas: LineaCotizacion[],
+  previas: LineaPrevia[] = []
+): Promise<{ ok: true; tope: number; autorizadoPor: (string | null)[] } | { ok: false; mensaje: string; campo: string }> {
+  const { data: pDesc } = await supabase
+    .from('parametros').select('valor').eq('clave', 'descuento_max_sin_autorizacion').single();
+  const tope = Number(pDesc?.valor ?? 3);
+  const puedeAutorizar = AUTORIZAN_DESCUENTO.includes(usuario.rol);
+
+  const autorizadoPor: (string | null)[] = [];
+  const sinAutorizar: number[] = [];
+  for (const [i, l] of lineas.entries()) {
+    if (!(l.descuento_pct > tope)) { autorizadoPor.push(null); continue; }
+    const previa = previas.find((p) => p.sku_presentacion_id === l.sku_presentacion_id);
+    if (previa?.descuento_autorizado_por && l.descuento_pct <= Number(previa.descuento_pct) + 1e-9) {
+      autorizadoPor.push(previa.descuento_autorizado_por);
+    } else if (puedeAutorizar) {
+      autorizadoPor.push(usuario.id);
+    } else {
+      sinAutorizar.push(i + 1);
+      autorizadoPor.push(null);
+    }
+  }
+
+  if (sinAutorizar.length) {
+    return {
+      ok: false,
+      mensaje:
+        `Hay líneas con descuento superior al ${tope} % permitido sin autorización ` +
+        `(línea${sinAutorizar.length > 1 ? 's' : ''} ${sinAutorizar.join(', ')}). ` +
+        'Pida a Gerencia u Operaciones que la registre, o baje el descuento.',
+      campo: 'lineas',
+    };
+  }
+  return { ok: true, tope, autorizadoPor };
+}
+
 export type Resultado =
   | { ok: true; id: number; numero: string; mensaje: string }
   | { ok: false; mensaje: string; campo?: string };
@@ -167,19 +271,17 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
 
-  if (!puedeVender(usuario.rol as Rol)) {
+  //  Comex registra pedidos directos, pero no entra a Cotizaciones.
+  if (!puedeCotizar(usuario.rol)) {
     return {
       ok: false,
-      mensaje: 'Su rol no puede crear cotizaciones. Esta acción corresponde a Comercial, Comex, Operaciones o Gerencia.',
+      mensaje: 'Su rol no puede crear cotizaciones. Esta acción corresponde a Comercial, Operaciones o Gerencia.',
     };
   }
 
   /* ---- Validación en el servidor (el navegador se puede manipular) ---- */
   if (!datos.cliente_id) {
     return { ok: false, mensaje: 'Elija el cliente al que va dirigida la cotización.', campo: 'cliente' };
-  }
-  if (!datos.lineas.length) {
-    return { ok: false, mensaje: 'Agregue al menos un producto a la cotización.', campo: 'lineas' };
   }
   if (datos.validez_dias < 1 || datos.validez_dias > 365) {
     return { ok: false, mensaje: 'La validez debe estar entre 1 y 365 días.', campo: 'validez' };
@@ -201,37 +303,14 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
     return { ok: false, mensaje: 'La fecha tentativa de despacho no puede ser anterior a hoy.', campo: 'fecha_tentativa_despacho' };
   }
 
-  for (const [i, l] of datos.lineas.entries()) {
-    const n = i + 1;
-    if (!l.sku_presentacion_id) {
-      return { ok: false, mensaje: `La línea ${n} no tiene producto seleccionado.`, campo: 'lineas' };
-    }
-    if (!(l.cantidad_tm > 0)) {
-      return { ok: false, mensaje: `La cantidad de la línea ${n} debe ser mayor que cero.`, campo: 'lineas' };
-    }
-    if (l.precio_tm < 0) {
-      return { ok: false, mensaje: `El precio de la línea ${n} no puede ser negativo.`, campo: 'lineas' };
-    }
-    if (l.descuento_pct < 0 || l.descuento_pct > 100) {
-      return { ok: false, mensaje: `El descuento de la línea ${n} debe estar entre 0 y 100 %.`, campo: 'lineas' };
-    }
-  }
+  const problemaLineas = revisarLineas(datos.lineas);
+  if (problemaLineas) return problemaLineas;
 
   const supabase = await crearClienteServidor();
 
   /* ---- Control de descuento: por encima del límite exige autorización ---- */
-  const { data: pDesc } = await supabase
-    .from('parametros').select('valor').eq('clave', 'descuento_max_sin_autorizacion').single();
-  const topeDescuento = Number(pDesc?.valor ?? 3);
-  const requiereAutorizacion = datos.lineas.some((l) => l.descuento_pct > topeDescuento);
-
-  if (requiereAutorizacion && !['gerencia', 'operaciones'].includes(usuario.rol)) {
-    return {
-      ok: false,
-      mensaje: `Hay líneas con descuento superior al ${topeDescuento} % permitido sin autorización. Pida a Gerencia u Operaciones que la registre, o baje el descuento.`,
-      campo: 'lineas',
-    };
-  }
+  const descuentos = await controlarDescuentos(supabase, usuario, datos.lineas);
+  if (!descuentos.ok) return descuentos;
 
   /* ---- Aviso si el cliente está bloqueado ---- */
   const { data: cliente } = await supabase
@@ -294,7 +373,7 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
       precio_tm: l.precio_tm,
       descuento_pct: l.descuento_pct,
       // Trazabilidad del descuento: queda constancia de quién lo autorizó
-      descuento_autorizado_por: l.descuento_pct > topeDescuento ? usuario.id : null,
+      descuento_autorizado_por: descuentos.autorizadoPor[i],
       orden: i + 1,
     }))
   );
@@ -406,14 +485,62 @@ export async function aprobarCotizacion(id: number): Promise<Resultado> {
   };
 }
 
+/*
+ * DESDE QUÉ ESTADO SE LLEGA A CADA UNO A MANO.
+ *
+ *   enviada    ← borrador o aprobada (con la firma, si la empresa la exige)
+ *   rechazada  ← aprobada o enviada: el cliente dijo que no. Antes solo se
+ *                ofrecía en una enviada, y una oferta aprobada que el cliente
+ *                rechazaba por teléfono antes de marcarse como enviada no
+ *                tenía cómo cerrarse.
+ *
+ * «Aceptada» la pone la conversión en pedido y «vencida» el proceso diario:
+ * ninguna de las dos se marca a mano, porque las dos afirman algo (hay un
+ * pedido, pasó el plazo) que tiene que ser verdad.
+ */
+const TRANSICIONES: Partial<Record<string, string[]>> = {
+  enviada: ['borrador', 'aprobada'],
+  rechazada: ['aprobada', 'enviada'],
+};
+
 export async function cambiarEstadoCotizacion(
   id: number,
-  estado: 'borrador' | 'enviada' | 'aceptada' | 'rechazada' | 'vencida'
+  estado: 'enviada' | 'rechazada'
 ): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
 
+  if (!puedeCotizar(usuario.rol)) {
+    return { ok: false, mensaje: 'Su rol no puede cambiar el estado de una cotización.' };
+  }
+  if (estado === 'rechazada' && !ROLES_RECHAZAN_COTIZACION.includes(usuario.rol as Rol)) {
+    return { ok: false, mensaje: 'Marcar una cotización como rechazada corresponde a Gerencia, Operaciones o Comercial.' };
+  }
+  const origenes = TRANSICIONES[estado];
+  if (!origenes) {
+    return { ok: false, mensaje: `El estado «${estado}» no se pone a mano: lo pone el sistema.` };
+  }
+
   const supabase = await crearClienteServidor();
+
+  const { data: previa } = await supabase
+    .from('cotizaciones').select('numero, estado, aprobada_en').eq('id', id).maybeSingle();
+  if (!previa) return { ok: false, mensaje: 'Esa cotización ya no existe.' };
+
+  //  Una cotización que ya es pedido está cerrada: ni se envía ni se rechaza.
+  const { data: pedido } = await supabase
+    .from('pedidos').select('numero_proforma').eq('cotizacion_id', id).maybeSingle();
+  if (pedido) {
+    return { ok: false, mensaje: `${previa.numero} ya generó el pedido ${pedido.numero_proforma}: su estado ya no cambia.` };
+  }
+  if (!origenes.includes(String(previa.estado))) {
+    return {
+      ok: false,
+      mensaje: estado === 'rechazada'
+        ? `${previa.numero} está ${previa.estado}: solo se marca como rechazada una cotización aprobada o enviada.`
+        : `${previa.numero} está ${previa.estado}: ya no se puede marcar como enviada.`,
+    };
+  }
 
   /*
    * EL CONTROL DE VERDAD ESTÁ AQUÍ, NO EN EL BOTÓN.
@@ -422,28 +549,42 @@ export async function cambiarEstadoCotizacion(
    * pública y se puede llamar de otras formas. Si la comprobación viviera
    * solo en la pantalla, el control sería decorativo.
    */
-  if (estado === 'enviada' && (await aprobacionObligatoria())) {
-    const { data: previa } = await supabase
-      .from('cotizaciones').select('numero, aprobada_en').eq('id', id).maybeSingle();
-
-    if (previa && !previa.aprobada_en) {
-      return {
-        ok: false,
-        mensaje:
-          `${previa.numero} todavía no está aprobada, así que no puede salir al cliente. ` +
-          'Pídale a Gerencia que revise el precio.',
-      };
-    }
+  if (estado === 'enviada' && !previa.aprobada_en && (await aprobacionObligatoria())) {
+    return {
+      ok: false,
+      mensaje:
+        `${previa.numero} todavía no está aprobada, así que no puede salir al cliente. ` +
+        'Pídale a quien aprueba cotizaciones que revise el precio.',
+    };
   }
 
+  //  Se filtra también por el estado leído: si alguien la cambió en el medio, no se pisa.
   const { data, error } = await supabase
-    .from('cotizaciones').update({ estado }).eq('id', id).select('numero').single();
+    .from('cotizaciones').update({ estado }).eq('id', id).eq('estado', String(previa.estado)).select('numero');
 
   if (error) return { ok: false, mensaje: `No se pudo actualizar: ${error.message}` };
+  if (!data?.length) {
+    return { ok: false, mensaje: `${previa.numero} cambió mientras tanto o su rol no puede modificarla. Vuelva a cargar la página.` };
+  }
+
+  await supabase.rpc('registrar_evento', {
+    p_entidad: 'cotizaciones',
+    p_entidad_id: id,
+    p_tipo: estado === 'rechazada' ? 'cotizacion_rechazada' : 'cotizacion_enviada',
+    p_descripcion: estado === 'rechazada'
+      ? `${usuario.nombre} marcó la cotización ${previa.numero} como rechazada: el cliente no aceptó la oferta.`
+      : `${usuario.nombre} registró que la cotización ${previa.numero} se envió al cliente.`,
+    p_severidad: 'info',
+  }).then(() => undefined, () => undefined);
 
   revalidatePath('/ventas/cotizaciones');
   revalidatePath(`/ventas/cotizaciones/${id}`);
-  return { ok: true, id, numero: data.numero as string, mensaje: `Cotización marcada como ${estado}.` };
+  return {
+    ok: true, id, numero: previa.numero as string,
+    mensaje: estado === 'rechazada'
+      ? `${previa.numero} marcada como rechazada.`
+      : `${previa.numero} marcada como enviada.`,
+  };
 }
 
 /* ==========================================================================
@@ -611,7 +752,12 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
       precio_tm: l.precio_tm,
       descuento_pct: l.descuento_pct,
       descuento_autorizado_por: l.descuento_autorizado_por,
-      costo_estimado_tm: 0,
+      /*
+       * EL COSTO ESTIMADO SE HEREDA (067). Antes iba un 0 fijo y todo pedido
+       * nuevo salía «Sin costo» en Rentabilidad. Si la cotización no lo tenía
+       * (NULL), el disparador de la base pone el costo vigente de hoy.
+       */
+      costo_estimado_tm: l.costo_estimado_tm ?? null,
       orden: i + 1,
     }))
   );
@@ -736,24 +882,98 @@ export async function eliminarCotizacion(id: number): Promise<Resultado> {
 /* ==========================================================================
    ACTUALIZAR UNA COTIZACIÓN EXISTENTE
    --------------------------------------------------------------------------
-   Solo mientras sea borrador o esté enviada y aún no convertida. Se reemplazan
-   todas las líneas: es más simple y más seguro que intentar casar cuáles
-   cambiaron, y el registro de auditoría queda igualmente completo.
+   Se puede editar mientras esté en BORRADOR, APROBADA o ENVIADA y no se haya
+   convertido en pedido. Aceptada, rechazada o vencida ya no se tocan: para
+   otra oferta se hace una cotización nueva.
+
+   LA EDICIÓN Y LA APROBACIÓN (revisión de la Guía de uso)
+   Antes una cotización enviada se podía editar —precios incluidos— y seguía
+   «aprobada», con la firma de alguien que nunca vio el precio nuevo; y una
+   aprobada ni siquiera se podía abrir. La regla ahora:
+
+     · Si la empresa exige aprobación y la cotización ya estaba aprobada (o
+       enviada), cambiar algo COMERCIAL —productos, cantidades, precios,
+       descuentos, moneda, incoterm, forma de pago o % de adelanto, destino o
+       cliente— ANULA la aprobación: vuelve a borrador, sin firma, y queda en
+       el historial. Hay que aprobarla otra vez antes de enviarla.
+     · Corregir lo que no toca el precio (observaciones, contacto, cuentas,
+       vendedor, validez, prioridad…) la conserva.
+
+   Lo decide este servidor comparando con lo guardado, no la pantalla.
+
+   Se reemplazan todas las líneas: es más simple y más seguro que intentar
+   casar cuáles cambiaron, y el registro de auditoría queda igualmente
+   completo.
    ========================================================================== */
+
+/** Estados en los que una cotización todavía se puede corregir. */
+const EDITABLES = ['borrador', 'aprobada', 'enviada'];
+
+const casiIgual = (a: unknown, b: unknown) => Math.abs(Number(a ?? 0) - Number(b ?? 0)) < 1e-6;
+
+/**
+ * Qué cambió de lo que el cliente ve como OFERTA, dicho en palabras.
+ * Vacío = nada comercial: la aprobación se conserva.
+ */
+function cambiosComerciales(
+  antes: Record<string, unknown>,
+  lineasAntes: LineaPrevia[],
+  d: DatosCotizacion,
+  adelantoPct: number
+): string[] {
+  const cambios: string[] = [];
+  if (Number(antes.cliente_id) !== Number(d.cliente_id)) cambios.push('el cliente');
+  if ((antes.destino_id == null ? null : Number(antes.destino_id)) !== (d.destino_id == null ? null : Number(d.destino_id))) {
+    cambios.push('el destino');
+  }
+  if (String(antes.moneda) !== String(d.moneda)) cambios.push('la moneda');
+  if (String(antes.incoterm) !== String(d.incoterm)) cambios.push('el incoterm');
+  if (((antes.forma_pago as string) || null) !== (d.forma_pago || null)) cambios.push('la forma de pago');
+  if (!casiIgual(antes.adelanto_pct, adelantoPct)) cambios.push('el % de adelanto');
+
+  //  Las líneas se casan por producto (no se admite el mismo producto dos veces).
+  const skusAntes = lineasAntes.map((l) => Number(l.sku_presentacion_id)).sort((a, b) => a - b).join(',');
+  const skusAhora = d.lineas.map((l) => Number(l.sku_presentacion_id)).sort((a, b) => a - b).join(',');
+  if (skusAntes !== skusAhora) cambios.push('los productos');
+  let cantidad = false, precio = false, descuento = false;
+  for (const l of d.lineas) {
+    const previa = lineasAntes.find((p) => Number(p.sku_presentacion_id) === Number(l.sku_presentacion_id));
+    if (!previa) continue;
+    if (!casiIgual(previa.cantidad_tm, l.cantidad_tm)) cantidad = true;
+    if (!casiIgual(previa.precio_tm, l.precio_tm)) precio = true;
+    if (!casiIgual(previa.descuento_pct, l.descuento_pct)) descuento = true;
+  }
+  if (cantidad) cambios.push('las cantidades');
+  if (precio) cambios.push('los precios');
+  if (descuento) cambios.push('los descuentos');
+  return cambios;
+}
+
+/** «a», «a y b», «a, b y c». */
+const enumerar = (xs: string[]) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} y ${xs[xs.length - 1]}`);
+
 export async function actualizarCotizacion(
   id: number,
   datos: DatosCotizacion
 ): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
-  if (!puedeVender(usuario.rol as Rol)) {
+  if (!puedeCotizar(usuario.rol)) {
     return { ok: false, mensaje: 'Su rol no puede modificar cotizaciones.' };
   }
 
   const supabase = await crearClienteServidor();
 
-  const { data: cot } = await supabase
-    .from('cotizaciones').select('numero, estado').eq('id', id).single();
+  const [{ data: cot }, { data: lineasAntes }] = await Promise.all([
+    supabase
+      .from('cotizaciones')
+      .select('numero, estado, aprobada_en, cliente_id, destino_id, moneda, incoterm, forma_pago, adelanto_pct')
+      .eq('id', id).maybeSingle(),
+    supabase
+      .from('cotizacion_lineas')
+      .select('sku_presentacion_id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct, descuento_autorizado_por, costo_estimado_tm, orden')
+      .eq('cotizacion_id', id).order('orden'),
+  ]);
   if (!cot) return { ok: false, mensaje: 'La cotización no existe.' };
 
   const { data: pedido } = await supabase
@@ -764,19 +984,54 @@ export async function actualizarCotizacion(
       mensaje: `No se puede modificar: ya generó el pedido ${pedido.numero_proforma}. Los precios de una venta cerrada no se cambian.`,
     };
   }
-  if (!['borrador', 'enviada'].includes(cot.estado as string)) {
+  if (!EDITABLES.includes(cot.estado as string)) {
     return {
       ok: false,
       mensaje: `Una cotización ${cot.estado} no se puede modificar. Cree una nueva si necesita otra oferta.`,
     };
   }
-  if (!datos.lineas.length) {
-    return { ok: false, mensaje: 'La cotización debe tener al menos un producto.', campo: 'lineas' };
+
+  /* ---- Las mismas validaciones que al crear ---- */
+  if (!datos.cliente_id) {
+    return { ok: false, mensaje: 'Elija el cliente al que va dirigida la cotización.', campo: 'cliente' };
   }
+  if (datos.validez_dias < 1 || datos.validez_dias > 365) {
+    return { ok: false, mensaje: 'La validez debe estar entre 1 y 365 días.', campo: 'validez' };
+  }
+  const problemaTc = revisarTipoCambio(datos.tipo_cambio);
+  if (problemaTc) return { ok: false, mensaje: problemaTc, campo: 'tipo_cambio' };
+  const problemaLineas = revisarLineas(datos.lineas);
+  if (problemaLineas) return problemaLineas;
   const condiciones = revisarCondiciones(datos);
   if (!condiciones.ok) return condiciones;
 
-  const { error: errCab } = await supabase
+  const previas = (lineasAntes ?? []) as (LineaPrevia & { precio_lista_tm: number })[];
+
+  /* ---- Descuento: el mismo control que al crear (punto 3 de la revisión) ---- */
+  const descuentos = await controlarDescuentos(supabase, usuario, datos.lineas, previas);
+  if (!descuentos.ok) return descuentos;
+
+  //  Pasarle la oferta a un cliente bloqueado tampoco se puede editando.
+  if (Number(cot.cliente_id) !== Number(datos.cliente_id)) {
+    const { data: cliente } = await supabase
+      .from('clientes').select('razon_social, bloqueado, motivo_bloqueo').eq('id', datos.cliente_id).maybeSingle();
+    if (cliente?.bloqueado) {
+      return {
+        ok: false,
+        mensaje: `El cliente ${cliente.razon_social} está bloqueado: ${cliente.motivo_bloqueo ?? 'sin motivo registrado'}. Regularice su situación antes de cotizar.`,
+        campo: 'cliente',
+      };
+    }
+  }
+
+  /* ---- ¿La edición anula la aprobación? ---- */
+  const cambios = cambiosComerciales(
+    cot as Record<string, unknown>, previas, datos, Number(condiciones.columnas.adelanto_pct ?? 0)
+  );
+  const teniaFirma = Boolean(cot.aprobada_en) || ['aprobada', 'enviada'].includes(cot.estado as string);
+  const anulaAprobacion = cambios.length > 0 && teniaFirma && (await aprobacionObligatoria());
+
+  const { data: guardada, error: errCab } = await supabase
     .from('cotizaciones')
     .update({
       cliente_id: datos.cliente_id,
@@ -791,30 +1046,78 @@ export async function actualizarCotizacion(
       observaciones: datos.observaciones,
       ...columnasContacto(datos.contacto),
       ...condiciones.columnas,
+      ...(anulaAprobacion ? { estado: 'borrador', aprobada_en: null, aprobada_por: null } : {}),
     })
-    .eq('id', id);
+    .eq('id', id)
+    //  Si otra persona la cambió de estado en el medio, no se pisa.
+    .eq('estado', cot.estado as string)
+    .select('id');
 
   if (errCab) return { ok: false, mensaje: `No se pudo guardar: ${errCab.message}` };
+  //  Una política que rechaza devuelve cero filas y ningún error: se comprueba.
+  if (!guardada?.length) {
+    return { ok: false, mensaje: `${cot.numero} cambió mientras la editaba o su rol no puede modificarla. Vuelva a abrirla.` };
+  }
 
-  await supabase.from('cotizacion_lineas').delete().eq('cotizacion_id', id);
-  const { error: errLin } = await supabase.from('cotizacion_lineas').insert(
-    datos.lineas.map((l, i) => ({
+  const filasLinea = (
+    lineas: { sku_presentacion_id: number; cantidad_tm: number; precio_lista_tm: number; precio_tm: number; descuento_pct: number }[],
+    autorizados: (string | null)[]
+  ) =>
+    lineas.map((l, i) => ({
       cotizacion_id: id,
       sku_presentacion_id: l.sku_presentacion_id,
       cantidad_tm: l.cantidad_tm,
       precio_lista_tm: l.precio_lista_tm,
       precio_tm: l.precio_tm,
       descuento_pct: l.descuento_pct,
+      // Trazabilidad del descuento: quién lo autorizó (antes se perdía al editar)
+      descuento_autorizado_por: autorizados[i] ?? null,
+      /*
+       * El costo estimado (067): la línea con el MISMO producto conserva el
+       * que tenía; una línea nueva o con otro producto va sin él (NULL) y el
+       * disparador de la base le pone el costo vigente de hoy.
+       */
+      costo_estimado_tm: costoPrevio(l.sku_presentacion_id),
       orden: i + 1,
-    }))
-  );
-  if (errLin) return { ok: false, mensaje: `No se pudieron guardar las líneas: ${errLin.message}` };
+    }));
+  function costoPrevio(skuPresentacionId: number): number | null {
+    const previa = previas.find((p) => Number(p.sku_presentacion_id) === Number(skuPresentacionId));
+    const c = (previa as { costo_estimado_tm?: number | string | null } | undefined)?.costo_estimado_tm;
+    return c === null || c === undefined ? null : Number(c);
+  }
+
+  await supabase.from('cotizacion_lineas').delete().eq('cotizacion_id', id);
+  const { error: errLin } = await supabase
+    .from('cotizacion_lineas').insert(filasLinea(datos.lineas, descuentos.autorizadoPor));
+  if (errLin) {
+    //  Sin líneas la oferta no vale nada: se devuelven las que tenía.
+    await supabase.from('cotizacion_lineas').insert(filasLinea(previas, previas.map((p) => p.descuento_autorizado_por)));
+    return { ok: false, mensaje: `No se pudieron guardar las líneas: ${errLin.message}` };
+  }
 
   await guardarCuentas(supabase, 'cotizacion_cuentas', 'cotizacion_id', id, datos.cuentas);
 
+  if (anulaAprobacion) {
+    await supabase.rpc('registrar_evento', {
+      p_entidad: 'cotizaciones',
+      p_entidad_id: id,
+      p_tipo: 'cotizacion_aprobacion_anulada',
+      p_descripcion:
+        `${usuario.nombre} editó ${cot.numero} y cambió ${enumerar(cambios)}. ` +
+        'La edición anuló la aprobación: hay que volver a aprobarla.',
+      p_severidad: 'advertencia',
+      p_metadatos: { cambios, estado_anterior: cot.estado },
+    }).then(() => undefined, () => undefined);
+  }
+
   revalidatePath('/ventas/cotizaciones');
   revalidatePath(`/ventas/cotizaciones/${id}`);
-  return { ok: true, id, numero: cot.numero as string, mensaje: `Cotización ${cot.numero} actualizada.` };
+  return {
+    ok: true, id, numero: cot.numero as string,
+    mensaje: anulaAprobacion
+      ? `Cotización ${cot.numero} actualizada. Como cambió ${enumerar(cambios)}, la aprobación se anuló y volvió a borrador: hay que aprobarla otra vez antes de enviarla.`
+      : `Cotización ${cot.numero} actualizada.`,
+  };
 }
 
 /* ==========================================================================
@@ -837,8 +1140,9 @@ export async function consultarTipoCambio(
    REGISTRAR LO QUE EL CLIENTE ABONÓ (punto 6)
    --------------------------------------------------------------------------
    El abono llega DESPUÉS de cotizar —a veces después de la proforma—, así que
-   no puede depender de poder editar la cotización entera: una aprobada ya no
-   se edita. Esto solo toca el monto abonado y su fecha. Mientras la cotización
+   no puede depender de editar la cotización entera (que además, en una
+   aceptada, ya no se puede). Esto solo toca el monto abonado y su fecha: no
+   es un cambio comercial y no anula la aprobación. Mientras la cotización
    no tiene pedido se guarda en ella; cuando ya lo tiene, en el pedido, que es
    donde sigue la venta.
    ========================================================================== */

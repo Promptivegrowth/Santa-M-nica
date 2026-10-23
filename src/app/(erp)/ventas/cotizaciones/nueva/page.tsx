@@ -21,16 +21,21 @@ import { obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina } from '@/components/ui/Pagina';
 import { FormularioVenta } from '@/components/ventas/FormularioVenta';
 import { cargarCatalogoVenta } from '@/lib/catalogoVenta';
-import { puedeVender, type Rol } from '@/lib/navegacion';
+import { type Rol } from '@/lib/navegacion';
+import { puedeCotizar } from '@/lib/permisosVentas';
 
 export const metadata: Metadata = { title: 'Nueva cotización' };
 export const dynamic = 'force-dynamic';
 
-export default async function PaginaNuevaCotizacion() {
+export default async function PaginaNuevaCotizacion(props: PageProps<'/ventas/cotizaciones/nueva'>) {
+  //  ?cliente=ID: el botón «Cotizar» de la ficha del cliente lo deja elegido.
+  const q = await props.searchParams;
+  const clienteInicial = Number(q.cliente) || undefined;
   const usuario = await obtenerUsuarioActual();
   const rol = (usuario?.rol ?? 'consulta') as Rol;
 
-  if (!puedeVender(rol)) redirect('/ventas/cotizaciones');
+  //  Comex vende (pedidos directos) pero no cotiza: la misma regla que el servidor.
+  if (!puedeCotizar(rol)) redirect('/ventas/cotizaciones');
 
   const cat = await cargarCatalogoVenta();
 
@@ -66,6 +71,7 @@ export default async function PaginaNuevaCotizacion() {
         topeDescuento={cat.topeDescuento}
         puedeAutorizarDescuento={['gerencia', 'operaciones'].includes(rol)}
         plazos={cat.plazos}
+        clienteInicial={clienteInicial}
       />
     </>
   );

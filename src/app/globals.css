@@ -905,3 +905,11 @@ tr.plano-saldo td[data-saldo='resto'] { color: var(--atencion); font-weight: 600
   border-radius: 3px;
   background: var(--acento);
 }
+
+/* La fila de TOTAL al pie de una tabla de datos (Control de pedidos): suma
+   todas las páginas, no solo la visible, y se distingue de las filas. */
+table.datos tfoot tr.fila-total td {
+  padding: .55rem .75rem;
+  border-top: 2px solid var(--linea);
+  background: var(--superficie-2);
+}

@@ -15,17 +15,26 @@ import type { Metadata } from 'next';
 import { CabeceraPagina, Etiqueta, Panel } from '@/components/ui/Pagina';
 import { Listado } from '@/components/ui/Listado';
 import { fecha, dinero, etiquetaEstado } from '@/lib/formato';
+import { TONO_ESTADO_FACTURA as TONO } from '@/lib/permisosFinanzas';
 
 export const metadata: Metadata = { title: 'Facturación' };
 export const dynamic = 'force-dynamic';
 
-const TONO: Record<string, 'ok' | 'atencion' | 'critico' | 'info' | 'neutro'> = {
-  cobrada: 'ok', parcialmente_cobrada: 'atencion', vencida: 'critico',
-  emitida: 'info', anulada: 'neutro',
-};
+/*
+ * EL FILTRO DE ESTADO
+ * Sale de la vista v_comprobantes (070), que calcula el estado al momento
+ * —con el saldo y el día de hoy en Lima— e incluye los anulados.
+ *
+ *   (vacío)  los vigentes: todo menos los anulados, que es lo que se trabaja;
+ *   todas    también los anulados, para auditar;
+ *   <estado> solo ese estado, «Anulada» incluido.
+ */
+const ESTADOS = ['emitida', 'parcialmente_cobrada', 'vencida', 'cobrada', 'anulada'];
 
 export default async function PaginaFacturas(props: PageProps<'/finanzas/facturas'>) {
   const q = await props.searchParams;
+  const estado = typeof q.estado === 'string' ? q.estado : '';
+  const todas = estado === 'todas';
   return (
     <>
       <CabeceraPagina
@@ -44,22 +53,28 @@ export default async function PaginaFacturas(props: PageProps<'/finanzas/factura
       </Panel>
 
       <Listado
-        vista="v_cuentas_cobrar"
+        vista="v_comprobantes"
         ficha={{ base: '/finanzas/facturas', titulo: 'Ver la factura' }}
         parametros={q as Record<string, string | undefined>}
         orden="fecha_emision"
         titulo="Documentos emitidos"
         filtros={[
           { tipo: 'texto', clave: 'buscar', etiqueta: 'Número o cliente', ancho: '13rem' },
-          { tipo: 'select', clave: 'estado', etiqueta: 'Estado',
-            opciones: Object.keys(TONO).map((e) => ({ valor: e, texto: etiquetaEstado(e) })) },
+          { tipo: 'select', clave: 'estado', etiqueta: 'Estado', textoTodos: 'Vigentes (sin anuladas)',
+            opciones: [
+              ...ESTADOS.map((e) => ({ valor: e, texto: etiquetaEstado(e) })),
+              { valor: 'todas', texto: 'Todas, incluidas las anuladas' },
+            ] },
           { tipo: 'fecha', clave: 'desde', etiqueta: 'Emitidas desde' },
         ]}
         filtrosAplicados={[
           { clave: 'buscar', columna: 'numero', operador: 'contiene', columnas: ['numero', 'cliente'] },
-          { clave: 'estado', columna: 'estado', operador: 'igual' },
+          // «todas» no es un estado: quita el filtro en vez de buscar ese valor.
+          ...(todas ? [] : [{ clave: 'estado', columna: 'estado', operador: 'igual' as const }]),
           { clave: 'desde', columna: 'fecha_emision', operador: 'desde' },
         ]}
+        // Sin estado elegido, los anulados no se muestran; se piden con el filtro.
+        fijos={estado ? [] : [{ columna: 'anulada', valor: false }]}
         columnas={[
           { clave: 'numero', titulo: 'Documento', mono: true },
           { clave: 'cliente', titulo: 'Cliente',
@@ -72,13 +87,22 @@ export default async function PaginaFacturas(props: PageProps<'/finanzas/factura
           { clave: 'cobrado', titulo: 'Cobrado', numerica: true,
             render: (f) => dinero(f.cobrado as number, f.moneda as 'USD' | 'PEN', 2) },
           { clave: 'saldo', titulo: 'Saldo', numerica: true,
-            render: (f) => Number(f.saldo) > 0
+            render: (f) => Number(f.saldo) > 0.01
               ? <strong style={{ color: 'var(--atencion)' }}>{dinero(f.saldo as number, f.moneda as 'USD' | 'PEN', 2)}</strong>
               : '—' },
           { clave: 'estado', titulo: 'Estado',
-            render: (f) => <Etiqueta texto={etiquetaEstado(String(f.estado))} tono={TONO[String(f.estado)] ?? 'neutro'} /> },
+            render: (f) => (
+              <span title={f.anulada ? `Anulada el ${fecha(f.anulada_en as string)}: ${String(f.motivo_anulacion ?? 'sin motivo')}` : undefined}>
+                <Etiqueta texto={etiquetaEstado(String(f.estado))} tono={TONO[String(f.estado)] ?? 'neutro'} />
+              </span>
+            ) },
         ]}
-        vacio={{ titulo: 'Sin facturas', mensaje: 'No hay documentos con estos filtros.' }}
+        vacio={{
+          titulo: 'Sin comprobantes',
+          mensaje: estado === 'anulada'
+            ? 'No hay comprobantes anulados con estos filtros.'
+            : 'No hay documentos con estos filtros. Los anulados se ven eligiendo «Anulada» o «Todas, incluidas las anuladas» en Estado.',
+        }}
       />
     </>
   );

@@ -29,13 +29,28 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
+import { PUEDEN_FACTURAR, PUEDEN_COBRAR, MEDIOS_DE_PAGO, MOTIVO_MINIMO } from '@/lib/permisosFinanzas';
+import type { Rol } from '@/lib/navegacion';
 
 export type Resultado =
   | { ok: true; id: number; numero: string; mensaje: string }
   | { ok: false; mensaje: string; detalles?: string[] };
 
-const PUEDEN_FACTURAR = ['gerencia', 'operaciones', 'comercial'];
-const PUEDEN_COBRAR = ['gerencia', 'operaciones'];
+/*
+ * Quién emite y quién cobra se decide en '@/lib/permisosFinanzas', el mismo
+ * sitio que usan los botones. La base lo vuelve a exigir (070).
+ */
+const puedeFacturar = (rol: string) => PUEDEN_FACTURAR.includes(rol as Rol);
+const puedeCobrar = (rol: string) => PUEDEN_COBRAR.includes(rol as Rol);
+
+/**
+ * El mensaje de una excepción de la base, sin el ruido técnico.
+ * Las funciones de la 070 ya escriben sus motivos en castellano para el
+ * usuario; aquí solo se quita lo que añade PostgREST cuando lo hay.
+ */
+function motivoDeLaBase(mensaje: string | undefined): string {
+  return (mensaje ?? 'Error desconocido.').replace(/^ERROR:\s*/i, '').trim();
+}
 
 /** El IGV vigente. Sale de los parámetros para no quedar escrito en el código. */
 async function porcentajeIgv(): Promise<number> {
@@ -47,7 +62,7 @@ async function porcentajeIgv(): Promise<number> {
 
 function refrescar(id?: number) {
   revalidatePath('/finanzas/facturas');
-  revalidatePath('/finanzas/cobranzas');
+  revalidatePath('/finanzas/cobrar');
   if (id) revalidatePath(`/finanzas/facturas/${id}`);
   revalidatePath('/ventas/pedidos');
   revalidatePath('/panel');
@@ -174,7 +189,7 @@ export async function previaFactura(pedidoId: number): Promise<Previa | null> {
 export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
-  if (!PUEDEN_FACTURAR.includes(usuario.rol)) {
+  if (!puedeFacturar(usuario.rol)) {
     return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede emitir comprobantes.` };
   }
 
@@ -188,7 +203,9 @@ export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
 
   /* ---- El correlativo, de a uno ----
      Serie F para factura, B para boleta: es lo que corresponde en el Perú. */
-  const anio = new Date().getFullYear();
+  // El año del correlativo es el de Lima: el 31 de diciembre a las 8 de la
+  // noche todavía no es el año siguiente.
+  const anio = Number(hoyEnLima().slice(0, 4));
   const serie = previa.tipo === 'factura' ? 'F001' : 'B001';
   const { data: correlativo, error: errNum } = await supabase
     .rpc('siguiente_correlativo', { p_serie: serie, p_anio: anio });
@@ -291,55 +308,88 @@ export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
 
 /* ==========================================================================
    ANULAR
+   --------------------------------------------------------------------------
+   La decisión la toma la base (anular_comprobante, 070), con el comprobante
+   bloqueado: solo Gerencia y Operaciones, con motivo escrito, nunca con cobros
+   aplicados, y el número no se reutiliza. El pedido vuelve a «sin facturar»
+   para poder emitirle el comprobante correcto.
    ========================================================================== */
 export async function anularComprobante(facturaId: number, motivo: string): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
-  if (!usuario) return { ok: false, mensaje: 'Su sesión caducó.' };
-  if (!PUEDEN_COBRAR.includes(usuario.rol)) {
-    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede anular comprobantes.` };
+  if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
+  if (!puedeCobrar(usuario.rol)) {
+    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede anular comprobantes: lo hacen Gerencia u Operaciones.` };
   }
-  if (!motivo?.trim() || motivo.trim().length < 5) {
-    return { ok: false, mensaje: 'Escriba el motivo de la anulación: es un requisito contable.' };
-  }
-
-  const supabase = await crearClienteServidor();
-  const { data: f } = await supabase
-    .from('facturas').select('numero, estado, total').eq('id', facturaId).maybeSingle();
-
-  if (!f) return { ok: false, mensaje: 'Ese comprobante ya no existe.' };
-  if (f.estado === 'anulada') return { ok: false, mensaje: `${f.numero} ya está anulada.` };
-
-  const { data: pagos } = await supabase
-    .from('cobranzas').select('monto').eq('factura_id', facturaId);
-  const cobrado = (pagos ?? []).reduce((s, c) => s + Number(c.monto), 0);
-
-  if (cobrado > 0) {
+  const texto = (motivo ?? '').trim();
+  if (texto.length < MOTIVO_MINIMO) {
     return {
       ok: false,
-      mensaje:
-        `${f.numero} tiene ${cobrado.toLocaleString('es-PE', { minimumFractionDigits: 2 })} ya cobrados. ` +
-        'Anular un comprobante con pagos aplicados descuadraría la caja: primero hay que revertir los pagos.',
+      mensaje: `Escriba el motivo de la anulación (al menos ${MOTIVO_MINIMO} caracteres): queda en el comprobante para la contabilidad.`,
     };
   }
 
-  const { error } = await supabase
-    .from('facturas')
-    .update({
-      estado: 'anulada',
-      anulada_por: usuario.id,
-      anulada_en: new Date().toISOString(),
-      motivo_anulacion: motivo.trim(),
-    })
-    .eq('id', facturaId);
+  const supabase = await crearClienteServidor();
+  const { data, error } = await supabase.rpc('anular_comprobante', { p_factura_id: facturaId, p_motivo: texto });
+  if (error) return { ok: false, mensaje: motivoDeLaBase(error.message) };
 
-  if (error) return { ok: false, mensaje: `No se pudo anular: ${error.message}` };
-
+  const r = (data ?? {}) as { numero?: string; pedido_id?: number | null };
   refrescar(facturaId);
-  return { ok: true, id: facturaId, numero: f.numero as string, mensaje: `${f.numero} anulada.` };
+  if (r.pedido_id) revalidatePath(`/ventas/pedidos/${r.pedido_id}`);
+
+  return {
+    ok: true,
+    id: facturaId,
+    numero: r.numero ?? '',
+    mensaje:
+      `${r.numero} quedó anulado. Su número no se vuelve a usar` +
+      (r.pedido_id ? ' y el pedido queda libre para emitirle el comprobante correcto.' : '.'),
+  };
+}
+
+/* ==========================================================================
+   ANULAR UN COBRO MAL REGISTRADO (070b)
+   --------------------------------------------------------------------------
+   El cobro no se borra: queda anulado con motivo, quién y cuándo, y deja de
+   sumar en el saldo. El estado de la factura y la situación del pedido se
+   recalculan solos (disparador de cobranzas). Lo decide la base.
+   ========================================================================== */
+export async function anularCobranza(cobranzaId: number, motivo: string): Promise<Resultado> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
+  if (!puedeCobrar(usuario.rol)) {
+    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede anular cobros: lo hacen Gerencia u Operaciones.` };
+  }
+  const texto = (motivo ?? '').trim();
+  if (texto.length < MOTIVO_MINIMO) {
+    return { ok: false, mensaje: `Escriba el motivo de la anulación del cobro (al menos ${MOTIVO_MINIMO} caracteres).` };
+  }
+
+  const supabase = await crearClienteServidor();
+  const { data: cobro } = await supabase.from('cobranzas').select('factura_id').eq('id', cobranzaId).maybeSingle();
+  const { data, error } = await supabase.rpc('anular_cobranza', { p_cobranza_id: cobranzaId, p_motivo: texto });
+  if (error) return { ok: false, mensaje: motivoDeLaBase(error.message) };
+
+  const r = (data ?? {}) as { numero?: string; moneda?: string; saldo?: number; estado?: string };
+  if (cobro?.factura_id) refrescar(Number(cobro.factura_id));
+  revalidatePath('/finanzas/cobrar');
+
+  return {
+    ok: true,
+    id: cobranzaId,
+    numero: r.numero ?? '',
+    mensaje:
+      `Cobro anulado. A ${r.numero} le quedan ${r.moneda} ` +
+      `${Number(r.saldo ?? 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} por cobrar.`,
+  };
 }
 
 /* ==========================================================================
    COBRANZAS
+   --------------------------------------------------------------------------
+   Las reglas viven en la base (registrar_cobranza y su disparador, 070): no
+   más que el saldo, fecha no futura ni anterior a la emisión, nunca sobre un
+   anulado. Aquí se adelantan las comprobaciones baratas para dar el mensaje
+   sin ir y volver, pero la última palabra es de la base.
    ========================================================================== */
 export type DatosCobranza = {
   factura_id: number;
@@ -352,91 +402,47 @@ export type DatosCobranza = {
 
 export async function registrarCobranza(d: DatosCobranza): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
-  if (!usuario) return { ok: false, mensaje: 'Su sesión caducó.' };
-  if (!PUEDEN_COBRAR.includes(usuario.rol)) {
-    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede registrar cobranzas.` };
+  if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
+  if (!puedeCobrar(usuario.rol)) {
+    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede registrar cobros: lo hacen Gerencia u Operaciones.` };
   }
-  if (!(d.monto > 0)) return { ok: false, mensaje: 'El monto tiene que ser mayor que cero.' };
-  if (!d.fecha) return { ok: false, mensaje: 'Indique la fecha del pago.' };
+  if (!Number.isFinite(d.monto) || !(d.monto > 0)) {
+    return { ok: false, mensaje: 'Escriba el monto cobrado: tiene que ser mayor que cero.' };
+  }
+  if (!d.fecha || !/^\d{4}-\d{2}-\d{2}$/.test(d.fecha)) {
+    return { ok: false, mensaje: 'Indique la fecha en que llegó el pago.' };
+  }
+  if (d.fecha > hoyEnLima()) {
+    return { ok: false, mensaje: 'La fecha del cobro es posterior a hoy. Registre el cobro el día que llega el dinero.' };
+  }
+  if (!d.medio || !(MEDIOS_DE_PAGO as readonly string[]).includes(d.medio)) {
+    return { ok: false, mensaje: `Elija el medio de pago: ${MEDIOS_DE_PAGO.join(', ')}.` };
+  }
 
   const supabase = await crearClienteServidor();
+  const { data, error } = await supabase.rpc('registrar_cobranza', {
+    p_factura_id: d.factura_id,
+    p_monto: Math.round(d.monto * 100) / 100,
+    p_fecha: d.fecha,
+    p_medio: d.medio,
+    p_referencia: d.referencia?.trim() || null,
+    p_observaciones: d.observaciones?.trim() || null,
+  });
+  if (error) return { ok: false, mensaje: motivoDeLaBase(error.message) };
 
-  const { data: f } = await supabase
-    .from('facturas').select('numero, total, estado, moneda').eq('id', d.factura_id).maybeSingle();
-  if (!f) return { ok: false, mensaje: 'Ese comprobante ya no existe.' };
-  if (f.estado === 'anulada') return { ok: false, mensaje: `${f.numero} está anulada: no admite pagos.` };
-
-  const { data: pagos } = await supabase
-    .from('cobranzas').select('monto').eq('factura_id', d.factura_id);
-  const cobrado = (pagos ?? []).reduce((s, c) => s + Number(c.monto), 0);
-  const saldo = redondear(Number(f.total) - cobrado);
-
-  /*
-   * Cobrar de más no es un descuido menor: descuadra la cuenta del cliente y
-   * aparece después como un saldo a favor que nadie sabe de dónde salió.
-   * Se admite un céntimo de tolerancia por el redondeo del tipo de cambio.
-   */
-  if (d.monto > saldo + 0.01) {
-    return {
-      ok: false,
-      mensaje:
-        `A ${f.numero} le quedan ${f.moneda} ${saldo.toLocaleString('es-PE', { minimumFractionDigits: 2 })} ` +
-        `por cobrar y está registrando ${d.monto.toLocaleString('es-PE', { minimumFractionDigits: 2 })}. ` +
-        'Si el cliente pagó de más, registre el saldo a favor por separado.',
-    };
-  }
-
-  const { data: creada, error } = await supabase
-    .from('cobranzas')
-    .insert({
-      factura_id: d.factura_id,
-      monto: d.monto,
-      fecha: d.fecha,
-      medio: d.medio?.trim() || null,
-      referencia: d.referencia?.trim() || null,
-      observaciones: d.observaciones?.trim() || null,
-      registrado_por: usuario.id,
-    })
-    .select('id')
-    .single();
-
-  if (error || !creada) return { ok: false, mensaje: `No se pudo registrar el pago: ${error?.message}` };
-
-  /* ---- El estado de la factura se recalcula con lo cobrado ---- */
-  const nuevoCobrado = redondear(cobrado + d.monto);
-  const nuevoSaldo = redondear(Number(f.total) - nuevoCobrado);
-  const hoy = hoyEnLima();
-
-  const { data: fv } = await supabase
-    .from('facturas').select('fecha_vencimiento').eq('id', d.factura_id).maybeSingle();
-
-  const estado =
-    nuevoSaldo <= 0.01 ? 'cobrada'
-    : String(fv?.fecha_vencimiento ?? '') < hoy ? 'vencida'
-    : 'parcialmente_cobrada';
-
-  await supabase.from('facturas').update({ estado }).eq('id', d.factura_id);
-
-  await supabase.rpc('registrar_evento', {
-    p_entidad: 'facturas',
-    p_entidad_id: d.factura_id,
-    p_tipo: 'cobranza_registrada',
-    p_descripcion:
-      `Pago de ${f.moneda} ${d.monto.toLocaleString('es-PE', { minimumFractionDigits: 2 })} sobre ${f.numero}` +
-      (d.referencia?.trim() ? ` · ref. ${d.referencia.trim()}` : '') +
-      ` · saldo ${nuevoSaldo.toLocaleString('es-PE', { minimumFractionDigits: 2 })}`,
-    p_severidad: 'info',
-  }).then(() => undefined, () => undefined);
-
+  const r = (data ?? {}) as { id?: number; numero?: string; moneda?: string; saldo?: number; estado?: string };
+  const saldo = Number(r.saldo ?? 0);
   refrescar(d.factura_id);
+  revalidatePath('/finanzas/cobrar');
 
   return {
     ok: true,
-    id: creada.id as number,
-    numero: f.numero as string,
+    id: Number(r.id ?? 0),
+    numero: r.numero ?? '',
     mensaje:
-      nuevoSaldo <= 0.01
-        ? `${f.numero} queda COBRADA por completo.`
-        : `Pago registrado. A ${f.numero} le quedan ${f.moneda} ${nuevoSaldo.toLocaleString('es-PE', { minimumFractionDigits: 2 })} por cobrar.`,
+      saldo <= 0.01
+        ? `Cobro registrado. ${r.numero} queda COBRADA por completo.`
+        : `Cobro registrado. A ${r.numero} le quedan ${r.moneda} ${saldo.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} por cobrar` +
+          (r.estado === 'vencida' ? ' y sigue vencida.' : '.'),
   };
 }

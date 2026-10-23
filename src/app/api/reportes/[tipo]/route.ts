@@ -14,7 +14,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { generarReporte, FORMATO, type ColumnaExcel } from '@/lib/excel';
 import { generarPdfReporte, type ColumnaPdf } from '@/lib/pdfReporte';
-import { veCostos, type Rol } from '@/lib/navegacion';
+import { veCostos, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 
 /** Definición de cada reporte disponible. */
 type DefinicionReporte = {
@@ -27,8 +27,19 @@ type DefinicionReporte = {
   totalizar?: string[];
   /** Solo para roles que pueden ver costos. */
   requiereCostos?: boolean;
+  /**
+   * El reporte es la misma información que una pantalla: lo descarga quien
+   * puede abrir esa pantalla, ni más ni menos. Así el menú, la pantalla y el
+   * archivo no se contradicen (antes Consulta veía Cuentas por cobrar y no
+   * podía bajar su Excel, y Operaciones al revés).
+   */
+  ruta?: string;
+  /** Columnas que deshacen empates del orden, para paginar sin repetir ni saltar filas (069). */
+  desempate?: string[];
   /** Condición fija sobre la vista. */
   fijo?: { columna: string; valor: string | number | boolean };
+  /** Condición fija «está entre estos valores» (p. ej. los ciclos despachado y cerrado). */
+  fijoEn?: { columna: string; valores: string[] };
   /**
    * Condición fija de «mayor que». Se usa para excluir las posiciones a cero
    * del inventario: la vista las conserva porque son historia, pero un
@@ -62,6 +73,13 @@ type DefinicionReporte = {
        * Con esto imprime «Almacén: Santa Mónica · Cámara 02».
        */
       catalogo?: { tabla: string; columna: string };
+      /**
+       * Valores que agrupan varios de la columna (069). En Inventario
+       * valorizado, «18+» son los rangos 18-24 y >24: es lo que suma la
+       * tarjeta «Capital en producto de +18 meses», y el archivo tiene que
+       * traer exactamente eso.
+       */
+      grupos?: Record<string, { valores: string[]; texto: string }>;
     }>;
   };
 };
@@ -122,6 +140,7 @@ const REPORTES: Record<string, DefinicionReporte> = {
     subtitulo: 'Detalle del stock en cámara, lote por lote y bodega por bodega',
     vista: 'v_anticuamiento',
     orden: 'fisico_kg',
+    desempate: ['lote_id', 'almacen_id'],
     columnas: [
       { titulo: 'Pallet', clave: 'codigo_pallet', ancho: 18 },
       { titulo: 'SKU', clave: 'sku_codigo', ancho: 8 },
@@ -155,6 +174,7 @@ const REPORTES: Record<string, DefinicionReporte> = {
     subtitulo: 'Stock en cámara con su costo promedio móvil y valor total',
     vista: 'v_anticuamiento',
     orden: 'valor',
+    desempate: ['lote_id', 'almacen_id'],
     requiereCostos: true,
     columnas: [
       { titulo: 'Pallet', clave: 'codigo_pallet', ancho: 18 },
@@ -180,7 +200,10 @@ const REPORTES: Record<string, DefinicionReporte> = {
           columna: 'almacen_id', etiqueta: 'Almacén', numerico: true,
           catalogo: { tabla: 'almacenes', columna: 'nombre' },
         },
-        rango: { columna: 'rango', etiqueta: 'Antigüedad' },
+        rango: {
+          columna: 'rango', etiqueta: 'Antigüedad',
+          grupos: { '18+': { valores: ['18-24', '>24'], texto: '18 meses o más' } },
+        },
         especie: { columna: 'especie', etiqueta: 'Especie' },
       },
     },
@@ -270,6 +293,7 @@ const REPORTES: Record<string, DefinicionReporte> = {
     subtitulo: 'Producto ordenado por el tiempo que lleva almacenado',
     vista: 'v_anticuamiento',
     orden: 'meses_almacenado',
+    desempate: ['lote_id', 'almacen_id'],
     columnas: [
       { titulo: 'Pallet', clave: 'codigo_pallet', ancho: 18 },
       { titulo: 'SKU', clave: 'sku_codigo', ancho: 8 },
@@ -368,7 +392,11 @@ const REPORTES: Record<string, DefinicionReporte> = {
     subtitulo: 'Saldos pendientes con su antigüedad',
     vista: 'v_cuentas_cobrar',
     orden: 'dias_vencida',
-    requiereCostos: true,
+    // No lleva costos: lleva lo que se factura y lo que se debe. Lo baja
+    // quien ve la pantalla de Cuentas por cobrar.
+    ruta: '/finanzas/cobrar',
+    // Lo mismo que la pantalla: solo los documentos con saldo.
+    mayorQue: { columna: 'saldo', valor: 0.01 },
     columnas: [
       { titulo: 'Documento', clave: 'numero', ancho: 16 },
       { titulo: 'Cliente', clave: 'cliente', ancho: 34 },
@@ -394,10 +422,19 @@ const REPORTES: Record<string, DefinicionReporte> = {
 
   rentabilidad: {
     titulo: 'Rentabilidad por pedido',
-    subtitulo: 'Venta, costo y margen de los pedidos despachados',
+    subtitulo: 'Venta, costo y margen de los pedidos despachados. El margen se mide solo con las líneas que tienen costo; las que no, se dan aparte',
     vista: 'v_rentabilidad_pedido',
     orden: 'venta',
     requiereCostos: true,
+    /* Los mismos pedidos que la pantalla de Rentabilidad: los que ya salieron.
+       Antes salían también borradores y cancelados, y el total no cuadraba. */
+    fijoEn: { columna: 'ciclo', valores: ['despachado', 'cerrado'] },
+    /*
+     * El margen, SIN las líneas sin costo (migración 071). Una línea con costo
+     * cero entraba con un 100 % de margen; ahora queda fuera del margen y se
+     * cuenta en las dos últimas columnas, para que el archivo avise igual que
+     * la pantalla.
+     */
     columnas: [
       { titulo: 'Proforma', clave: 'numero_proforma', ancho: 16 },
       { titulo: 'Cliente', clave: 'cliente', ancho: 34 },
@@ -406,10 +443,12 @@ const REPORTES: Record<string, DefinicionReporte> = {
       { titulo: 'TM', clave: 'tm', ancho: 12, formato: FORMATO.toneladas },
       { titulo: 'Venta', clave: 'venta', ancho: 16, formato: FORMATO.dolares },
       { titulo: 'Costo estimado', clave: 'costo_estimado', ancho: 16, formato: FORMATO.dolares },
-      { titulo: 'Margen', clave: 'margen', ancho: 16, formato: FORMATO.dolares },
-      { titulo: 'Margen %', clave: 'margen_pct', ancho: 12, formato: FORMATO.porcentaje },
+      { titulo: 'Margen (con costo)', clave: 'margen_con_costo', ancho: 16, formato: FORMATO.dolares },
+      { titulo: 'Margen %', clave: 'margen_con_costo_pct', ancho: 12, formato: FORMATO.porcentaje },
+      { titulo: 'TM sin costo', clave: 'tm_sin_costo', ancho: 12, formato: FORMATO.toneladas },
+      { titulo: 'Venta sin costo', clave: 'venta_sin_costo', ancho: 16, formato: FORMATO.dolares },
     ],
-    totalizar: ['tm', 'venta', 'costo_estimado', 'margen'],
+    totalizar: ['tm', 'venta', 'costo_estimado', 'margen_con_costo', 'tm_sin_costo', 'venta_sin_costo'],
   },
 
   necesidades: {
@@ -478,11 +517,18 @@ export async function GET(
       { status: 403 }
     );
   }
+  if (def.ruta && !rolPuedeVerRuta(usuario.rol as Rol, def.ruta)) {
+    return NextResponse.json(
+      { error: `Su rol no tiene acceso a la pantalla de ${def.titulo}, así que tampoco a su reporte.` },
+      { status: 403 }
+    );
+  }
 
   /* ---- Consulta con la sesión del usuario: las políticas RLS también aplican ---- */
   const supabase = await crearClienteServidor();
   let consulta = supabase.from(def.vista).select('*');
   if (def.fijo) consulta = consulta.eq(def.fijo.columna, def.fijo.valor);
+  if (def.fijoEn) consulta = consulta.in(def.fijoEn.columna, def.fijoEn.valores);
   if (def.mayorQue) consulta = consulta.gt(def.mayorQue.columna, def.mayorQue.valor);
 
   /* ------------------------------------------------------------------------
@@ -519,6 +565,12 @@ export async function GET(
   for (const [param, def2] of Object.entries(f?.exactos ?? {})) {
     const valor = p.get(param);
     if (!valor) continue;
+    const grupo = def2.grupos?.[valor];
+    if (grupo) {
+      consulta = consulta.in(def2.columna, grupo.valores);
+      filtrosUsados[def2.etiqueta] = grupo.texto;
+      continue;
+    }
     consulta = consulta.eq(def2.columna, def2.numerico ? Number(valor) : valor);
 
     // El filtro se aplica con el identificador, pero se ANOTA con el nombre:
@@ -547,18 +599,29 @@ export async function GET(
 
   // Tope de seguridad: un archivo de más de 50.000 filas no lo abre nadie
   const TOPE = 50000;
-  const { data, error } = await consulta
-    .order(def.orden, { ascending: def.ascendente ?? false })
-    .limit(TOPE);
-
-  if (error) {
-    return NextResponse.json(
-      { error: `No se pudieron obtener los datos: ${error.message}` },
-      { status: 500 }
-    );
+  /*
+   * POR PÁGINAS (069). La API de Supabase devuelve como mucho mil filas y no
+   * avisa: con `.limit(50000)` el Excel del inventario valorizado traía 1 000
+   * de las 1 519 posiciones, con un total creíble y un tercio corto. Se pide
+   * de mil en mil hasta agotar. El constructor se puede volver a ejecutar:
+   * cada `await` hace una consulta nueva con el rango que tenga puesto.
+   * Con `desempate`, el orden es estable entre páginas.
+   */
+  let ordenada = consulta.order(def.orden, { ascending: def.ascendente ?? false });
+  for (const columna of def.desempate ?? []) ordenada = ordenada.order(columna, { ascending: true });
+  const PAGINA = 1000;
+  const filas: Record<string, unknown>[] = [];
+  for (let desde = 0; desde < TOPE; desde += PAGINA) {
+    const { data, error } = await ordenada.range(desde, desde + PAGINA - 1);
+    if (error) {
+      return NextResponse.json(
+        { error: `No se pudieron obtener los datos: ${error.message}` },
+        { status: 500 }
+      );
+    }
+    filas.push(...((data ?? []) as Record<string, unknown>[]));
+    if ((data ?? []).length < PAGINA) break;
   }
-
-  const filas = (data ?? []) as Record<string, unknown>[];
   const formato = p.get('formato') === 'pdf' ? 'pdf' : 'excel';
   const marcaTiempo = new Date().toISOString().slice(0, 10);
 

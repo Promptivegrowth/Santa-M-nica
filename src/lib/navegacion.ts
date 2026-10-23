@@ -96,6 +96,8 @@ export const NAVEGACION: Grupo[] = [
       { titulo: 'Reservas',              ruta: '/almacenes/reservas',      icono: 'reservas',       ayuda: 'Qué stock está apartado y por qué', roles: TODOS },
       { titulo: 'Movimientos del día',   ruta: '/almacenes/movimientos',   icono: 'movimientos',   ayuda: 'El parte diario: qué entró y qué salió', roles: TODOS },
       { titulo: 'Kardex',                ruta: '/almacenes/kardex',        icono: 'kardex',        ayuda: 'El diario del almacén', roles: TODOS },
+      /* 069: ajustes que suman o restan, mermas y muestras (antes no había dónde registrarlos). */
+      { titulo: 'Ajustes de stock',      ruta: '/almacenes/ajustes',       icono: 'ajustes',       ayuda: 'Ajustes, mermas y muestras', roles: ['gerencia', 'operaciones', 'almacen', 'calidad', 'consulta'] },
       { titulo: 'Ingresos',              ruta: '/almacenes/ingresos',      icono: 'ingresos',      ayuda: 'Lo que entró a cámara', roles: ['gerencia', 'operaciones', 'almacen', 'consulta'] },
       { titulo: 'Traslados',             ruta: '/almacenes/traslados',     icono: 'traslados',     ayuda: 'Movimientos entre bodegas', roles: ['gerencia', 'operaciones', 'almacen', 'comex', 'consulta'] },
       { titulo: 'Inventario valorizado', ruta: '/almacenes/valorizado',    icono: 'valorizado',    ayuda: 'Cuánto vale lo que hay', roles: ['gerencia', 'operaciones', 'comercial'] },
@@ -134,8 +136,13 @@ export const NAVEGACION: Grupo[] = [
   {
     grupo: 'Contable / Finanzas',
     entradas: [
-      { titulo: 'Facturación',        ruta: '/finanzas/facturas',     icono: 'facturas',     ayuda: 'Comprobantes emitidos', roles: ['gerencia', 'comercial', 'comex', 'consulta'] },
-      { titulo: 'Cuentas por cobrar', ruta: '/finanzas/cobrar',       icono: 'cobrar',       ayuda: 'Quién debe y desde cuándo', roles: ['gerencia', 'comercial', 'consulta'] },
+      /*
+       * Operaciones emite comprobantes (desde el pedido), registra cobros y
+       * anula: tiene que poder llegar a las dos pantallas (070). El reporte de
+       * Cuentas por cobrar lo baja quien ve esta pantalla (api/reportes).
+       */
+      { titulo: 'Facturación',        ruta: '/finanzas/facturas',     icono: 'facturas',     ayuda: 'Comprobantes emitidos', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
+      { titulo: 'Cuentas por cobrar', ruta: '/finanzas/cobrar',       icono: 'cobrar',       ayuda: 'Quién debe y desde cuándo', roles: ['gerencia', 'operaciones', 'comercial', 'consulta'] },
       { titulo: 'Costos de producción', ruta: '/finanzas/costos',    icono: 'costo',   ayuda: 'Materia prima, conversión y variable, mes a mes', roles: ['gerencia', 'operaciones', 'comercial'] },
     ],
   },
@@ -146,7 +153,7 @@ export const NAVEGACION: Grupo[] = [
       { titulo: 'Buscador universal', ruta: '/trazabilidad',           icono: 'trazabilidad', ayuda: 'Busque cualquier código del negocio', roles: TODOS },
       { titulo: 'Retiro sanitario',   ruta: '/trazabilidad/retiro',    icono: 'retiro',       ayuda: 'Alcance de un lote observado', roles: ['gerencia', 'operaciones', 'calidad', 'comex'] },
       { titulo: 'Auditoría',          ruta: '/trazabilidad/auditoria', icono: 'auditoria',    ayuda: 'Quién cambió qué y cuándo', roles: ['gerencia', 'operaciones'] },
-      { titulo: 'Reportes',      ruta: '/reportes',      icono: 'reportes',      ayuda: 'Exportar a Excel con la marca', roles: TODOS },
+      { titulo: 'Reportes',      ruta: '/reportes',      icono: 'reportes',      ayuda: 'Exportar a Excel o PDF con la marca', roles: TODOS },
       { titulo: 'Configuración', ruta: '/configuracion', icono: 'configuracion', ayuda: 'Parámetros, maestros y reglas', roles: ['gerencia', 'operaciones'] },
     ],
   },

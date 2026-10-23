@@ -24,6 +24,7 @@ import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { Icono } from '@/components/estructura/Icono';
 import { enlaceEntidad, nombreEntidad } from '@/lib/enlaces';
 import { num, fechaHora, haceTiempo } from '@/lib/formato';
+import { traerTodo } from '@/lib/traerTodo';
 
 export const metadata: Metadata = { title: 'Alertas' };
 export const dynamic = 'force-dynamic';
@@ -46,12 +47,19 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
   if (entidad) consulta = consulta.eq('entidad', entidad);
   if (titulo) consulta = consulta.eq('titulo', titulo);
 
-  const [{ data: filas, count }, { data: todas }, { data: tipos }, { data: principales }] = await Promise.all([
+  const [{ data: filas, count }, todas, { data: tipos }, { data: principales }] = await Promise.all([
     consulta
       .order('severidad', { ascending: false })
       .order('generada_en', { ascending: false })
       .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
-    supabase.from('alertas').select('severidad, entidad').eq('atendida', false),
+    /*
+     * Para contar críticas y avisos hacen falta TODAS las abiertas. La API
+     * devuelve como mucho mil filas sin avisar, y con las reglas conectadas
+     * (070) ya hay unas setecientas: se traen de mil en mil.
+     */
+    traerTodo((desde, hasta) =>
+      supabase.from('alertas').select('severidad, entidad').eq('atendida', false).order('id').range(desde, hasta)
+    ),
     supabase.from('v_alertas_resumen').select('titulo, cuantas').order('cuantas', { ascending: false }),
     supabase.from('v_alertas_principales').select('*').order('orden'),
   ]);

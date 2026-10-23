@@ -114,7 +114,7 @@ export default async function PaginaProduccion(props: PageProps<'/produccion'>) 
              nota={`${num(clientesEsperan)} clientes`} href="/ventas/control?vista=backorder" />
         <Kpi etiqueta="Ya comprometidos" valor={num(new Set(atrasadas.map((l) => l.pedido_id)).size)}
              tono={atrasadas.length > 0 ? 'critico' : 'ok'}
-             nota="pedidos con fecha pasada y aún sin producto" href="/ventas/control?vista=retrasados" />
+             nota="pedidos con la fecha comprometida vencida y algo por producir" href="/ventas/control?vista=retrasados" />
         <Kpi etiqueta="Retenido por Calidad" valor={tm(retenidoKg)} sufijo="TM"
              nota="de estos productos: podría liberarse antes de producir"
              href="/almacenes/alertas#condicion" />
@@ -220,12 +220,29 @@ export default async function PaginaProduccion(props: PageProps<'/produccion'>) 
               </table>
             </div>
           )}
-          <p className="pie-explicativo">
-            <strong>Falta entregar</strong>: lo pedido que aún no salió ni está reservado.{' '}
-            <strong>Cubre el stock</strong>: la parte que el stock libre alcanza a cubrir, repartido por
-            prioridad y fecha comprometida. <strong>Por producir</strong>: el resto, que es el backorder.{' '}
-            <strong>Retenido</strong>: stock del mismo producto que Calidad tiene observado o
-            inmovilizado; si se libera, reduce lo que hay que producir.
+          {/*
+            LA NOTA DICE LO QUE HACE LA CONSULTA, NO LO QUE SE QUISIERA.
+            Antes decía que «Falta entregar» era lo que no salió NI ESTÁ
+            RESERVADO, y que «Cubre el stock» era solo el stock libre. La vista
+            (052 → 058 → 061) hace otra cosa: lo reservado está dentro de las
+            dos, y solo cuentan las líneas que aún tienen algo por producir.
+          */}
+          <p className="pie-explicativo" style={{ padding: '.6rem 1rem .8rem' }}>
+            Solo entran los pedidos <strong>confirmados</strong> y, de ellos, las líneas a las que
+            todavía les falta algo por producir: un producto cuyas líneas ya están todas cubiertas no
+            aparece, y sus cifras no se suman aquí.{' '}
+            <strong>Falta entregar</strong>: lo pedido menos lo ya despachado (incluye lo que está
+            reservado).{' '}
+            <strong>Cubre el stock</strong>: lo reservado para esa línea más la parte del stock libre
+            que se le asigna. El stock libre de cada producto (físico menos retenido, reservado y en
+            preparación) se reparte por prioridad del pedido, después por fecha comprometida y
+            después por antigüedad del pedido; el stock «solo mercado nacional» se reparte solo entre
+            pedidos de mercado nacional.{' '}
+            <strong>Por producir</strong> = Falta entregar − Cubre el stock: es el backorder, la misma
+            cifra que la tarjeta Backorder de Control de pedidos.{' '}
+            <strong>Retenido</strong>: stock del mismo producto, en cualquier almacén, con un dictamen
+            de Calidad vigente «Observado», «Inmovilizado» o «Esperando resultados» que impide
+            venderlo; si se libera, reduce lo que hay que producir. No se resta del Por producir.
           </p>
         </Panel>
       </div>

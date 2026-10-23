@@ -14,6 +14,14 @@
  *  precargado con lo enviado —que es lo que ocurre casi siempre— y se corrige
  *  lo que no cuadre. Esa diferencia es la que hoy se pierde: el producto que
  *  «salió pero no llegó» y del que nadie tiene registro.
+ *
+ *  QUÉ PASA CON LA DIFERENCIA (y por eso se dice con estas palabras)
+ *  El origen ya registró en el Kardex la salida de TODO lo enviado al
+ *  despachar; al confirmar, el destino registra la entrada de lo RECIBIDO.
+ *  Un faltante deja de figurar en el inventario; un sobrante lo aumenta. No se
+ *  escribe ningún ajuste solo: la diferencia queda en el historial del
+ *  traslado y como aviso en Alertas, y se corrige —si corresponde— en
+ *  «Ajustes de stock» (migración 069).
  * ============================================================================
  */
 import { useState, useTransition } from 'react';
@@ -39,16 +47,23 @@ export function AccionesTraslado({
   estado,
   lineas,
   rol,
+  guiaInicial = '',
+  origen = 'el origen',
+  destino = 'el destino',
 }: {
   trasladoId: number;
   estado: string;
   lineas: LineaRecibo[];
   rol: string;
+  /** Si la guía se escribió al crear el traslado, viene puesta al despachar. */
+  guiaInicial?: string;
+  origen?: string;
+  destino?: string;
 }) {
   const router = useRouter();
   const [trabajando, iniciar] = useTransition();
   const [panel, setPanel] = useState<'despachar' | 'aceptar' | 'anular' | null>(null);
-  const [guia, setGuia] = useState('');
+  const [guia, setGuia] = useState(guiaInicial);
   const [motivo, setMotivo] = useState('');
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'mal'; texto: string } | null>(null);
 
@@ -71,7 +86,24 @@ export function AccionesTraslado({
 
   const hayDiferencias = lineas.some((l) => {
     const r = recibido.get(l.linea_id)!;
-    return Math.abs(r.peso - l.peso_enviado) > 0.01 || r.bultos !== l.bultos_enviados;
+    return Math.abs(r.peso - l.peso_enviado) > 0.005 || r.bultos !== l.bultos_enviados;
+  });
+
+  /* Los totales de la diferencia, separados: no es lo mismo que falte a que sobre. */
+  const enviadoKg = lineas.reduce((s, l) => s + l.peso_enviado, 0);
+  const recibidoKg = lineas.reduce((s, l) => s + (recibido.get(l.linea_id)?.peso ?? 0), 0);
+  let faltaKg = 0, sobraKg = 0, faltaB = 0, sobraB = 0;
+  for (const l of lineas) {
+    const r = recibido.get(l.linea_id)!;
+    const dk = r.peso - l.peso_enviado;
+    const db = r.bultos - l.bultos_enviados;
+    if (dk < -0.005) faltaKg += -dk; else if (dk > 0.005) sobraKg += dk;
+    if (db < 0) faltaB += -db; else if (db > 0) sobraB += db;
+  }
+  /* Bultos y kilos van juntos: o llegó algo de ese pallet, o no llegó nada. */
+  const incoherente = lineas.some((l) => {
+    const r = recibido.get(l.linea_id)!;
+    return r.bultos < 0 || r.peso < 0 || (r.bultos === 0) !== (r.peso <= 0);
   });
 
   return (
@@ -145,8 +177,9 @@ export function AccionesTraslado({
         <div className="traslado-panel documento-mensaje">
           <strong>¿Qué llegó de verdad?</strong>
           <p>
-            Viene precargado con lo que se envió. <b>Corrija lo que no coincida</b>: la diferencia
-            queda registrada como discrepancia, con su alerta. Es exactamente lo que hoy se pierde.
+            Viene precargado con lo que se envió. <b>Cuente y corrija lo que no coincida</b>, pallet por
+            pallet: la diferencia entre lo enviado y lo recibido queda escrita con su número, en el
+            historial del traslado y como aviso en Alertas.
           </p>
 
           <div className="tabla-envoltorio">
@@ -164,8 +197,9 @@ export function AccionesTraslado({
                 {lineas.map((l) => {
                   const r = recibido.get(l.linea_id)!;
                   const dif = r.peso - l.peso_enviado;
+                  const difB = r.bultos - l.bultos_enviados;
                   return (
-                    <tr key={l.linea_id} data-mal={Math.abs(dif) > 0.01 ? 'si' : 'no'}>
+                    <tr key={l.linea_id} data-mal={Math.abs(dif) > 0.005 || difB !== 0 ? 'si' : 'no'}>
                       <td className="mono">
                         {l.pallet}
                         <small style={{ display: 'block', color: 'var(--tinta-3)' }}>{l.producto}</small>
@@ -177,20 +211,25 @@ export function AccionesTraslado({
                         <input className="campo mono" type="number" min={0} step={1} style={{ width: '5.5rem' }}
                                value={r.bultos}
                                onChange={(e) => setRecibido((m) => new Map(m).set(l.linea_id, { ...r, bultos: Number(e.target.value) }))} />
+                        {difB !== 0 && (
+                          <small style={{ display: 'block', color: 'var(--critico)', fontWeight: 600 }} data-dif="bultos">
+                            {difB < 0 ? `Faltan ${-difB}` : `Sobran ${difB}`}
+                          </small>
+                        )}
                       </td>
                       <td className="num">
                         <input className="campo mono" type="number" min={0} step={0.1} style={{ width: '7rem' }}
                                value={r.peso}
                                onChange={(e) => setRecibido((m) => new Map(m).set(l.linea_id, { ...r, peso: Number(e.target.value) }))} />
-                        {Math.abs(dif) > 0.01 && (
-                          <small style={{ display: 'block', color: 'var(--critico)', fontWeight: 600 }}>
-                            {dif > 0 ? '+' : ''}{cifra(dif)} kg
+                        {Math.abs(dif) > 0.005 && (
+                          <small style={{ display: 'block', color: 'var(--critico)', fontWeight: 600 }} data-dif="kilos">
+                            {dif < 0 ? `Faltan ${cifra(-dif)} kg` : `Sobran ${cifra(dif)} kg`}
                           </small>
                         )}
                       </td>
                       <td>
                         <input className="campo" value={r.obs} maxLength={200}
-                               placeholder={Math.abs(dif) > 0.01 ? 'Por qué no cuadra' : ''}
+                               placeholder={Math.abs(dif) > 0.005 || difB !== 0 ? 'Por qué no cuadra' : ''}
                                onChange={(e) => setRecibido((m) => new Map(m).set(l.linea_id, { ...r, obs: e.target.value }))} />
                       </td>
                     </tr>
@@ -200,16 +239,43 @@ export function AccionesTraslado({
             </table>
           </div>
 
-          {hayDiferencias && (
-            <p className="traslado-alerta">
+          {incoherente && (
+            <p className="traslado-alerta" role="alert">
               <Icono nombre="alerta" tamano={15} />
-              Hay diferencias con lo enviado. Se van a registrar como discrepancia: no se pierden,
-              se investigan.
+              En cada pallet, bultos y kilos recibidos van juntos: si no llegó nada ponga cero en los
+              dos; si llegó algo, indique bultos y kilos.
             </p>
           )}
 
+          {hayDiferencias && !incoherente && (
+            <div className="traslado-alerta" data-bloque="diferencia-recepcion">
+              <Icono nombre="alerta" tamano={15} />
+              <span>
+                <b>
+                  Lo recibido no coincide con lo enviado:{' '}
+                  {[
+                    faltaKg > 0.005 || faltaB > 0
+                      ? `faltan ${faltaB > 0 ? `${faltaB} bulto${faltaB === 1 ? '' : 's'} · ` : ''}${cifra(faltaKg)} kg`
+                      : '',
+                    sobraKg > 0.005 || sobraB > 0
+                      ? `sobran ${sobraB > 0 ? `${sobraB} bulto${sobraB === 1 ? '' : 's'} · ` : ''}${cifra(sobraKg)} kg`
+                      : '',
+                  ].filter(Boolean).join(' y ')}
+                </b>{' '}
+                (salieron {cifra(enviadoKg)} kg de {origen}; se recibirán {cifra(recibidoKg)} kg en {destino}).
+                Al confirmar, {destino} registra en el Kardex la entrada de lo recibido; la salida de lo
+                enviado ya se registró en {origen} al despachar.
+                {faltaKg > 0.005 && ' El faltante deja de figurar en el inventario: no está en ninguna bodega.'}
+                {sobraKg > 0.005 && ' El sobrante entra en el destino y aumenta el inventario.'}
+                {' '}No se escribe ningún ajuste: cada diferencia queda en el historial del traslado y
+                como aviso en Alertas. Si el faltante aparece, o el sobrante fue un error de pesaje, se
+                corrige en «Ajustes de stock».
+              </span>
+            </div>
+          )}
+
           <div className="acciones-fila">
-            <button type="button" className="btn btn-primario" disabled={trabajando}
+            <button type="button" className="btn btn-primario" disabled={trabajando || incoherente}
                     onClick={() => correr(() => aceptarTraslado(
                       trasladoId,
                       lineas.map((l) => {

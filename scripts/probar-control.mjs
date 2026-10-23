@@ -201,9 +201,13 @@ try {
       ok(cab.some((x) => x.includes(c)), `muestra la columna «${c.toLowerCase()}»`);
     }
     const [n] = await consultar(`select count(*) as n from v_pedido_linea_cobertura where backorder_kg > 0.5`);
+    /* Desde las limitaciones de la guía la tabla se pagina de 50 en 50 (antes
+       cortaba en 200 sin paginar): la primera página trae 50 y la
+       paginación dice el total. */
     const filas = await p.locator('table.datos tbody tr').count();
-    ok(filas === Math.min(Number(n.n), 200),
-       'una fila por producto en backorder', `${filas} de ${n.n}`);
+    const totalPag = Number(((await p.locator('.paginacion').innerText().catch(() => '')).match(/de ([\d,.]+) registros/)?.[1] ?? '0').replace(/[,.]/g, ''));
+    ok(filas === Math.min(Number(n.n), 50) && totalPag === Number(n.n),
+       'una fila por producto en backorder', `${filas} en la página, ${totalPag} de ${n.n}`);
   }
 
   console.log(SEC(9, 'Completos, hasta una semana determinada'));
@@ -217,7 +221,10 @@ try {
         await p.goto(`${BASE}/ventas/control?vista=completos${hasta ? '&hasta=' + hasta : ''}`,
                      { waitUntil: 'networkidle' });
         await p.waitForTimeout(1500);
-        return p.locator('table.datos tbody tr').count();
+        //  El total de la paginación: la tabla enseña 50 por página.
+        const pie = await p.locator('.paginacion').innerText().catch(() => '');
+        const m = pie.match(/de ([\d,.]+) registros/);
+        return m ? Number(m[1].replace(/[,.]/g, '')) : p.locator('table.datos tbody tr').count();
       };
       const todas = await cuenta('');
       const hastaPrimera = await cuenta(s.primera);
@@ -229,7 +236,7 @@ try {
         select count(*) as n from v_control_pedidos
          where situacion_control = 'completo'
            and fecha_completado <= date '${s.primera}' + 6`);
-      ok(hastaPrimera === Math.min(Number(b.n), 200),
+      ok(hastaPrimera === Number(b.n),
          'y son exactamente los que dice la base', `${hastaPrimera} vs ${b.n}`);
     } else {
       ok(true, 'no hay semanas suficientes para probar el filtro con esta data');

@@ -13,7 +13,7 @@
  *  copiando contraseñas. Es una ayuda de la etapa de construcción.
  * ============================================================================
  */
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { crearClienteNavegador } from '@/lib/supabase/navegador';
 import { Logotipo } from '@/components/marca/Logo';
@@ -42,6 +42,16 @@ export function FormularioAcceso() {
   const [entrando, setEntrando] = useState<string | null>(null);
   const [pendiente, iniciarTransicion] = useTransition();
 
+  /*
+   * El sistema trae aquí a una cuenta desactivada que todavía tenía la sesión
+   * abierta (?motivo=cuenta-inactiva). Se cierra esa sesión y se dice por qué,
+   * en vez de dejar a la persona mirando un login que no entiende.
+   */
+  const inactiva = parametros.get('motivo') === 'cuenta-inactiva';
+  useEffect(() => {
+    if (inactiva) crearClienteNavegador().auth.signOut().catch(() => undefined);
+  }, [inactiva]);
+
   /** Realiza el ingreso contra Supabase y navega al panel. */
   async function ingresar(email: string, password: string, etiqueta?: string) {
     setError(null);
@@ -55,7 +65,9 @@ export function FormularioAcceso() {
       setError(
         fallo.message.includes('Invalid login')
           ? 'El correo o la contraseña no coinciden. Verifique e intente de nuevo.'
-          : `No se pudo iniciar sesión: ${fallo.message}`
+          : fallo.code === 'user_banned' || /banned/i.test(fallo.message)
+            ? 'Su cuenta está desactivada y no puede entrar. Si cree que es un error, consúltelo con Gerencia.'
+            : `No se pudo iniciar sesión: ${fallo.message}`
       );
       setEntrando(null);
       return;
@@ -137,6 +149,11 @@ export function FormularioAcceso() {
               />
             </div>
 
+            {inactiva && !error && (
+              <div className="acceso-error" role="alert">
+                Su cuenta está desactivada y no puede entrar. Si cree que es un error, consúltelo con Gerencia.
+              </div>
+            )}
             {error && (
               <div className="acceso-error" role="alert">{error}</div>
             )}

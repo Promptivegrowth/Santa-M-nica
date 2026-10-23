@@ -268,8 +268,8 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
           El reparto se calcula sobre <strong>todo el stock que cumplen los desplegables</strong>,
           no sobre la página que se está viendo: un gráfico que cambiara al pasar de hoja no
           diría nada. El buscador de arriba{' '}
-          <strong>no reordena el gráfico</strong>, solo acota la tabla: busca por pallet y por
-          SKU, que no son formas de agrupar el inventario. El gráfico enseña los diez grupos
+          <strong>no reordena el gráfico</strong>, solo acota la tabla: busca por pallet, SKU y
+          corte, que no son formas de agrupar el inventario. El gráfico enseña los diez grupos
           mayores y agrupa el resto; la tabla los lista todos.
         </p>
       </Panel>
@@ -457,9 +457,18 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
         )}
       </Panel>
 
-      <p className="pie-explicativo">
-        Al hacer clic en el código de pallet se abre la <strong>trazabilidad completa</strong> de ese
-        lote: de dónde vino, por qué bodegas pasó y a qué clientes se despachó.
+      {/*
+        La nota dice lo que la tabla muestra DE VERDAD (v_anticuamiento sobre
+        v_stock_lote). Antes prometía que el código de pallet abría la
+        trazabilidad, y abre la ficha del lote.
+      */}
+      <p className="pie-explicativo" data-nota="existencias">
+        Cada fila es <strong>un pallet en una bodega</strong> con saldo (una «posición»), de mayor a
+        menor físico. <strong>Disponible</strong> = físico − bloqueado por Calidad − reservado − en
+        preparación: es lo que se puede vender, reservar o trasladar. El <strong>código de
+        pallet</strong> y el ojo abren la ficha del lote (dónde está, reservas, dictámenes e
+        historia); el icono de trazabilidad abre el buscador con ese pallet. <strong>Estado</strong>{' '}
+        marca la vida útil vencida y la antigüedad que supera el umbral de alerta de Configuración.
       </p>
     </>
   );

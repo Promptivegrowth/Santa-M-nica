@@ -66,7 +66,7 @@ const TRAMOS = [
   {
     clave: 'dias_a_facturar',
     titulo: 'Despacho → Factura',
-    ayuda: 'Cuánto se tarda en emitir el comprobante',
+    ayuda: 'Cuánto se tarda en emitir el comprobante. Negativo: se facturó antes de despachar',
     signo: false,
   },
   {
@@ -201,11 +201,26 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
    * rapidísima: es un dato mal grabado. Y basta uno con −178 días para que la
    * media de los otros noventa deje de significar nada.
    *
-   * No se descartan en silencio: se cuentan aparte y la pantalla los enseña,
-   * porque un dato imposible es algo que alguien tiene que ir a corregir.
+   * QUÉ ES «IMPOSIBLE» (migración 071). Solo que algo ocurra ANTES QUE EL
+   * PROPIO PEDIDO —programarlo, despacharlo, facturarlo o cobrarlo—, que la
+   * cotización sea posterior al pedido que la aceptó o que se cobre una
+   * factura antes de emitirla. Salir antes de lo programado o facturar antes
+   * de despachar son cosas que pasan, y antes se apartaban por error.
+   *
+   * No se descartan en silencio: se cuentan aparte, POR MOTIVO, y la pantalla
+   * los enseña, porque un dato imposible es algo que alguien tiene que ir a
+   * corregir.
    */
   const sanos = lista.filter((f) => f.cronologia_valida !== false);
   const rotos = lista.length - sanos.length;
+  const porMotivo = new Map<string, number>();
+  for (const f of lista) {
+    if (f.cronologia_valida !== false) continue;
+    //  Un pedido puede tener dos motivos a la vez: cuenta en los dos.
+    const motivos = String(f.motivo_cronologia ?? 'fechas fuera de orden').split(' · ');
+    for (const m of motivos) porMotivo.set(m, (porMotivo.get(m) ?? 0) + 1);
+  }
+  const motivos = [...porMotivo.entries()].sort((a, b) => b[1] - a[1]);
 
   const total = resumir(sanos, 'dias_total');
   const resumenes = TRAMOS.map((t) => ({ ...t, ...resumir(sanos, t.clave) }));
@@ -259,12 +274,18 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
       </RejillaKpi>
 
       {rotos > 0 && (
-        <div className="ficha-aviso ficha-aviso-atencion" role="status">
+        <div className="ficha-aviso ficha-aviso-atencion" role="status" data-aviso="cronologia">
           <span>
             <strong>{num(rotos)} pedido{rotos === 1 ? '' : 's'} con fechas imposibles</strong> —
-            aparecen despachados o facturados antes de existir. No entran en ningún promedio,
-            porque uno solo bastaría para falsearlos. Están marcados en la tabla de abajo y hay
-            que corregirles la fecha.
+            quedaron fuera de todos los promedios, porque uno solo bastaría para falsearlos.
+            Motivo:{' '}
+            {motivos.map(([m, n], i) => (
+              <span key={m} data-motivo={m}>
+                {i > 0 && '; '}{m} ({num(n)})
+              </span>
+            ))}.
+            Están marcados en la tabla de abajo y hay que corregirles la fecha. Salir antes de lo
+            programado o facturar antes de despachar <em>no</em> cuentan como imposibles.
           </span>
         </div>
       )}
@@ -408,7 +429,11 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
           tramos se miden sobre los mismos pedidos y sí suman el total.
           <br /><br />
           En <strong>Programado → Despachado</strong> un número negativo es buena noticia: el
-          contenedor salió antes de la fecha prevista.
+          contenedor salió antes de la fecha prevista. En <strong>Despacho → Factura</strong> un
+          negativo es que se facturó antes de despachar. Los dos son válidos y entran en los
+          promedios. Las fechas iguales también valen: un despacho el mismo día del pedido es 0 días.
+          Solo se aparta un pedido cuando algo ocurre antes que el propio pedido, la cotización es
+          posterior al pedido o se cobra antes de la factura.
         </p>
       </Panel>
 
@@ -514,7 +539,14 @@ export default async function PaginaTiempos(props: PageProps<'/ventas/tiempos'>)
                             {(f.cotizacion as string) ?? 'directo'}
                           </span>
                           {roto && (
-                            <> <Etiqueta texto="Fechas imposibles" tono="critico" /></>
+                            <>
+                              {' '}<Etiqueta texto="Fechas imposibles" tono="critico" />
+                              {/* El porqué, para que quien corrige sepa qué fecha mirar. */}
+                              <br />
+                              <span style={{ color: 'var(--critico)', fontSize: '.68rem' }} data-motivo-fila="">
+                                {String(f.motivo_cronologia ?? '')}
+                              </span>
+                            </>
                           )}
                           {/* «Identificarse visualmente el despacho que incumple.» */}
                           {fuera && !roto && (

@@ -12,8 +12,13 @@
  *  puede reservar ni despachar desde ninguno de los dos almacenes.
  *
  *  La ficha muestra las dos cifras que importan al cerrar: lo que se envió y
- *  lo que se aceptó. Si no coinciden, la diferencia se ve aquí y queda escrita
- *  en el Kardex como merma, con su motivo.
+ *  lo que se aceptó. Si no coinciden, la diferencia se ve aquí, pallet por
+ *  pallet, en bultos y en kilos. En el Kardex no se escribe ningún ajuste: el
+ *  origen registró la salida de lo enviado y el destino la entrada de lo
+ *  recibido, así que un faltante ya no está en ninguna bodega y un sobrante
+ *  ya entró en el destino. La diferencia queda en el historial del traslado y
+ *  como aviso en Alertas (069); si hay que corregirla, se hace en «Ajustes de
+ *  stock».
  * ============================================================================
  */
 import { Suspense } from 'react';
@@ -64,6 +69,9 @@ const TONO: Record<string, 'ok' | 'atencion' | 'critico' | 'info' | 'neutro'> = 
 export default async function FichaTraslado(props: PageProps<'/almacenes/traslados/[id]'>) {
   const { id } = await props.params;
   const trasId = Number(id);
+  const q = await props.searchParams;
+  /* Se llega aquí con ?creado=1 justo después de «Crear traslado». */
+  const recienCreado = q.creado === '1';
 
   const supabase = await crearClienteServidor();
   const [{ data: t }, usuarioActual, { data: lineasCab }] = await Promise.all([
@@ -112,8 +120,22 @@ export default async function FichaTraslado(props: PageProps<'/almacenes/traslad
           estado={estadoCab}
           lineas={lineasRecibo}
           rol={usuarioActual?.rol ?? 'consulta'}
+          guiaInicial={(t.guia_numero as string) ?? ''}
+          origen={campo(t.origen, 'nombre')}
+          destino={campo(t.destino, 'nombre')}
         />
       </CabeceraPagina>
+
+      {recienCreado && estadoCab === 'borrador' && (
+        <div className="ficha-aviso ficha-aviso-info" role="status" data-aviso="traslado-creado">
+          <Icono nombre="traslados" tamano={17} />
+          <span>
+            <strong>Traslado {t.numero as string} creado en borrador.</strong> Todavía no se movió
+            nada: falta que Gerencia u Operaciones lo autorice, que Almacén lo despache con la guía
+            de remisión y que el destino lo reciba.
+          </span>
+        </div>
+      )}
 
       <Suspense fallback={<CargandoCuerpo />}>
         <CuerpoTraslado trasId={trasId} t={t} />
@@ -153,8 +175,28 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
   const enviadoKg = filas.reduce((s, l) => s + Number(l.peso_enviado_kg ?? 0), 0);
   const aceptadoKg = filas.reduce((s, l) => s + Number(l.peso_aceptado_kg ?? 0), 0);
   const enviadoBultos = filas.reduce((s, l) => s + Number(l.bultos_enviados ?? 0), 0);
+  const aceptadoBultos = filas.reduce((s, l) => s + Number(l.bultos_aceptados ?? 0), 0);
   const cerrado = estado === 'aceptado';
   const diferencia = cerrado ? aceptadoKg - enviadoKg : 0;
+
+  /*
+   * Faltantes y sobrantes POR PALLET y por separado: si un pallet llegó con
+   * 50 kg de menos y otro con 50 de más, el neto es cero y sin embargo hay dos
+   * diferencias que explicar.
+   */
+  let faltaKg = 0, sobraKg = 0, faltaB = 0, sobraB = 0, conDiferencia = 0;
+  if (cerrado) {
+    for (const l of filas) {
+      const dk = Number(l.peso_aceptado_kg ?? 0) - Number(l.peso_enviado_kg ?? 0);
+      const db = Number(l.bultos_aceptados ?? 0) - Number(l.bultos_enviados ?? 0);
+      if (Math.abs(dk) > 0.005 || db !== 0) conDiferencia++;
+      if (dk < -0.005) faltaKg += -dk; else if (dk > 0.005) sobraKg += dk;
+      if (db < 0) faltaB += -db; else if (db > 0) sobraB += db;
+    }
+  }
+  const kg = (n: number) => num(n, 1);
+  const origenNombre = campo(t.origen, 'nombre');
+  const destinoNombre = campo(t.destino, 'nombre');
 
   return (
     <>
@@ -170,14 +212,25 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
         </div>
       )}
 
-      {cerrado && Math.abs(diferencia) > 0.5 && (
-        <div className="ficha-aviso ficha-aviso-critico">
+      {cerrado && conDiferencia > 0 && (
+        <div className={`ficha-aviso ${faltaKg > 0.005 ? 'ficha-aviso-critico' : 'ficha-aviso-atencion'}`}
+             data-aviso="diferencia-traslado">
           <Icono nombre="alerta" tamano={17} />
           <span>
-            <strong>Llegó {diferencia < 0 ? 'menos' : 'más'} de lo que salió:</strong> se enviaron{' '}
-            {tm(enviadoKg)} y se aceptaron {tm(aceptadoKg)}, una diferencia de{' '}
-            {tm(Math.abs(diferencia))}. La diferencia se registró como ajuste en el Kardex y es
-            visible en la auditoría.
+            <strong>
+              Lo recibido no coincidió con lo enviado en {conDiferencia} pallet{conDiferencia === 1 ? '' : 's'}:{' '}
+              {[
+                faltaKg > 0.005 || faltaB > 0 ? `faltaron ${faltaB > 0 ? `${faltaB} bulto${faltaB === 1 ? '' : 's'} · ` : ''}${kg(faltaKg)} kg` : '',
+                sobraKg > 0.005 || sobraB > 0 ? `sobraron ${sobraB > 0 ? `${sobraB} bulto${sobraB === 1 ? '' : 's'} · ` : ''}${kg(sobraKg)} kg` : '',
+              ].filter(Boolean).join(' y ')}.
+            </strong>{' '}
+            Salieron de {origenNombre} {num(enviadoBultos)} bultos · {kg(enviadoKg)} kg y se recibieron en{' '}
+            {destinoNombre} {num(aceptadoBultos)} bultos · {kg(aceptadoKg)} kg. En el Kardex, {origenNombre}{' '}
+            registró la salida de lo enviado y {destinoNombre} la entrada de lo recibido: no se escribió
+            ningún ajuste.
+            {faltaKg > 0.005 && ' El faltante ya no figura en ninguna bodega; si aparece, regístrelo con un ajuste que suma en «Ajustes de stock» (motivo «Discrepancia de traslado»).'}
+            {sobraKg > 0.005 && ' El sobrante entró en el destino; si fue un error de pesaje, corríjalo con un ajuste que resta.'}
+            {' '}El detalle por pallet está en la tabla de abajo y en el historial, y quedó un aviso en Alertas.
           </span>
         </div>
       )}
@@ -188,14 +241,15 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
         <Kpi
           etiqueta="Peso aceptado"
           valor={cerrado ? tm(aceptadoKg) : '—'}
-          tono={cerrado ? (Math.abs(diferencia) > 0.5 ? 'critico' : 'ok') : 'neutro'}
+          tono={cerrado ? (conDiferencia > 0 ? 'critico' : 'ok') : 'neutro'}
           nota={cerrado ? 'Confirmado en destino' : 'Aún no recibido'}
           href="#lotes"
         />
         <Kpi
           etiqueta="Diferencia"
-          valor={cerrado ? tm(diferencia) : '—'}
-          tono={!cerrado ? 'neutro' : Math.abs(diferencia) > 0.5 ? 'critico' : 'ok'}
+          valor={cerrado ? `${diferencia > 0 ? '+' : ''}${kg(diferencia)} kg` : '—'}
+          tono={!cerrado ? 'neutro' : conDiferencia > 0 ? (faltaKg > 0.005 ? 'critico' : 'atencion') : 'ok'}
+          nota={cerrado ? (conDiferencia > 0 ? `${conDiferencia} pallet${conDiferencia === 1 ? '' : 's'} con diferencia` : 'Llegó lo que salió') : undefined}
           href="#lotes"
         />
       </RejillaKpi>
@@ -273,6 +327,7 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
                   const sp = uno<Record<string, unknown>>(lote?.sku_presentaciones);
                   const sku = uno<Record<string, unknown>>(sp?.skus);
                   const dif = Number(l.peso_aceptado_kg ?? 0) - Number(l.peso_enviado_kg ?? 0);
+                  const difB = Number(l.bultos_aceptados ?? 0) - Number(l.bultos_enviados ?? 0);
                   return (
                     <tr key={l.id as number}>
                       <td className="mono">
@@ -292,8 +347,13 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
                       <td className="num">{l.peso_aceptado_kg != null ? tm(Number(l.peso_aceptado_kg)) : '—'}</td>
                       <td className="num">
                         {l.peso_aceptado_kg == null ? '—'
-                          : Math.abs(dif) < 0.001 ? <span style={{ color: 'var(--ok)' }}>0</span>
-                          : <span style={{ color: 'var(--critico)' }}>{tm(dif)}</span>}
+                          : Math.abs(dif) < 0.005 && difB === 0 ? <span style={{ color: 'var(--ok)' }}>0</span>
+                          : (
+                            <span style={{ color: 'var(--critico)', fontSize: '.78rem' }}>
+                              {Math.abs(dif) >= 0.005 ? `${dif < 0 ? 'Faltan' : 'Sobran'} ${kg(Math.abs(dif))} kg` : 'Mismo peso'}
+                              {difB !== 0 ? <><br />{difB < 0 ? `${-difB} bulto${difB === -1 ? '' : 's'} menos` : `${difB} bulto${difB === 1 ? '' : 's'} más`}</> : null}
+                            </span>
+                          )}
                       </td>
                       <td>
                         {lote?.id ? (

@@ -5,23 +5,31 @@
  * El cambio se guarda de inmediato en el servidor.
  */
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { alternarRegla } from './acciones';
 
 export function InterruptorRegla({ id, activaInicial }: { id: number; activaInicial: boolean }) {
   const [activa, setActiva] = useState(activaInicial);
   const [error, setError] = useState<string | null>(null);
+  const [hecho, setHecho] = useState<string | null>(null);
   const [pendiente, iniciar] = useTransition();
+  const router = useRouter();
 
   function alternar() {
     const nuevo = !activa;
     setActiva(nuevo);
     setError(null);
+    setHecho(null);
     iniciar(async () => {
       const r = await alternarRegla(id, nuevo);
       if (!r.ok) {
         setActiva(!nuevo); // se revierte si el servidor la rechazó
         setError(r.mensaje);
+        return;
       }
+      // El resultado de la revisión: cuántas alertas se abrieron o cerraron.
+      setHecho(r.mensaje);
+      router.refresh();
     });
   }
 
@@ -40,7 +48,8 @@ export function InterruptorRegla({ id, activaInicial }: { id: number; activaInic
         <span className="interruptor-bolita" />
       </button>
       <span className="interruptor-texto">{activa ? 'Activa' : 'Inactiva'}</span>
-      {error && <span className="interruptor-error">{error}</span>}
+      {error && <span className="interruptor-error" role="alert">{error}</span>}
+      {hecho && <span className="interruptor-hecho" role="status">{hecho}</span>}
 
       <style jsx>{`
         .interruptor-caja { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
@@ -66,6 +75,10 @@ export function InterruptorRegla({ id, activaInicial }: { id: number; activaInic
         .interruptor-error {
           font-size: 0.7rem; color: var(--critico);
           flex-basis: 100%; line-height: 1.35;
+        }
+        .interruptor-hecho {
+          font-size: 0.7rem; color: var(--tinta-2);
+          flex-basis: 100%; line-height: 1.35; max-width: 16rem;
         }
       `}</style>
     </div>

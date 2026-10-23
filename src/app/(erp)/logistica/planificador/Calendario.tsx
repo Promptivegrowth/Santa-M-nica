@@ -61,6 +61,8 @@ export type EmbarqueCalendario = {
   topeBrutoKg: number | null;
   /** Máximo por bulto que admite el mercado de destino. */
   notaComercial: string | null;
+  /** Las observaciones del embarque, tal como se escriben en su ficha. */
+  observaciones: string | null;
   excedeTope: boolean;
   cercaDelTope: boolean;
   cargadoKg: number;
@@ -368,7 +370,8 @@ export function CalendarioEmbarques({
                 {delDia.map((e) => (
                   <li key={e.id} className="cal-tarjeta" data-tono={ESTADOS[e.estado]?.tono ?? 'neutro'}>
                     <div className="cal-tarjeta-alta">
-                      <Link href={`/logistica/embarques?buscar=${e.numero}`} className="mono">
+                      {/* A la ficha: ahí se confirma, se edita o se le agregan pedidos. */}
+                      <Link href={`/logistica/embarques/${e.id}`} className="mono">
                         {e.numero}
                       </Link>
                       <span className="cal-estado" data-tono={ESTADOS[e.estado]?.tono ?? 'neutro'}>
@@ -467,6 +470,17 @@ export function CalendarioEmbarques({
                     {e.notaComercial && (
                       <p className="cal-tarjeta-nota-comercial">
                         <strong>Comercial:</strong> {e.notaComercial}
+                      </p>
+                    )}
+                    {/*
+                      Las observaciones del embarque (las de su ficha). Antes el
+                      calendario solo enseñaba la nota de Comercial del pedido, y
+                      lo que se coordinaba para la salida no se veía aquí.
+                    */}
+                    {e.observaciones && (
+                      <p className="cal-tarjeta-nota-comercial" data-bloque="observaciones-calendario"
+                         style={{ whiteSpace: 'pre-line' }}>
+                        <strong>Observaciones:</strong> {e.observaciones}
                       </p>
                     )}
 

@@ -12,6 +12,12 @@
  *  La lista arranca filtrada por reservas ACTIVAS, que son las que retienen
  *  stock. Las liberadas y expiradas se consultan cambiando el filtro: no se
  *  borran nunca, porque son la prueba de qué pasó con cada tonelada.
+ *
+ *  «TODOS LOS ESTADOS» TIENE SU PROPIO VALOR
+ *  Antes la opción vacía del desplegable decía «Todos» pero, como vacío
+ *  significa «lo de siempre», seguía enseñando solo las activas. Ahora la
+ *  opción vacía se llama «Activa» —que es lo que muestra— y «Todos los
+ *  estados» manda estado=todos, que no filtra.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -52,7 +58,10 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
 
   const pagina = Math.max(1, Number(q.pagina ?? 1));
   // Por defecto se muestran las activas: son las que hoy están reteniendo kilos.
-  const estado = (q.estado as string) ?? 'activa';
+  /* Lo que vino en la dirección (para conservarlo en los enlaces) y lo que
+     se filtra de verdad: sin nada, las activas; «todos», sin filtro. */
+  const estadoParam = (q.estado as string) ?? '';
+  const estado = estadoParam === 'todos' ? '' : estadoParam || 'activa';
   const idBuscado = q.id ? Number(q.id) : null;
   const buscar = ((q.buscar as string) ?? '').trim();
   const almacen = (q.almacen as string) ?? '';
@@ -79,7 +88,9 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
   if (idBuscado) {
     consulta = consulta.eq('id', idBuscado);
   } else {
-    if (estado) consulta = consulta.eq('estado', estado);
+    // «cerradas» = liberadas + expiradas: es lo que cuenta la tarjeta «Liberadas históricas».
+    if (estado === 'cerradas') consulta = consulta.in('estado', ['liberada', 'expirada']);
+    else if (estado) consulta = consulta.eq('estado', estado);
     if (almacen) consulta = consulta.eq('almacen_id', Number(almacen));
     if (desde) consulta = consulta.gte(campoFecha, desde);
     // «Hasta el 27» tiene que incluir el 27 entero: la columna lleva hora.
@@ -133,7 +144,7 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
   /** Arma la dirección conservando lo que ya está puesto. */
   function conFiltros(cambios: Record<string, string>) {
     const p = new URLSearchParams();
-    if (estado) p.set('estado', estado);
+    if (estadoParam) p.set('estado', estadoParam);
     if (almacen) p.set('almacen', almacen);
     if (buscar) p.set('buscar', buscar);
     if (campoFecha !== 'vence_el') p.set('campo_fecha', campoFecha);
@@ -191,11 +202,11 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
           etiqueta="Liberadas históricas"
           valor={num(universo.filter((r) => ['liberada', 'expirada'].includes(r.estado as string)).length)}
           nota="Conservan su motivo"
-          href="/almacenes/reservas?estado=liberada#lista"
+          href="/almacenes/reservas?estado=cerradas#lista"
         />
       </RejillaKpi>
 
-      <Panel id="lista" titulo={idBuscado ? `Reserva #${idBuscado}` : `${num(count ?? 0)} reservas`}>
+      <Panel id="lista" titulo={idBuscado ? `Reserva #${idBuscado}` : `${num(count ?? 0)} reserva${count === 1 ? '' : 's'}`}>
         {idBuscado ? (
           <div style={{ padding: '.6rem 1rem' }}>
             <Link href="/almacenes/reservas" className="btn btn-sutil">
@@ -211,7 +222,15 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
                   tipo: 'select',
                   clave: 'estado',
                   etiqueta: 'Estado',
-                  opciones: Object.keys(TONO).map((e) => ({ valor: e, texto: etiquetaEstado(e) })),
+                  // La vacía es «Activa» (lo que se ve al entrar); «Todos los estados» no filtra.
+                  textoTodos: 'Activa',
+                  opciones: [
+                    { valor: 'todos', texto: 'Todos los estados' },
+                    { valor: 'cerradas', texto: 'Liberadas y expiradas' },
+                    ...Object.keys(TONO)
+                      .filter((e) => e !== 'activa')
+                      .map((e) => ({ valor: e, texto: etiquetaEstado(e) })),
+                  ],
                 },
                 {
                   tipo: 'select',

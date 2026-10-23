@@ -16,13 +16,27 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { guardarValor, guardarMeta } from './acciones';
+import { leerNumero } from '@/lib/numeroEscrito';
 
 const aTexto = (v: number | null) => (v === null ? '' : String(Math.round(v * 1e6) / 1e6));
-const aNumero = (t: string): number | null | 'mal' => {
-  const limpio = t.trim().replace(/,/g, '');
-  if (limpio === '') return null;
-  const n = Number(limpio);
-  return Number.isFinite(n) ? n : 'mal';
+
+/*
+ * Antes se borraban TODAS las comas: «12,5» se guardaba como 125. Ahora se
+ * usa el mismo lector que el Cierre semanal (coma o punto decimal, miles de
+ * a tres). Si lo escrito admite dos lecturas («535,641»), no se adivina: se
+ * pide escribirlo sin ambigüedad.
+ */
+const aNumero = (t: string): { ok: true; valor: number | null } | { ok: false; mensaje: string } => {
+  const l = leerNumero(t);
+  if (l.tipo === 'vacio') return { ok: true, valor: null };
+  if (l.tipo === 'numero') return { ok: true, valor: l.valor };
+  if (l.tipo === 'ambiguo') {
+    return {
+      ok: false,
+      mensaje: `¿${t.trim()} es ${l.comoDecimal} o ${l.comoMiles}? Escríbalo sin separador de miles o con punto decimal.`,
+    };
+  }
+  return { ok: false, mensaje: 'No es un número.' };
 };
 
 export function CeldaValor({
@@ -38,10 +52,10 @@ export function CeldaValor({
   function guardar() {
     if (texto === guardado.current) return;
     const n = aNumero(texto);
-    if (n === 'mal') { setError('No es un número.'); return; }
+    if (!n.ok) { setError(n.mensaje); return; }
     setError(null);
     iniciar(async () => {
-      const r = await guardarValor({ indicador_id: indicadorId, anio, mes, valor: n });
+      const r = await guardarValor({ indicador_id: indicadorId, anio, mes, valor: n.valor });
       if (!r.ok) setError(r.mensaje);
       else guardado.current = texto;
       router.refresh();
@@ -87,10 +101,11 @@ export function CeldaMeta({
     if (`${e}|${m}` === guardado.current) return;
     const ne = aNumero(e);
     const nm = aNumero(m);
-    if (ne === 'mal' || nm === 'mal') { setError('No es un número.'); return; }
+    if (!ne.ok) { setError(ne.mensaje); return; }
+    if (!nm.ok) { setError(nm.mensaje); return; }
     setError(null);
     iniciar(async () => {
-      const r = await guardarMeta({ indicador_id: indicadorId, anio, mes, esperado: ne, maximo: nm });
+      const r = await guardarMeta({ indicador_id: indicadorId, anio, mes, esperado: ne.valor, maximo: nm.valor });
       if (!r.ok) setError(r.mensaje);
       else guardado.current = `${e}|${m}`;
       router.refresh();

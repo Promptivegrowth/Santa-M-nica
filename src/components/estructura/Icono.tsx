@@ -56,6 +56,8 @@ const TRAZOS: Record<string, React.ReactNode> = {
   // Kardex: libro abierto
   movimientos: <><path d="M4 8.5h13" /><path d="M13.5 5 17 8.5 13.5 12" /><path d="M20 15.5H7" /><path d="M10.5 12 7 15.5 10.5 19" /></>,
   kardex: <><path d="M12 6.5C10.5 5 8 4.2 4 4.2v13c4 0 6.5.8 8 2.3 1.5-1.5 4-2.3 8-2.3v-13c-4 0-6.5.8-8 2.3z" /><path d="M12 6.5v13" /></>,
+  // Ajustes de stock: balanza con un platillo más bajo — lo que se corrige
+  ajustes: <><path d="M12 3.5v17M7 20.5h10" /><path d="M4.5 7h15" /><path d="m4.5 7-2.5 6h5z" /><path d="m19.5 7-2.5 5h5z" /></>,
   // Ingresos: flecha entrando a una bandeja
   ingresos: <><path d="M12 3v9" /><path d="m8 8.5 4 4 4-4" /><path d="M3.5 14.5v4A1.5 1.5 0 0 0 5 20h14a1.5 1.5 0 0 0 1.5-1.5v-4" /></>,
   // Traslados: dos flechas opuestas

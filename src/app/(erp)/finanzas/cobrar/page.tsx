@@ -9,22 +9,44 @@
  * ============================================================================
  */
 import Link from 'next/link';
+import { Suspense } from 'react';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
+import { BotonesReporte } from '@/components/ui/BotonesReporte';
+import { PUEDEN_COBRAR } from '@/lib/permisosFinanzas';
+import type { Rol } from '@/lib/navegacion';
 import { GraficoBarras } from '@/components/graficos/Graficos';
 import { num, fecha, dinero } from '@/lib/formato';
+import { Paginacion } from '@/components/ui/Filtros';
+import { traerTodo } from '@/lib/traerTodo';
 
 export const metadata: Metadata = { title: 'Cuentas por cobrar' };
 export const dynamic = 'force-dynamic';
 
 const TRAMOS = ['Vigente', '1 a 30 días', '31 a 60 días', '61 a 90 días', 'Más de 90 días'];
 
-export default async function PaginaCobrar() {
+/*
+ * Los totales van sobre TODA la cartera; la tabla, de 50 en 50. Antes la
+ * consulta podía quedarse en las mil filas de la API y la tabla se cortaba en
+ * 200 sin avisar: con la cartera real, el total no habría sido el total.
+ */
+const POR_PAGINA = 50;
+
+export default async function PaginaCobrar(props: PageProps<'/finanzas/cobrar'>) {
+  const q = await props.searchParams;
+  const pagina = Math.max(1, Number(q.pagina ?? 1));
   const supabase = await crearClienteServidor();
-  const { data: filas } = await supabase
-    .from('v_cuentas_cobrar').select('*').gt('saldo', 0).order('dias_vencida', { ascending: false });
+  const [filas, usuario] = await Promise.all([
+    traerTodo((desde, hasta) =>
+      supabase.from('v_cuentas_cobrar').select('*').gt('saldo', 0.01)
+        .order('dias_vencida', { ascending: false }).order('id').range(desde, hasta)
+    ),
+    obtenerUsuarioActual(),
+  ]);
+  // Quien cobra tiene, en cada fila, el atajo al formulario de cobro de la ficha.
+  const puedeCobrar = PUEDEN_COBRAR.includes((usuario?.rol ?? 'consulta') as Rol);
 
   const lista = filas ?? [];
 
@@ -50,7 +72,12 @@ export default async function PaginaCobrar() {
       <CabeceraPagina
         titulo="Cuentas por cobrar"
         descripcion="Saldos pendientes ordenados por antigüedad. Lo que lleva más tiempo vencido está arriba."
-      />
+      >
+        {/* La misma cartera en Excel o PDF: quien ve la pantalla puede llevársela. */}
+        <Suspense fallback={null}>
+          <BotonesReporte tipo="cuentas_cobrar" />
+        </Suspense>
+      </CabeceraPagina>
 
       <RejillaKpi>
         <Kpi etiqueta="Saldo total pendiente" valor={dinero(total, 'USD', 0)} tono="marca" nota={`${num(lista.length)} documentos`} href="#documentos" />
@@ -91,7 +118,7 @@ export default async function PaginaCobrar() {
                 </tr>
               </thead>
               <tbody>
-                {lista.slice(0, 200).map((f) => {
+                {lista.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA).map((f) => {
                   const dias = Number(f.dias_vencida ?? 0);
                   return (
                     <tr key={f.id as number}>
@@ -142,15 +169,22 @@ export default async function PaginaCobrar() {
                         <AccionesLista
                           ver={`/finanzas/facturas/${f.id}`}
                           verTitulo={`Ver la factura ${f.numero}`}
-                          extras={
-                            f.cliente_id
+                          extras={[
+                            ...(puedeCobrar
+                              ? [{
+                                  href: `/finanzas/facturas/${f.id}#cobros`,
+                                  icono: 'cobrar',
+                                  titulo: `Registrar un cobro de ${f.numero}`,
+                                }]
+                              : []),
+                            ...(f.cliente_id
                               ? [{
                                   href: `/ventas/clientes/${f.cliente_id}`,
                                   icono: 'clientes',
                                   titulo: 'Ver la ficha del cliente',
                                 }]
-                              : []
-                          }
+                              : []),
+                          ]}
                         />
                       </td>
                     </tr>
@@ -158,6 +192,7 @@ export default async function PaginaCobrar() {
                 })}
               </tbody>
             </table>
+            <Paginacion pagina={pagina} porPagina={POR_PAGINA} total={lista.length} />
           </div>
         )}
       </Panel>

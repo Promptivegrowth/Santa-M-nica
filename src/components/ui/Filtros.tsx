@@ -20,7 +20,14 @@ import { useState, useTransition } from 'react';
 
 export type CampoFiltro =
   | { tipo: 'texto'; clave: string; etiqueta: string; ancho?: string }
-  | { tipo: 'select'; clave: string; etiqueta: string; opciones: { valor: string; texto: string }[] }
+  | {
+      tipo: 'select'; clave: string; etiqueta: string; opciones: { valor: string; texto: string }[];
+      /**
+       * El texto de la opción vacía, si «Todos» no dice la verdad. Ejemplo:
+       * en Rentabilidad, no elegir mes enseña el MÁS RECIENTE, no todos.
+       */
+      textoTodos?: string;
+    }
   | { tipo: 'fecha'; clave: string; etiqueta: string };
 
 /** Los valores que dicta la direccion web en este momento. Funcion pura. */
@@ -101,7 +108,7 @@ export function Filtros({ campos }: { campos: CampoFiltro[] }) {
               value={valores[c.clave] ?? ''}
               onChange={(e) => cambiar(c.clave, e.target.value, true)}
             >
-              <option value="">Todos</option>
+              <option value="">{c.textoTodos ?? 'Todos'}</option>
               {c.opciones.map((o) => (
                 <option key={o.valor} value={o.valor}>{o.texto}</option>
               ))}

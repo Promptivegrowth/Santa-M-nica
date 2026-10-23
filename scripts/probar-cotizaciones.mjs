@@ -101,7 +101,8 @@ try {
   console.log('\n─── 2 · Nace esperando aprobación ───');
   const cuerpo = await comercial.locator('body').innerText();
   ok(/esperando aprobaci/i.test(cuerpo), 'la ficha avisa de que espera aprobación');
-  ok(/avise a gerencia/i.test(cuerpo), 'y le dice a Comercial qué hacer: avisar a Gerencia');
+  //  Aprueba quien tiene la facultad personal, no «Gerencia» (revisión de la Guía, punto 4).
+  ok(/avise a quien aprueba cotizaciones/i.test(cuerpo), 'y le dice a Comercial qué hacer: avisar a quien aprueba');
 
   const [fila] = await consultar(
     `select estado, aprobada_en, prioridad, vence_el, fecha, validez_dias
@@ -157,6 +158,8 @@ try {
   ok(tras.aprobada_en !== null && tras.aprobada_por !== null,
      'queda registrado quién firmó y cuándo');
 
+  //  El refresco de la ficha puede tardar con el servidor de desarrollo compilando.
+  await gerencia.getByText(/aprobada por/i).first().waitFor({ timeout: 20000 }).catch(() => {});
   const cuerpoG = await gerencia.locator('body').innerText();
   ok(/aprobada por/i.test(cuerpoG), 'la ficha muestra quién la aprobó');
 

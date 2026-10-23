@@ -11,18 +11,22 @@
  *  pallets recibió y de qué día de producción salieron.
  * ============================================================================
  */
-import { Suspense } from 'react';
+import { Fragment, Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio, Etiqueta, RejillaKpi, Kpi } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
 import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
-import { fecha, num, dinero, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
+import { fecha, fechaHora, num, dinero, etiquetaEstado } from '@/lib/formato';
 import { uno, campo } from '@/lib/relaciones';
+import { hoyEnLima } from '@/lib/fechas';
+import { PUEDEN_COBRAR, PUEDEN_DESCARGAR_DOCUMENTOS, TONO_ESTADO_FACTURA } from '@/lib/permisosFinanzas';
+import type { Rol } from '@/lib/navegacion';
+import { RegistrarCobro, BotonAnular, AnularCobro } from './AccionesComprobante';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,16 +66,25 @@ export default async function FichaFactura(props: PageProps<'/finanzas/facturas/
   if (!f) notFound();
 
   /*
-   * La etiqueta de estado necesita saber si está cobrada, y eso depende de los
-   * cobros. Preguntar solo por la SUMA es una consulta de un renglón: no vale
-   * la pena hacer esperar la cabecera por el detalle completo.
+   * El ESTADO no se toma de la columna guardada: se pide a la vista, que lo
+   * calcula al momento con el saldo y el día de hoy en Lima (070). Así la
+   * cabecera, la lista y las cuentas por cobrar dicen siempre lo mismo.
    */
-  const { data: sumaCobros } = await supabase
-    .from('cobranzas').select('monto').eq('factura_id', facId);
-  const cobradoCab = (sumaCobros ?? []).reduce((s, c) => s + Number(c.monto ?? 0), 0);
-  const saldoCab = Number(f.total ?? 0) - cobradoCab;
-  const anuladaCab = f.estado === 'anulada';
-  const vencidaCab = !anuladaCab && saldoCab > 0.01 && diasDesdeHoy(f.fecha_vencimiento as string) < 0;
+  const [{ data: calc }, usuario] = await Promise.all([
+    supabase.from('v_comprobantes').select('estado, cobrado, saldo, dias_vencida').eq('id', facId).maybeSingle(),
+    obtenerUsuarioActual(),
+  ]);
+  const estadoCab = String(calc?.estado ?? f.estado);
+  const cobradoCab = Number(calc?.cobrado ?? 0);
+  const anuladaCab = estadoCab === 'anulada';
+  const puedeCobrar = PUEDEN_COBRAR.includes((usuario?.rol ?? 'consulta') as Rol);
+  const puedeDescargar = PUEDEN_DESCARGAR_DOCUMENTOS.includes((usuario?.rol ?? 'consulta') as Rol);
+
+  /* Si no se puede anular, el porqué: el botón se apaga y lo dice. */
+  const bloqueoAnular = anuladaCab ? null
+    : !puedeCobrar ? 'Solo Gerencia y Operaciones anulan comprobantes.'
+    : cobradoCab > 0 ? 'Tiene cobros registrados: anularlo descuadraría la caja. Primero hay que anular esos cobros (botón Anular de cada cobro).'
+    : null;
 
   return (
     <>
@@ -81,19 +94,43 @@ export default async function FichaFactura(props: PageProps<'/finanzas/facturas/
         volver={{ href: '/finanzas/facturas', texto: 'Volver a facturación' }}
       >
         <Etiqueta
-          texto={etiquetaEstado(f.estado as string)}
-          tono={anuladaCab ? 'critico' : saldoCab <= 0.01 ? 'ok' : vencidaCab ? 'critico' : 'info'}
+          texto={etiquetaEstado(estadoCab)}
+          tono={anuladaCab ? 'critico' : TONO_ESTADO_FACTURA[estadoCab] ?? 'neutro'}
         />
         {/* El tipo decide el título del documento: factura o boleta de venta. */}
-        <BotonesDocumento
-          tipo={f.tipo_comprobante === 'boleta' ? 'boleta' : 'factura'}
-          id={facId}
-          numero={f.numero as string}
-        />
+        {puedeDescargar ? (
+          <BotonesDocumento
+            tipo={f.tipo_comprobante === 'boleta' ? 'boleta' : 'factura'}
+            id={facId}
+            numero={f.numero as string}
+          />
+        ) : (
+          /* Se ven, apagados y con el porqué: el documento lleva precios. */
+          <>
+            <button type="button" className="btn btn-secundario" disabled
+                    title="Su rol ve el comprobante en pantalla, pero no descarga documentos con precios.">
+              <Icono nombre="descargar" tamano={15} />PDF
+            </button>
+            <button type="button" className="btn btn-secundario" disabled
+                    title="Su rol ve el comprobante en pantalla, pero no descarga documentos con precios.">
+              <Icono nombre="descargar" tamano={15} />Excel
+            </button>
+          </>
+        )}
+        {/* Un anulado ya no tiene nada que anular: el botón no aparece. */}
+        {!anuladaCab && (
+          <BotonAnular facturaId={facId} numero={f.numero as string} bloqueo={bloqueoAnular} />
+        )}
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>
-        <CuerpoFactura facId={facId} f={f} />
+        <CuerpoFactura
+          facId={facId}
+          f={f}
+          estado={estadoCab}
+          dias={Number(calc?.dias_vencida ?? 0)}
+          puedeCobrar={puedeCobrar}
+        />
       </Suspense>
     </>
   );
@@ -114,7 +151,17 @@ function CargandoCuerpo() {
 }
 
 /** El detalle: líneas, cobros y los lotes que respaldan el comprobante. */
-async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, unknown> }) {
+async function CuerpoFactura({
+  facId, f, estado, dias, puedeCobrar,
+}: {
+  facId: number;
+  f: Record<string, unknown>;
+  /** Estado calculado por la vista (no el guardado). */
+  estado: string;
+  /** Días desde el vencimiento, contados en Lima (positivo = vencida). */
+  dias: number;
+  puedeCobrar: boolean;
+}) {
   const supabase = await crearClienteServidor();
 
   const [{ data: lineas }, { data: cobros }, { data: origen }] = await Promise.all([
@@ -124,7 +171,7 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
       .eq('factura_id', facId),
     supabase
       .from('cobranzas')
-      .select('id, monto, fecha, medio, referencia, observaciones')
+      .select('id, monto, fecha, medio, referencia, observaciones, creado_en, anulada, anulada_en, motivo_anulacion, usuarios:registrado_por(nombre), anulador:anulada_por(nombre)')
       .eq('factura_id', facId)
       .order('fecha'),
     // Trazabilidad hacia atrás: de la factura a los lotes que la surtieron.
@@ -132,11 +179,22 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
   ]);
 
   const moneda = f.moneda as 'USD' | 'PEN';
-  const cobrado = (cobros ?? []).reduce((s, c) => s + Number(c.monto ?? 0), 0);
+  /*
+   * Un cobro anulado (070b) se sigue mostrando —tachado, con su motivo— pero
+   * no suma: el saldo es el de los cobros vigentes.
+   */
+  const vigentes = (cobros ?? []).filter((c) => !c.anulada);
+  const anulados = (cobros ?? []).length - vigentes.length;
+  const cobrado = vigentes.reduce((s, c) => s + Number(c.monto ?? 0), 0);
   const saldo = Number(f.total ?? 0) - cobrado;
-  const anulada = f.estado === 'anulada';
-  const dias = diasDesdeHoy(f.fecha_vencimiento as string);
-  const vencida = !anulada && saldo > 0.01 && dias < 0;
+  const anulada = estado === 'anulada';
+  const vencida = estado === 'vencida';
+  const hoy = hoyEnLima();
+
+  const bloqueoCobro = anulada ? 'Está anulado: no admite cobros.'
+    : saldo <= 0.01 ? 'Ya está cobrada por completo: no queda saldo.'
+    : !puedeCobrar ? 'Solo Gerencia y Operaciones registran cobros.'
+    : null;
   const cliente = uno<Record<string, unknown>>(f.clientes);
   const pedido = uno<Record<string, unknown>>(f.pedidos);
 
@@ -157,7 +215,7 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
         <div className="ficha-aviso ficha-aviso-critico">
           <Icono nombre="cobrar" tamano={17} />
           <span>
-            <strong>Vencida hace {Math.abs(dias)} días.</strong> Quedan{' '}
+            <strong>Vencida hace {dias} {dias === 1 ? 'día' : 'días'}.</strong> Quedan{' '}
             {dinero(saldo, moneda, 2)} por cobrar de esta factura.{' '}
             {cliente?.id ? (
               <Link href={`/ventas/clientes/${cliente.id}`}>Ver la situación completa del cliente</Link>
@@ -183,7 +241,7 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
           etiqueta="Saldo"
           valor={dinero(saldo, moneda, 2)}
           tono={anulada ? 'neutro' : saldo <= 0.01 ? 'ok' : vencida ? 'critico' : 'atencion'}
-          nota={anulada ? 'Anulada' : saldo <= 0.01 ? 'Cobrada' : dias < 0 ? `Vencida hace ${Math.abs(dias)} d` : `Vence en ${dias} d`}
+          nota={anulada ? 'Anulada' : saldo <= 0.01 ? 'Cobrada' : dias > 0 ? `Vencida hace ${dias} d` : dias === 0 ? 'Vence hoy' : `Vence en ${-dias} d`}
           href="#cobros"
         />
       </RejillaKpi>
@@ -203,9 +261,9 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
               <span><strong>{String(pedido.numero_proforma)}</strong><br /><small>Pedido de origen</small></span>
             </Link>
           ) : null}
-          <Link href={`/finanzas/cobrar?factura=${facId}`} className="ficha-enlace">
+          <Link href="/finanzas/cobrar" className="ficha-enlace">
             <Icono nombre="cobrar" tamano={15} />
-            <span><strong>Cobranza</strong><br /><small>Registrar o consultar pagos</small></span>
+            <span><strong>Cuentas por cobrar</strong><br /><small>La cartera completa, por antigüedad</small></span>
           </Link>
         </div>
       </Panel>
@@ -224,7 +282,16 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
           </dl>
         </Panel>
 
-        <Panel id="cobros" titulo={`Cobros registrados · ${(cobros ?? []).length}`}>
+        <Panel id="cobros" titulo={`Cobros registrados · ${vigentes.length}${anulados ? ` · ${anulados} anulado${anulados === 1 ? '' : 's'}` : ''}`}>
+          <RegistrarCobro
+            facturaId={facId}
+            numero={f.numero as string}
+            moneda={moneda}
+            saldo={Math.max(0, Math.round(saldo * 100) / 100)}
+            hoy={hoy}
+            emision={String(f.fecha_emision)}
+            bloqueo={bloqueoCobro}
+          />
           {(cobros ?? []).length === 0 ? (
             <Vacio
               titulo="Sin cobros"
@@ -234,22 +301,58 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
               <table className="datos">
                 <thead>
-                  <tr><th className="num">Fecha</th><th>Medio</th><th>Referencia</th><th className="num">Monto</th></tr>
+                  <tr><th className="num">Fecha</th><th>Medio · registró</th><th>Referencia</th><th className="num">Monto</th><th></th></tr>
                 </thead>
                 <tbody>
                   {(cobros ?? []).map((c) => (
-                    <tr key={c.id as number}>
-                      <td className="num" style={{ fontSize: '.75rem' }}>{fecha(c.fecha as string)}</td>
-                      <td>{etiquetaEstado(c.medio as string)}</td>
-                      <td className="mono" style={{ fontSize: '.74rem' }}>{(c.referencia as string) ?? '—'}</td>
-                      <td className="num">{dinero(Number(c.monto), moneda, 2)}</td>
+                    <Fragment key={c.id as number}>
+                    <tr data-cobro={c.id as number} data-anulado={c.anulada ? 'si' : 'no'}
+                        style={c.anulada ? { color: 'var(--tinta-3)' } : undefined}>
+                      <td className="num" style={{ fontSize: '.75rem', textDecoration: c.anulada ? 'line-through' : undefined }}>{fecha(c.fecha as string)}</td>
+                      <td title={c.creado_en ? `Registrado el ${fechaHora(c.creado_en as string)}` : undefined}>
+                        {etiquetaEstado(c.medio as string)}
+                        <br />
+                        <span style={{ fontSize: '.7rem', color: 'var(--tinta-3)' }}>{campo(c.usuarios, 'nombre', '—')}</span>
+                      </td>
+                      <td className="mono" style={{ fontSize: '.74rem' }}>
+                        {(c.referencia as string) ?? '—'}
+                        {c.observaciones ? (
+                          <><br /><span style={{ fontFamily: 'var(--font-sans)', color: 'var(--tinta-3)' }}>{String(c.observaciones)}</span></>
+                        ) : null}
+
+                      </td>
+                      <td className="num" style={{ textDecoration: c.anulada ? 'line-through' : undefined }}>{dinero(Number(c.monto), moneda, 2)}</td>
+                      <td>
+                        {c.anulada ? (
+                          <span title={`Anulado el ${fechaHora(c.anulada_en as string)} por ${campo(c.anulador, 'nombre', '—')}: ${String(c.motivo_anulacion ?? '')}`}>
+                            <Etiqueta texto="Anulado" tono="neutro" />
+                          </span>
+                        ) : (
+                          <AnularCobro
+                            cobroId={c.id as number}
+                            descripcion={`${dinero(Number(c.monto), moneda, 2)} del ${fecha(c.fecha as string)}`}
+                            bloqueo={anulada ? 'El comprobante está anulado.'
+                              : !puedeCobrar ? 'Solo Gerencia y Operaciones anulan cobros.' : null}
+                          />
+                        )}
+                      </td>
                     </tr>
+                    {/* El porqué de la anulación, en su propia línea para que se lea entero. */}
+                    {c.anulada ? (
+                      <tr data-cobro-motivo={c.id as number}>
+                        <td colSpan={5} style={{ whiteSpace: 'normal', fontSize: '.72rem', color: 'var(--tinta-2)', paddingTop: 0 }}>
+                          Anulado el {fechaHora(c.anulada_en as string)} por {campo(c.anulador, 'nombre', '—')}: {String(c.motivo_anulacion ?? '')}
+                        </td>
+                      </tr>
+                    ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr style={{ background: 'var(--superficie-2)', fontWeight: 600 }}>
-                    <td colSpan={3}>Total cobrado</td>
+                    <td colSpan={3}>Total cobrado{anulados ? ' (sin los anulados)' : ''}</td>
                     <td className="num">{dinero(cobrado, moneda, 2)}</td>
+                    <td></td>
                   </tr>
                 </tfoot>
               </table>
@@ -348,8 +451,9 @@ async function CuerpoFactura({ facId, f }: { facId: number; f: Record<string, un
       </Panel>
 
       <p className="pie-explicativo">
-        Una factura emitida no se edita: si hay un error se anula dejando el motivo escrito y se
-        emite una nueva. Así el correlativo y la contabilidad quedan siempre cuadrados.
+        Una factura emitida no se edita: si hay un error se anula con <strong>Anular comprobante</strong>,
+        dejando el motivo escrito, y se emite una nueva desde el pedido. El número anulado no se
+        vuelve a usar: así el correlativo y la contabilidad quedan siempre cuadrados.
       </p>
     </>
   );

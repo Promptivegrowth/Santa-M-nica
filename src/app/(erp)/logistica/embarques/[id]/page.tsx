@@ -27,6 +27,14 @@ import { veCostos, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
 import { NuevoPacking } from './NuevoPacking';
 import { ObservacionesEmbarque } from './ObservacionesEmbarque';
+import { CicloEmbarque } from './CicloEmbarque';
+import { EditarEmbarque } from './EditarEmbarque';
+import { AgregarPedidos, QuitarPedido } from './PedidosDelEmbarque';
+
+/** Programan, editan y cambian los pedidos (igual que el alta). */
+const PUEDEN_ARMAR = ['gerencia', 'operaciones', 'comex', 'almacen'];
+/** Confirman y cancelan: la decisión de la salida, no de la carga. */
+const PUEDEN_DECIDIR = ['gerencia', 'operaciones', 'comex'];
 
 export const dynamic = 'force-dynamic';
 
@@ -75,7 +83,7 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
   const embId = Number(id);
 
   const supabase = await crearClienteServidor();
-  const [{ data: e }, usuarioCab, { data: supervisores }] = await Promise.all([
+  const [{ data: e }, usuarioCab, { data: supervisores }, { data: packingsCab }, { count: pedidosCab }] = await Promise.all([
     supabase
       .from('embarques')
       .select('*, almacenes(id, nombre), destinos(puerto, pais), transportistas(razon_social), vehiculos(placa), conductores(nombre)')
@@ -83,14 +91,31 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
       .single(),
     obtenerUsuarioActual(),
     supabase.from('usuarios').select('id, nombre').eq('activo', true).order('nombre'),
+    supabase.from('packing_lists').select('codigo, estado').eq('embarque_id', embId),
+    supabase.from('embarque_pedidos').select('pedido_id', { count: 'exact', head: true }).eq('embarque_id', embId),
   ]);
 
   if (!e) notFound();
 
   const estadoCab = e.estado as string;
+  const rolCab = usuarioCab?.rol ?? '';
   const puedeArmar =
-    ['gerencia', 'operaciones', 'comex', 'almacen'].includes(usuarioCab?.rol ?? '') &&
+    PUEDEN_ARMAR.includes(rolCab) &&
     estadoCab !== 'despachado' && estadoCab !== 'cancelado';
+
+  /*
+   * Por qué no se puede confirmar o cancelar todavía: el botón se apaga y lo
+   * dice, en vez de desaparecer. El servidor lo vuelve a comprobar.
+   */
+  const despachados = (packingsCab ?? []).filter((p) => p.estado === 'cerrado').map((p) => String(p.codigo));
+  const noPuedeConfirmar =
+    !pedidosCab ? 'agréguele al menos un pedido.'
+    : e.tipo_despacho === 'exportacion' && !String(e.booking ?? '').trim()
+      ? 'falta el booking de la naviera. Anótelo con «Editar embarque».'
+      : null;
+  const noPuedeCancelar = despachados.length
+    ? `Ya salió el contenedor ${despachados.join(', ')}: un embarque con despacho no se cancela.`
+    : null;
 
   return (
     <>
@@ -100,6 +125,15 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
         volver={{ href: '/logistica/embarques', texto: 'Volver a embarques' }}
       >
         <Etiqueta texto={etiquetaEstado(estadoCab)} tono={TONO[estadoCab] ?? 'neutro'} />
+        {PUEDEN_ARMAR.includes(rolCab) && (
+          <CicloEmbarque
+            embarqueId={embId}
+            estado={estadoCab}
+            puede={PUEDEN_DECIDIR.includes(rolCab)}
+            noPuedeConfirmar={noPuedeConfirmar}
+            noPuedeCancelar={noPuedeCancelar}
+          />
+        )}
         <Link href={`/logistica/planificador?embarque=${embId}`} className="btn btn-secundario">
           <Icono nombre="planificador" tamano={15} />
           Ver en el calendario
@@ -140,11 +174,11 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
   const usuario = await obtenerUsuarioActual();
   const puedeVerImportes = veCostos((usuario?.rol ?? 'consulta') as Rol);
 
-  const puedeEditar = ['gerencia', 'operaciones', 'comex', 'almacen'].includes(usuario?.rol ?? '');
-  const [{ data: vinculos }, { data: packings }, { data: programadas }] = await Promise.all([
+  const puedeEditar = PUEDEN_ARMAR.includes(usuario?.rol ?? '');
+  const [{ data: vinculos }, { data: packings }, { data: programadas }, catalogos] = await Promise.all([
     supabase
       .from('embarque_pedidos')
-      .select('pedidos(id, numero_proforma, ciclo, cobertura, situacion, moneda, tipo_cambio, fecha_comprometida, clientes(id, razon_social, pais), pedido_lineas(cantidad_tm, precio_tm, descuento_pct))')
+      .select('pedidos(id, numero_proforma, ciclo, cobertura, situacion, moneda, tipo_cambio, fecha_comprometida, clientes(id, razon_social, pais), pedido_lineas(id, cantidad_tm, precio_tm, descuento_pct))')
       .eq('embarque_id', embId),
     supabase
       .from('packing_lists')
@@ -156,6 +190,15 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
       .select('id, cantidad_kg, pedido_linea_id, sku_presentacion_id, sale:sku_presentaciones(skus(codigo), presentaciones(descripcion)), pedido_lineas(pedido_id, cantidad_tm, sku_presentacion_id, sku_presentaciones(skus(codigo, corte, especies(nombre)), presentaciones(descripcion)), pedidos(numero_proforma))')
       .eq('embarque_id', embId)
       .order('id'),
+    //  Los catálogos del formulario de edición, solo para quien puede editar.
+    puedeEditar
+      ? Promise.all([
+          supabase.from('destinos').select('id, puerto, pais').eq('activo', true).order('puerto'),
+          supabase.from('transportistas').select('id, razon_social').eq('activo', true).order('razon_social'),
+          supabase.from('vehiculos').select('id, placa, soat_vence, revision_vence').eq('activo', true).order('placa'),
+          supabase.from('conductores').select('id, nombre').eq('activo', true).order('nombre'),
+        ])
+      : Promise.resolve(null),
   ]);
   //  El saldo que le queda a cada línea, contando TODOS los embarques vivos.
   const idsLineas = [...new Set((programadas ?? []).map((x) => Number(x.pedido_linea_id)))];
@@ -168,6 +211,39 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
   const pedidos = (vinculos ?? [])
     .map((v) => uno<Record<string, unknown>>(v.pedidos))
     .filter(Boolean) as Record<string, unknown>[];
+
+  /*
+   * QUÉ PEDIDO SE PUEDE QUITAR: el que no tiene ningún pallet subido a un
+   * contenedor de este embarque (por la línea del pedido que guarda el
+   * packing, o por estar apartado para él). Es la misma regla que aplica la
+   * base al quitarlo; aquí se calcula para apagar el botón y decir cuál bajar.
+   */
+  const vivos = (packings ?? []).filter((p) => p.estado !== 'anulado');
+  const { data: cargadas } = vivos.length
+    ? await supabase.from('packing_lineas').select('lote_id, pedido_linea_id, packing_list_id, lotes(codigo_pallet)')
+        .in('packing_list_id', vivos.map((p) => Number(p.id)))
+    : { data: [] };
+  const lotesCargados = [...new Set((cargadas ?? []).map((c) => Number(c.lote_id)))];
+  const { data: apartadosCargados } = lotesCargados.length && pedidos.length
+    ? await supabase.from('reservas').select('lote_id, pedido_lineas!inner(pedido_id)')
+        .eq('almacen_id', Number(e.almacen_id))
+        .in('estado', ['activa', 'en_preparacion', 'consumida'])
+        .in('lote_id', lotesCargados)
+        .in('pedido_lineas.pedido_id', pedidos.map((p) => Number(p.id)))
+    : { data: [] };
+  const codigoPk = new Map((packings ?? []).map((p) => [Number(p.id), String(p.codigo)]));
+  const cargadoDe = (pedido: Record<string, unknown>) => {
+    const lineasPed = new Set(((pedido.pedido_lineas ?? []) as { id: number }[]).map((l) => Number(l.id)));
+    const lotesPed = new Set((apartadosCargados ?? [])
+      .filter((r) => Number(uno<Record<string, unknown>>(r.pedido_lineas)?.pedido_id) === Number(pedido.id))
+      .map((r) => Number(r.lote_id)));
+    return (cargadas ?? [])
+      .filter((c) => lineasPed.has(Number(c.pedido_linea_id)) || lotesPed.has(Number(c.lote_id)))
+      .map((c) => `${campo(c.lotes, 'codigo_pallet')} (${codigoPk.get(Number(c.packing_list_id))})`);
+  };
+  const cerradoPara = estado === 'despachado' ? 'El embarque ya se despachó.'
+    : estado === 'cancelado' ? 'El embarque está cancelado.' : null;
+  const [destinosCat, transportistasCat, vehiculosCat, conductoresCat] = catalogos ?? [];
 
   const totalTm = pedidos.reduce(
     (s, p) => s + ((p.pedido_lineas ?? []) as { cantidad_tm: number }[]).reduce((x, l) => x + Number(l.cantidad_tm ?? 0), 0),
@@ -199,6 +275,17 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
 
   return (
     <>
+      {estado === 'cancelado' && (
+        <div className="ficha-aviso ficha-aviso-critico" data-aviso="cancelado">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>Embarque cancelado.</strong>{' '}
+            {e.motivo_cancelacion ? <>Motivo: {String(e.motivo_cancelacion)}. </> : null}
+            Sus pedidos quedaron libres para programarse en otro embarque, con su mercadería todavía apartada.
+          </span>
+        </div>
+      )}
+
       {sinCobertura.length > 0 && !['despachado', 'cancelado'].includes(estado) && (
         <div className="ficha-aviso ficha-aviso-critico">
           <Icono nombre="alerta" tamano={17} />
@@ -274,6 +361,30 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
             <ObservacionesEmbarque id={embId} texto={(e.observaciones as string) ?? null}
                                    puede={puedeEditar && estado !== 'cancelado'} />
           </div>
+          {puedeEditar && (
+            <EditarEmbarque
+              embarqueId={embId}
+              tipoDespacho={String(e.tipo_despacho)}
+              noPuede={cerradoPara ? `${cerradoPara} Sus datos ya no se cambian.` : null}
+              datos={{
+                fecha_programada: String(e.fecha_programada ?? ''),
+                destino_id: (e.destino_id as number) ?? null,
+                booking: (e.booking as string) ?? null,
+                naviera: (e.naviera as string) ?? null,
+                transportista_id: (e.transportista_id as number) ?? null,
+                vehiculo_id: (e.vehiculo_id as number) ?? null,
+                conductor_id: (e.conductor_id as number) ?? null,
+                observaciones: (e.observaciones as string) ?? null,
+              }}
+              destinos={(destinosCat?.data ?? []).map((x) => ({ id: Number(x.id), puerto: String(x.puerto), pais: String(x.pais ?? '') }))}
+              transportistas={(transportistasCat?.data ?? []).map((t) => ({ id: Number(t.id), nombre: String(t.razon_social) }))}
+              vehiculos={(vehiculosCat?.data ?? []).map((v) => ({
+                id: Number(v.id), placa: String(v.placa),
+                soat: (v.soat_vence as string) ?? null, revision: (v.revision_vence as string) ?? null,
+              }))}
+              conductores={(conductoresCat?.data ?? []).map((c) => ({ id: Number(c.id), nombre: String(c.nombre) }))}
+            />
+          )}
         </Panel>
 
         <Panel titulo="Transporte terrestre">
@@ -307,11 +418,29 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
         </Panel>
       </div>
 
-      <Panel id="pedidos" titulo={`Pedidos en este embarque · ${pedidos.length}`} className="mb-espacio">
+      <Panel
+        id="pedidos"
+        titulo={`Pedidos en este embarque · ${pedidos.length}`}
+        className="mb-espacio"
+      >
+        {/* Agregar pedidos después de programar (antes solo se elegían en el alta). */}
+        {puedeEditar && (
+          <div style={{ padding: '.7rem 1rem 0' }}>
+            <AgregarPedidos
+              embarqueId={embId}
+              almacenId={Number(e.almacen_id)}
+              bodega={campo(e.almacenes, 'nombre')}
+              noPuede={cerradoPara ? `${cerradoPara} Ya no se le agregan pedidos.` : null}
+              puedeTrasladar={['gerencia', 'operaciones', 'almacen'].includes(usuario?.rol ?? '')}
+            />
+          </div>
+        )}
         {pedidos.length === 0 ? (
           <Vacio
             titulo="Embarque vacío"
-            mensaje="Todavía no se le asignó ningún pedido. Se hace desde el planificador arrastrando el pedido a la fecha."
+            mensaje={estado === 'cancelado'
+              ? 'No lleva ningún pedido.'
+              : 'Todavía no lleva ningún pedido. Agrégueselos con «Agregar pedidos», arriba a la derecha de este cuadro.'}
           />
         ) : (
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
@@ -362,10 +491,24 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
                           tono={TONO_COBERTURA[String(p.cobertura)] ?? 'neutro'}
                         />
                       </td>
-                      <td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         <Link href={`/ventas/pedidos/${p.id}`} className="accion-btn" title="Ver el pedido">
                           <Icono nombre="ver" tamano={15} />
                         </Link>
+                        {puedeEditar && estado !== 'cancelado' && (() => {
+                          const enContenedor = cargadoDe(p);
+                          return (
+                            <QuitarPedido
+                              embarqueId={embId}
+                              pedidoId={Number(p.id)}
+                              proforma={String(p.numero_proforma)}
+                              noPuede={cerradoPara
+                                ?? (enContenedor.length
+                                  ? `Tiene pallets en un contenedor: ${enContenedor.slice(0, 3).join(', ')}${enContenedor.length > 3 ? '…' : ''}. Bájelos del packing primero.`
+                                  : null)}
+                            />
+                          );
+                        })()}
                       </td>
                     </tr>
                   );

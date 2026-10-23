@@ -92,7 +92,7 @@ try {
     ok(/Solo mercado nacional/.test(e1 ?? ''), 'reservarlo para un pedido de exportación se rechaza', (e1 ?? 'lo aceptó').slice(60, 170));
     const e2 = await falla(`
       insert into packing_lineas (packing_list_id, lote_id, pedido_linea_id, bultos, peso_neto_kg)
-      select id, ${lote.lote_id}, ${linea.id}, 1, 10 from packing_lists order by id limit 1`);
+      select id, ${lote.lote_id}, ${linea.id}, 1, 10 from packing_lists where estado in ('abierto', 'en_carga') order by id limit 1`);
     ok(/Solo mercado nacional/.test(e2 ?? ''), 'y cargarlo en un contenedor de exportación también');
 
     await consultar(`update pedidos set tipo_despacho = 'mercado_nacional' where id = ${linea.pedido_id}`);
@@ -107,7 +107,7 @@ try {
      * rompía TODA carga a packing; esta comprobación es la que lo detectó.)
      */
     const [normal] = await consultar(`
-      select v.lote_id, pl.id as linea, (select id from packing_lists order by id limit 1) as pk
+      select v.lote_id, pl.id as linea, (select id from packing_lists where estado in ('abierto', 'en_carga') order by id limit 1) as pk
         from v_stock_lote v join pedido_lineas pl on pl.sku_presentacion_id = v.sku_presentacion_id
        where v.solo_nacional_kg = 0 and v.disponible_kg > 0 limit 1`);
     const e5 = await falla(`begin;

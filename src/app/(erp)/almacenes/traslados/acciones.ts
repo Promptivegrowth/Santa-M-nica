@@ -25,6 +25,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { traerTodo } from '@/lib/traerTodo';
 
 export type Resultado =
   | { ok: true; id: number; mensaje: string }
@@ -64,6 +65,8 @@ export type LineaTraslado = { lote_id: number; bultos: number; peso_kg: number }
 export type DatosTraslado = {
   almacen_origen_id: number;
   almacen_destino_id: number;
+  /** Opcional al crear: si ya se conoce, viene puesta al despachar. */
+  guia_numero?: string | null;
   fecha_programada: string | null;
   transportista_id: number | null;
   vehiculo_id: number | null;
@@ -85,18 +88,21 @@ export async function crearTraslado(d: DatosTraslado): Promise<Resultado> {
   if (!d.lineas?.length) {
     return { ok: false, mensaje: 'Elija al menos un pallet para trasladar.' };
   }
+  if (new Set(d.lineas.map((l) => l.lote_id)).size !== d.lineas.length) {
+    return { ok: false, mensaje: 'Un mismo pallet aparece dos veces: júntelo en una sola línea.' };
+  }
 
   const supabase = await crearClienteServidor();
 
   /* ---- Cada pallet tiene que tener saldo en el origen y estar liberado ---- */
   for (const l of d.lineas) {
-    if (!(l.peso_kg > 0) || !(l.bultos > 0)) {
-      return { ok: false, mensaje: 'Todos los pallets necesitan bultos y peso mayores que cero.' };
+    if (!(l.peso_kg > 0) || !(l.bultos > 0) || !Number.isInteger(l.bultos)) {
+      return { ok: false, mensaje: 'Todos los pallets necesitan bultos (enteros) y peso mayores que cero.' };
     }
 
     const { data: stock } = await supabase
       .from('v_stock_lote')
-      .select('codigo_pallet, disponible_kg, bloqueado_kg')
+      .select('codigo_pallet, disponible_kg, bloqueado_kg, fisico_bultos')
       .eq('lote_id', l.lote_id)
       .eq('almacen_id', d.almacen_origen_id)
       .maybeSingle();
@@ -119,6 +125,12 @@ export async function crearTraslado(d: DatosTraslado): Promise<Resultado> {
           'El resto está apartado para un pedido.',
       };
     }
+    if (l.bultos > Number(stock.fisico_bultos)) {
+      return {
+        ok: false,
+        mensaje: `El pallet ${stock.codigo_pallet} tiene ${stock.fisico_bultos} bultos en el origen y quiere mover ${l.bultos}.`,
+      };
+    }
   }
 
   const anio = new Date().getFullYear();
@@ -136,6 +148,7 @@ export async function crearTraslado(d: DatosTraslado): Promise<Resultado> {
       almacen_destino_id: d.almacen_destino_id,
       // El primer estado del enum es «borrador», no «solicitado».
       estado: 'borrador',
+      guia_numero: d.guia_numero?.trim() || null,
       fecha_programada: d.fecha_programada || null,
       transportista_id: d.transportista_id,
       vehiculo_id: d.vehiculo_id,
@@ -168,8 +181,8 @@ export async function crearTraslado(d: DatosTraslado): Promise<Resultado> {
     ok: true,
     id: traslado.id as number,
     mensaje:
-      `Traslado ${numero} creado con ${d.lineas.length} pallet${d.lineas.length === 1 ? '' : 's'}. ` +
-      'Todavía no se movió nada: hace falta que operaciones lo autorice.',
+      `Traslado ${numero} creado en borrador con ${d.lineas.length} pallet${d.lineas.length === 1 ? '' : 's'}. ` +
+      'Todavía no se movió nada: falta que Gerencia u Operaciones lo autorice y que Almacén lo despache.',
   };
 }
 
@@ -258,26 +271,46 @@ export async function aceptarTraslado(
     .eq('traslado_id', id);
 
   const descuadres = (lineas ?? []).filter(
-    (l) => Math.abs(Number(l.peso_enviado_kg) - Number(l.peso_aceptado_kg ?? 0)) > 0.01
+    (l) => Math.abs(Number(l.peso_enviado_kg) - Number(l.peso_aceptado_kg ?? 0)) > 0.005 ||
+           Number(l.bultos_enviados) !== Number(l.bultos_aceptados ?? 0)
   );
 
   refrescar(id);
+  revalidatePath('/almacenes/reservas');
 
   if (descuadres.length === 0) {
-    return { ok: true, id, mensaje: 'Traslado aceptado. Lo recibido coincide exactamente con lo enviado.' };
+    return { ok: true, id, mensaje: 'Traslado aceptado. Lo recibido coincide exactamente con lo enviado, en bultos y en kilos.' };
   }
 
+  /* Dicho como es: cuánto salió, cuánto llegó, y si falta o sobra. */
+  const kgTexto = (n: number) => n.toLocaleString('es-PE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  let faltaKg = 0;
+  let sobraKg = 0;
   const detalle = descuadres.map((l) => {
     const lote = Array.isArray(l.lotes) ? l.lotes[0] : l.lotes;
-    const dif = Number(l.peso_aceptado_kg ?? 0) - Number(l.peso_enviado_kg);
-    return `${lote?.codigo_pallet}: ${dif > 0 ? '+' : ''}${dif.toFixed(1)} kg`;
+    const difKg = Number(l.peso_aceptado_kg ?? 0) - Number(l.peso_enviado_kg);
+    const difB = Number(l.bultos_aceptados ?? 0) - Number(l.bultos_enviados);
+    if (difKg < 0) faltaKg += -difKg; else sobraKg += difKg;
+    const que = difKg < -0.005 ? `faltan ${kgTexto(-difKg)} kg` : difKg > 0.005 ? `sobran ${kgTexto(difKg)} kg` : 'mismo peso';
+    const bultos = difB < 0 ? `, ${-difB} bulto${difB === -1 ? '' : 's'} menos` : difB > 0 ? `, ${difB} bulto${difB === 1 ? '' : 's'} más` : '';
+    return `${lote?.codigo_pallet}: salieron ${l.bultos_enviados} bultos · ${kgTexto(Number(l.peso_enviado_kg))} kg, ` +
+      `llegaron ${l.bultos_aceptados} bultos · ${kgTexto(Number(l.peso_aceptado_kg ?? 0))} kg (${que}${bultos})`;
   }).join(' · ');
+
+  const consecuencia = [
+    faltaKg > 0.005
+      ? `El faltante (${kgTexto(faltaKg)} kg) ya salió del inventario: el origen registró la salida completa y el destino solo lo recibido. Si aparece, se registra con un ajuste que suma.`
+      : '',
+    sobraKg > 0.005
+      ? `El sobrante (${kgTexto(sobraKg)} kg) entró en el destino. Si fue un error de pesaje, se corrige con un ajuste que resta.`
+      : '',
+  ].filter(Boolean).join(' ');
 
   return {
     ok: true, id,
     mensaje:
-      `Traslado aceptado con ${descuadres.length} discrepancia${descuadres.length === 1 ? '' : 's'}: ${detalle}. ` +
-      'Quedaron registradas con su alerta: la diferencia no se pierde, se investiga.',
+      `Traslado aceptado con ${descuadres.length} diferencia${descuadres.length === 1 ? '' : 's'}. ${detalle}. ` +
+      `${consecuencia} Cada diferencia quedó en el historial del traslado y como aviso en Alertas.`.trim(),
   };
 }
 
@@ -323,23 +356,48 @@ export type LoteTrasladable = {
   codigo_pallet: string;
   producto: string;
   meses: number;
+  /** Lo que hay en cámara y lo que de eso se puede mover (físico − reservado). */
+  fisico_kg: number;
   disponible_kg: number;
+  /** Bultos que se pueden mover: todos si nada está reservado; si no, la parte libre. */
   bultos: number;
+  fisico_bultos: number;
   kg_por_bulto: number;
+  solo_nacional: boolean;
 };
 
-export async function lotesEnBodega(almacenId: number): Promise<LoteTrasladable[]> {
+export type PalletsTrasladables = {
+  lotes: LoteTrasladable[];
+  /** Pallets de la bodega que no se ofrecen, y por qué. */
+  bloqueados: number;
+  reservadosEnteros: number;
+};
+
+/**
+ * Los pallets que se pueden trasladar desde una bodega.
+ *
+ * Solo se ofrece lo DISPONIBLE: lo reservado para un pedido no se lleva a otra
+ * cámara sin darse cuenta (para eso está la consolidación del embarque, que
+ * mueve lo apartado para ESE embarque). Lo bloqueado por Calidad no se mueve.
+ * Se trae entero por páginas: una bodega grande tiene más de 300 pallets y
+ * la API corta en mil sin avisar.
+ */
+export async function lotesEnBodega(almacenId: number): Promise<PalletsTrasladables> {
   const supabase = await crearClienteServidor();
 
-  const { data: stock } = await supabase
+  const stock = await traerTodo<{
+    lote_id: number; codigo_pallet: string; disponible_kg: number; fisico_kg: number;
+    fisico_bultos: number; meses_almacenado: number; bloqueado_kg: number;
+    solo_nacional_kg: number; sku_presentacion_id: number;
+  }>((d, h) => supabase
     .from('v_stock_lote')
-    .select('lote_id, codigo_pallet, disponible_kg, fisico_bultos, meses_almacenado, bloqueado_kg, sku_presentacion_id')
+    .select('lote_id, codigo_pallet, disponible_kg, fisico_kg, fisico_bultos, meses_almacenado, bloqueado_kg, solo_nacional_kg, sku_presentacion_id')
     .eq('almacen_id', almacenId)
-    .gt('disponible_kg', 0)
     .order('fecha_produccion', { ascending: true })
-    .limit(150);
+    .order('lote_id', { ascending: true })
+    .range(d, h));
 
-  const ids = [...new Set((stock ?? []).map((s) => s.sku_presentacion_id as number))];
+  const ids = [...new Set(stock.map((s) => Number(s.sku_presentacion_id)))];
   const { data: productos } = ids.length
     ? await supabase
         .from('sku_presentaciones')
@@ -359,23 +417,36 @@ export async function lotesEnBodega(almacenId: number): Promise<LoteTrasladable[
     })
   );
 
-  return (stock ?? [])
+  let bloqueados = 0;
+  let reservadosEnteros = 0;
+  const lotes: LoteTrasladable[] = [];
+
+  for (const s of stock) {
     // Lo bloqueado por calidad no se mueve de bodega: primero se resuelve.
-    .filter((s) => Number(s.bloqueado_kg) === 0)
-    .map((s) => {
-      const info = desc.get(s.sku_presentacion_id as number);
-      const kg = Number(s.disponible_kg);
-      return {
-        lote_id: s.lote_id as number,
-        codigo_pallet: s.codigo_pallet as string,
-        producto: info?.texto ?? '—',
-        meses: Number(s.meses_almacenado ?? 0),
-        disponible_kg: kg,
-        bultos: Math.floor(kg / (info?.kgBulto ?? 1)),
-        kg_por_bulto: info?.kgBulto ?? 1,
-      };
-    })
-    .filter((l) => l.bultos > 0);
+    if (Number(s.bloqueado_kg) > 0) { bloqueados++; continue; }
+    const fisico = Number(s.fisico_kg);
+    const disp = Number(s.disponible_kg);
+    const fisicoBultos = Number(s.fisico_bultos);
+    /* Si nada está apartado se mueven los bultos reales del pallet; si hay
+       algo apartado, la parte libre en proporción (redondeando hacia abajo). */
+    const bultos = disp >= fisico - 0.001 ? fisicoBultos : Math.floor(fisicoBultos * (disp / fisico));
+    if (disp <= 0.001 || bultos <= 0) { reservadosEnteros++; continue; }
+    const info = desc.get(Number(s.sku_presentacion_id));
+    lotes.push({
+      lote_id: Number(s.lote_id),
+      codigo_pallet: String(s.codigo_pallet),
+      producto: info?.texto ?? '—',
+      meses: Number(s.meses_almacenado ?? 0),
+      fisico_kg: fisico,
+      disponible_kg: disp,
+      bultos,
+      fisico_bultos: fisicoBultos,
+      kg_por_bulto: info?.kgBulto ?? 1,
+      solo_nacional: Number(s.solo_nacional_kg) > 0,
+    });
+  }
+
+  return { lotes, bloqueados, reservadosEnteros };
 }
 
 /* ==========================================================================
@@ -538,6 +609,13 @@ export async function consolidarEnBodega(
         observaciones:
           `Consolidación para embarcar desde ${plan.destino}. ` +
           `Mueve stock ya apartado de ${pedidoIds.length} pedido(s); las reservas viajan con la mercadería.`,
+        /*
+         * Para qué pedidos se junta (migración 068). Sin esto el despacho del
+         * traslado validaba contra el disponible —y lo apartado no lo es—, y
+         * fallaba con «disponible: 0 kg». Con esto admite lo apartado para
+         * ESTOS pedidos y, al aceptarlo, muda justo sus reservas.
+         */
+        consolida_pedidos: pedidoIds.map(Number),
         creado_por: permiso.usuario!.id,
       })
       .select('id')

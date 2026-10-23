@@ -25,7 +25,8 @@ import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Es
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { aDolares, aSoles } from '@/lib/moneda';
-import { veCostos, type Rol } from '@/lib/navegacion';
+import { veCostos, puedeVender, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
+import { puedeCotizar } from '@/lib/permisosVentas';
 import { campo } from '@/lib/relaciones';
 import { AccionesMaestro } from '@/components/ui/AccionesMaestro';
 import { cambiarEstadoCliente, eliminarCliente } from '../acciones';
@@ -86,14 +87,20 @@ export default async function FichaCliente(props: PageProps<'/ventas/clientes/[i
         descripcion={`${c.pais as string} · ${(c.tipo as string) ?? 'cliente'} · ${(c.ruc_tax_id as string) ?? 'sin identificación fiscal'}`}
         volver={{ href: '/ventas/clientes', texto: 'Volver a clientes' }}
       >
-        <Link href={`/ventas/cotizaciones/nueva?cliente=${cliId}`} className="btn btn-secundario">
-          <Icono nombre="cotizacion" tamano={15} />
-          Cotizar
-        </Link>
-        <Link href={`/ventas/pedidos/nuevo?cliente=${cliId}`} className="btn btn-primario">
-          <Icono nombre="mas" tamano={15} />
-          Nuevo pedido
-        </Link>
+        {/* Solo a quien entra a Cotizaciones (no Comex, Almacén, Calidad ni Consulta). */}
+        {puedeCotizar(rolActual) && (
+          <Link href={`/ventas/cotizaciones/nueva?cliente=${cliId}`} className="btn btn-secundario">
+            <Icono nombre="cotizacion" tamano={15} />
+            Cotizar
+          </Link>
+        )}
+        {/* Solo quien registra pedidos (Almacén, Calidad y Consulta no). */}
+        {puedeVender(rolActual as Rol) && (
+          <Link href={`/ventas/pedidos/nuevo?cliente=${cliId}`} className="btn btn-primario">
+            <Icono nombre="mas" tamano={15} />
+            Nuevo pedido
+          </Link>
+        )}
         {puedeEditar && (
           <Link href={`/ventas/clientes/${cliId}/editar`} className="btn btn-secundario">
             <Icono nombre="editar" tamano={15} />
@@ -141,6 +148,8 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const puedeVerImportes = veCostos((usuario?.rol ?? 'consulta') as Rol);
+  //  Comex ve que el cliente tiene ofertas, pero no entra a Cotizaciones: sin enlaces.
+  const entraACotizaciones = rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, '/ventas/cotizaciones');
 
   const [{ data: pedidos }, { data: cotizaciones }, { data: facturas }, { data: basc }, { data: verificaciones }] =
     await Promise.all([
@@ -158,7 +167,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
         .limit(15),
       supabase
         .from('facturas')
-        .select('id, numero, fecha_emision, fecha_vencimiento, total, moneda, tipo_cambio, estado, cobranzas(monto)')
+        .select('id, numero, fecha_emision, fecha_vencimiento, total, moneda, tipo_cambio, estado, cobranzas(monto, anulada)')
         .eq('cliente_id', cliId)
         .order('fecha_emision', { ascending: false })
         .limit(25),
@@ -172,7 +181,9 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
   /* ---- Deuda viva: lo facturado menos lo cobrado, sin contar anuladas ---- */
   const vivas = (facturas ?? []).filter((f) => f.estado !== 'anulada');
   const saldoDe = (f: (typeof vivas)[number]) =>
-    Number(f.total ?? 0) - ((f.cobranzas ?? []) as { monto: number }[]).reduce((s, x) => s + Number(x.monto ?? 0), 0);
+    //  Un cobro anulado (070b) ya no paga nada: no se resta de la deuda.
+    Number(f.total ?? 0) - ((f.cobranzas ?? []) as { monto: number; anulada: boolean }[])
+      .filter((x) => !x.anulada).reduce((s, x) => s + Number(x.monto ?? 0), 0);
 
   /*
    * Todo lo que se suma aquí se lleva a LA MONEDA DEL CLIENTE, que es en la
@@ -430,7 +441,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
       <Panel
         titulo={`Cotizaciones · ${(cotizaciones ?? []).length}`}
         className="mb-espacio"
-        acciones={<Link href="/ventas/cotizaciones" className="btn btn-sutil">Ver todas</Link>}
+        acciones={entraACotizaciones ? <Link href="/ventas/cotizaciones" className="btn btn-sutil">Ver todas</Link> : undefined}
       >
         {(cotizaciones ?? []).length === 0 ? (
           <Vacio titulo="Sin cotizaciones" mensaje="A este cliente nunca se le pasó una oferta por el sistema." />
@@ -452,9 +463,11 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
                   return (
                     <tr key={q.id as number}>
                       <td className="mono">
-                        <Link href={`/ventas/cotizaciones/${q.id}`} className="enlace-ficha">
-                          {q.numero as string}
-                        </Link>
+                        {entraACotizaciones ? (
+                          <Link href={`/ventas/cotizaciones/${q.id}`} className="enlace-ficha">
+                            {q.numero as string}
+                          </Link>
+                        ) : (q.numero as string)}
                       </td>
                       <td className="num" style={{ fontSize: '.75rem' }}>{fecha(q.fecha as string)}</td>
                       <td className="num">{num(t, 1)}</td>
@@ -466,9 +479,11 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
                         />
                       </td>
                       <td>
-                        <Link href={`/ventas/cotizaciones/${q.id}`} className="accion-btn" title="Ver la cotización">
-                          <Icono nombre="ver" tamano={15} />
-                        </Link>
+                        {entraACotizaciones && (
+                          <Link href={`/ventas/cotizaciones/${q.id}`} className="accion-btn" title="Ver la cotización">
+                            <Icono nombre="ver" tamano={15} />
+                          </Link>
+                        )}
                       </td>
                     </tr>
                   );

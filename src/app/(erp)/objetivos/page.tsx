@@ -59,7 +59,7 @@ export default async function PaginaObjetivos(props: PageProps<'/objetivos'>) {
         <CabeceraPagina titulo="Objetivos mensuales" descripcion="Módulo oculto temporalmente." />
         <Vacio
           titulo="Módulo oculto temporalmente"
-          mensaje="Se ocultó a pedido de Gerencia. Los objetivos, las metas y el historial siguen guardados: se vuelve a mostrar desde Configuración → Módulos."
+          mensaje="Se ocultó a pedido de Gerencia. Los objetivos, las metas y el historial siguen guardados: se vuelve a mostrar desde Configuración → Parámetros, en el grupo Sistema («Módulo Objetivos mensuales visible»)."
         />
       </>
     );

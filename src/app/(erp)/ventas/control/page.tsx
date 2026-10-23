@@ -41,12 +41,23 @@ import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
+import { Paginacion } from '@/components/ui/Filtros';
 import { num, fecha, dinero } from '@/lib/formato';
 import { uno } from '@/lib/relaciones';
 import { traerTodo } from '@/lib/traerTodo';
 
 export const metadata: Metadata = { title: 'Control de pedidos' };
 export const dynamic = 'force-dynamic';
+
+/*
+ * LAS TABLAS SE PAGINAN (limitaciones de la guía).
+ * Antes enseñaban los primeros 200 pedidos —o 200 líneas de backorder— y el
+ * resto no se veía de ninguna forma: con 250 pedidos abiertos, 50 quedaban
+ * fuera de la lista aunque la tarjeta los contara. Ahora se ve todo, de 50 en
+ * 50, y la fila de TOTAL suma TODAS las páginas, no solo la que está a la
+ * vista, para que cuadre con las tarjetas.
+ */
+const POR_PAGINA = 50;
 
 type Vista = 'por_atender' | 'completos' | 'pendientes' | 'backorder' | 'cancelados' | 'retrasados';
 
@@ -230,6 +241,26 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
   const filas = grupos[vista];
   const enlace = (v: Vista) => `/ventas/control?vista=${v}`;
 
+  /* ---- La página que se ve, y los totales de TODO ---- */
+  const cuantas = vista === 'backorder' ? lineasBackorder.length : filas.length;
+  const paginas = Math.max(1, Math.ceil(cuantas / POR_PAGINA));
+  const pagina = Math.min(paginas, Math.max(1, Math.floor(Number(q.pagina ?? 1)) || 1));
+  const desdeFila = (pagina - 1) * POR_PAGINA;
+  const filasPagina = filas.slice(desdeFila, desdeFila + POR_PAGINA);
+  const lineasPagina = lineasBackorder.slice(desdeFila, desdeFila + POR_PAGINA);
+  const sumar = <T,>(xs: T[], valor: (x: T) => number) => xs.reduce((t, x) => t + Number(valor(x) || 0), 0);
+  const totalFilas = {
+    pedidas: sumar(filas, (p) => p.tm_pedidas),
+    listas: sumar(filas, (p) => p.tm_con_stock),
+    faltan: sumar(filas, (p) => p.tm_backorder),
+    venta: sumar(filas, (p) => p.venta_usd),
+  };
+  const totalLineas = {
+    pedido: sumar(lineasBackorder, (l) => l.pedido_tm),
+    conStock: sumar(lineasBackorder, (l) => l.con_stock_tm),
+    backorder: sumar(lineasBackorder, (l) => l.backorder_tm),
+  };
+
   /*
    * EL PRODUCTO DE CADA PEDIDO.
    * Se pidió en la reunión con Oliver: «aquí querían que salga el producto por
@@ -238,7 +269,7 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
    * Se muestra el de MÁS toneladas, que es el que identifica al pedido, y
    * cuántos más lleva.
    */
-  const idsVisibles = filas.slice(0, 200).map((p) => p.id);
+  const idsVisibles = filasPagina.map((p) => p.id);
   const { data: lineasProd } = idsVisibles.length
     ? await supabase
         .from('pedido_lineas')
@@ -325,8 +356,9 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
           lineasBackorder.length === 0 ? (
             <Vacio titulo="Sin backorder" mensaje="Todos los pedidos abiertos tienen stock para atenderse." />
           ) : (
+            <>
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0, marginTop: '.7rem' }}>
-              <table className="datos">
+              <table className="datos" data-cuadro="backorder">
                 <thead>
                   <tr>
                     <th>Proforma</th><th>Cliente</th><th>Producto</th>
@@ -335,7 +367,7 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                   </tr>
                 </thead>
                 <tbody>
-                  {lineasBackorder.slice(0, 200).map((l, i) => (
+                  {lineasPagina.map((l, i) => (
                     <tr key={`${l.pedido_id}-${i}`}>
                       <td><Link href={`/ventas/pedidos/${l.pedido_id}`} className="enlace-dato">{l.proforma}</Link></td>
                       <td title={l.cliente}>{l.cliente.length > 26 ? l.cliente.slice(0, 25) + '…' : l.cliente}</td>
@@ -347,14 +379,26 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr data-total="backorder" className="fila-total">
+                    <td colSpan={3}><strong>Total · {num(lineasBackorder.length)} líneas{paginas > 1 ? ' (todas las páginas)' : ''}</strong></td>
+                    <td className="num"><strong>{num(totalLineas.pedido, 1)} TM</strong></td>
+                    <td className="num"><strong>{num(totalLineas.conStock, 1)} TM</strong></td>
+                    <td className="num" style={{ color: 'var(--critico)' }}><strong>{num(totalLineas.backorder, 1)} TM</strong></td>
+                    <td />
+                  </tr>
+                </tfoot>
               </table>
             </div>
+            <Paginacion pagina={pagina} porPagina={POR_PAGINA} total={lineasBackorder.length} />
+            </>
           )
         ) : filas.length === 0 ? (
           <Vacio titulo="Nada que reportar" mensaje="No hay pedidos en esta situación." />
         ) : (
+          <>
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0, marginTop: '.7rem' }}>
-            <table className="datos">
+            <table className="datos" data-cuadro="pedidos">
               <thead>
                 <tr>
                   <th>Proforma</th><th>Cliente</th><th>Producto</th><th>Destino</th>
@@ -368,7 +412,7 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                 </tr>
               </thead>
               <tbody>
-                {filas.slice(0, 200).map((p) => (
+                {filasPagina.map((p) => (
                   <tr key={p.id}>
                     <td><Link href={`/ventas/pedidos/${p.id}`} className="enlace-dato">{p.numero_proforma}</Link></td>
                     <td title={p.cliente}>{p.cliente.length > 24 ? p.cliente.slice(0, 23) + '…' : p.cliente}</td>
@@ -414,8 +458,26 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr data-total="pedidos" className="fila-total">
+                  <td colSpan={4}><strong>Total · {num(filas.length)} pedidos{paginas > 1 ? ' (todas las páginas)' : ''}</strong></td>
+                  <td className="num"><strong>{num(totalFilas.pedidas, 1)} TM</strong></td>
+                  {vista !== 'completos' && vista !== 'cancelados' && (
+                    <>
+                      <td className="num"><strong>{num(totalFilas.listas, 1)} TM</strong></td>
+                      <td className="num" style={{ color: totalFilas.faltan > 0 ? 'var(--critico)' : undefined }}>
+                        <strong>{num(totalFilas.faltan, 1)} TM</strong>
+                      </td>
+                    </>
+                  )}
+                  <td className="num"><strong>{dinero(totalFilas.venta, 'USD', 0)}</strong></td>
+                  <td colSpan={3} />
+                </tr>
+              </tfoot>
             </table>
           </div>
+          <Paginacion pagina={pagina} porPagina={POR_PAGINA} total={filas.length} />
+          </>
         )}
       </Panel>
     </>

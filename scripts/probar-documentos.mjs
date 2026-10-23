@@ -82,7 +82,9 @@ async function principal() {
     admin.from('cotizaciones').select('id, numero').limit(1).single(),
     admin.from('pedidos').select('id, numero_proforma').limit(1).single(),
     admin.from('facturas').select('id, numero, subtotal, igv, total, moneda')
-      .eq('tipo_comprobante', 'factura').eq('estado', 'emitida').limit(1).single(),
+      // Cualquiera vigente: desde la 070 el estado se calcula y, con los datos
+      // de demostración ya vencidos, puede no quedar ninguna «emitida».
+      .eq('tipo_comprobante', 'factura').neq('estado', 'anulada').order('id').limit(1).single(),
     admin.from('facturas').select('id, numero, subtotal, igv, total, moneda')
       .eq('tipo_comprobante', 'boleta').limit(1).single(),
   ]);
@@ -286,7 +288,8 @@ async function principal() {
   const { data: cobaya } = await admin
     .from('facturas')
     .select('id, numero, total')
-    .eq('estado', 'emitida')
+    .neq('estado', 'anulada')
+    .order('id')
     .limit(1)
     .single();
 

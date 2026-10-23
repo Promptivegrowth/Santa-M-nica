@@ -24,6 +24,7 @@ import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Es
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
+import { puedeCotizar } from '@/lib/permisosVentas';
 import { uno, campo } from '@/lib/relaciones';
 import { AccionesMaestro } from '@/components/ui/AccionesMaestro';
 import { cambiarEstadoProducto, eliminarProducto } from '../accionesMaestro';
@@ -75,10 +76,13 @@ export default async function FichaProducto(props: PageProps<'/ventas/productos/
         ) : (
           <Etiqueta texto="Descatalogado" tono="neutro" />
         )}
-        <Link href="/ventas/cotizaciones/nueva" className="btn btn-primario">
-          <Icono nombre="cotizacion" tamano={15} />
-          Cotizar
-        </Link>
+        {/* Solo a quien entra a Cotizaciones (no Comex, Almacén, Calidad ni Consulta). */}
+        {puedeCotizar(rolActual) && (
+          <Link href="/ventas/cotizaciones/nueva" className="btn btn-primario">
+            <Icono nombre="cotizacion" tamano={15} />
+            Cotizar
+          </Link>
+        )}
         {puedeEditar && (
           <Link href={`/ventas/productos/${unidadId}/editar`} className="btn btn-secundario">
             <Icono nombre="editar" tamano={15} />

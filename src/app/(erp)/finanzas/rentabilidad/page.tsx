@@ -13,6 +13,14 @@
  *  que de verdad salió: los kilos despachados por el precio de su línea de
  *  pedido, menos esos mismos kilos por el costo con el que ingresó el pallet
  *  del que salieron. Por mes de salida, en hora de Lima.
+ *
+ *  LO QUE NO TIENE COSTO NO TIENE MARGEN (migración 071)
+ *  Una línea sin costo cargado entraba con costo cero: un 100 % de margen que
+ *  subía el del mes, el del pedido y el de la familia. Ahora el margen y su
+ *  porcentaje se miden SOLO con las líneas que tienen costo, y lo que quedó
+ *  fuera se enseña aparte —toneladas e importe— con un aviso. En todas las
+ *  pestañas: en Margen bruto el costo es el del pallet; en Por pedido,
+ *  cliente, vendedor y Margen bajo, el costo estimado de la línea de pedido.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -22,13 +30,15 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Icono } from '@/components/estructura/Icono';
 import { GraficoBarras } from '@/components/graficos/Graficos';
-import { Filtros } from '@/components/ui/Filtros';
+import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { traerTodo } from '@/lib/traerTodo';
 import { num, dinero, pct, fecha } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 
 export const metadata: Metadata = { title: 'Rentabilidad' };
 export const dynamic = 'force-dynamic';
+
+const POR_PAGINA = 50;
 
 const EJES = [
   { clave: 'bruto',       titulo: 'Margen bruto' },
@@ -47,8 +57,12 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
   if (!veCostos((usuario?.rol ?? 'consulta') as Rol)) redirect('/panel');
 
   const supabase = await crearClienteServidor();
-  const [{ data: filas }, { data: minimo }, { data: porFamilia }] = await Promise.all([
-    supabase.from('v_rentabilidad_pedido').select('*').in('ciclo', ['despachado', 'cerrado']).limit(1000),
+  const [filas, { data: minimo }, { data: porFamilia }] = await Promise.all([
+    /* Paginado: `.limit(1000)` no traía más de mil aunque hubiera más, y la
+       API corta en mil sin avisar. */
+    traerTodo<Record<string, unknown>>((d, h) =>
+      supabase.from('v_rentabilidad_pedido').select('*').in('ciclo', ['despachado', 'cerrado'])
+        .order('pedido_id').range(d, h)),
     supabase.from('parametros').select('valor').eq('clave', 'margen_minimo_alerta').single(),
     /*
      * El margen de CONTRIBUCIÓN, que es distinto del que ya había.
@@ -61,27 +75,43 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
     supabase.from('v_margen_contribucion_familia').select('*').order('venta', { ascending: false }),
   ]);
 
-  const lista = filas ?? [];
+  //  Del más reciente al más antiguo, como estaba (la vista no tiene orden propio).
+  const lista = [...filas].sort((a, b) =>
+    String(b.fecha_solicitada ?? '').localeCompare(String(a.fecha_solicitada ?? '')) || Number(b.pedido_id) - Number(a.pedido_id));
   const margenMinimo = Number(minimo?.valor ?? 8);
+  const n0 = (v: unknown) => Number(v ?? 0);
 
-  const venta = lista.reduce((s, f) => s + Number(f.venta ?? 0), 0);
-  const costo = lista.reduce((s, f) => s + Number(f.costo_estimado ?? 0), 0);
-  const margen = venta - costo;
-  const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
-  const bajoMargen = lista.filter((f) => Number(f.margen_pct) < margenMinimo);
+  /*
+   * El margen, SOLO con lo que tiene costo. `venta` sigue siendo todo lo
+   * despachado; `ventaConCosto` es la base del porcentaje.
+   */
+  const venta = lista.reduce((s, f) => s + n0(f.venta), 0);
+  const costo = lista.reduce((s, f) => s + n0(f.costo_estimado), 0);
+  const ventaConCosto = lista.reduce((s, f) => s + n0(f.venta_con_costo), 0);
+  const margen = lista.reduce((s, f) => s + n0(f.margen_con_costo), 0);
+  const margenPct = ventaConCosto > 0 ? (margen / ventaConCosto) * 100 : null;
+  const sinCosto = {
+    pedidos: lista.filter((f) => n0(f.lineas_sin_costo) > 0).length,
+    tm: lista.reduce((s, f) => s + n0(f.tm_sin_costo), 0),
+    venta: lista.reduce((s, f) => s + n0(f.venta_sin_costo), 0),
+  };
+  //  Un pedido sin ningún costo no tiene margen: no es «bajo», es desconocido.
+  const bajoMargen = lista.filter((f) => f.margen_con_costo_pct !== null && n0(f.margen_con_costo_pct) < margenMinimo);
 
   /** Agrupa por la dimensión elegida. */
   function agrupar(campo: 'cliente' | 'vendedor') {
-    const m = new Map<string, { venta: number; margen: number }>();
+    const m = new Map<string, { venta: number; ventaConCosto: number; margen: number; ventaSinCosto: number }>();
     for (const f of lista) {
       const k = (f[campo] as string) ?? 'Sin asignar';
-      const a = m.get(k) ?? { venta: 0, margen: 0 };
-      a.venta += Number(f.venta ?? 0);
-      a.margen += Number(f.margen ?? 0);
+      const a = m.get(k) ?? { venta: 0, ventaConCosto: 0, margen: 0, ventaSinCosto: 0 };
+      a.venta += n0(f.venta);
+      a.ventaConCosto += n0(f.venta_con_costo);
+      a.margen += n0(f.margen_con_costo);
+      a.ventaSinCosto += n0(f.venta_sin_costo);
       m.set(k, a);
     }
     return [...m.entries()]
-      .map(([nombre, v]) => ({ nombre, ...v, pct: v.venta > 0 ? (v.margen / v.venta) * 100 : 0 }))
+      .map(([nombre, v]) => ({ nombre, ...v, pct: v.ventaConCosto > 0 ? (v.margen / v.ventaConCosto) * 100 : null }))
       .sort((a, b) => b.venta - a.venta);
   }
 
@@ -108,36 +138,96 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
   const { data: mesesBruto } = eje === 'bruto'
     ? await supabase.from('v_margen_bruto_mensual').select('*').order('mes', { ascending: false })
     : { data: [] as Record<string, unknown>[] };
-  const claveBruto = (q.mes as string) || String(mesesBruto?.[0]?.clave ?? '');
-  const mesBruto = (mesesBruto ?? []).find((m) => m.clave === claveBruto);
-  const lineasBruto = eje === 'bruto' && claveBruto
-    ? await traerTodo<LineaBruto>((d, h) =>
-        supabase.from('v_margen_bruto_linea')
-          .select('pedido_id, numero_proforma, cliente, familia, kg, venta, costo, margen, sin_costo')
-          .eq('mes', `${claveBruto}-01`).order('packing_linea_id').range(d, h))
+  /*
+   * EL DESPLEGABLE «MES».
+   * Antes su primera opción decía «Todos», pero al elegirla la pantalla
+   * enseñaba el mes más reciente, no la suma de todos. Ahora cada opción dice
+   * lo que hace: la primera es «El más reciente (mes)», que es lo que se ve al
+   * entrar, y «Todos los meses» suma de verdad todo lo despachado.
+   */
+  const TODOS = 'todos';
+  const todosLosMeses = q.mes === TODOS;
+  const claveBruto = todosLosMeses ? '' : (q.mes as string) || String(mesesBruto?.[0]?.clave ?? '');
+  const mesDeVista = (mesesBruto ?? []).find((m) => m.clave === claveBruto);
+  const lineasBruto = eje === 'bruto' && (claveBruto || todosLosMeses)
+    ? await traerTodo<LineaBruto>((d, h) => {
+        let c = supabase.from('v_margen_bruto_linea')
+          .select('pedido_id, numero_proforma, cliente, familia, kg, venta, costo, margen, sin_costo');
+        if (!todosLosMeses) c = c.eq('mes', `${claveBruto}-01`);
+        return c.order('packing_linea_id').range(d, h);
+      })
     : [];
 
-  /** Suma las líneas del mes por una clave: pedido o familia. */
+  /** Suma las líneas del período por una clave: pedido o familia. */
   function sumarBruto(clave: (l: LineaBruto) => string) {
-    const m = new Map<string, { nombre: string; ref: LineaBruto; kg: number; venta: number; costo: number; margen: number; sinCosto: number }>();
+    const m = new Map<string, {
+      nombre: string; ref: LineaBruto; kg: number; venta: number; costo: number; margen: number;
+      sinCosto: number; kgSinCosto: number; ventaSinCosto: number; ventaConCosto: number;
+    }>();
     for (const l of lineasBruto) {
       const k = clave(l);
-      const a = m.get(k) ?? { nombre: k, ref: l, kg: 0, venta: 0, costo: 0, margen: 0, sinCosto: 0 };
+      const a = m.get(k) ?? { nombre: k, ref: l, kg: 0, venta: 0, costo: 0, margen: 0, sinCosto: 0, kgSinCosto: 0, ventaSinCosto: 0, ventaConCosto: 0 };
       a.kg += Number(l.kg); a.venta += Number(l.venta); a.costo += Number(l.costo);
-      a.margen += Number(l.margen); a.sinCosto += l.sin_costo ? 1 : 0;
+      //  La línea sin costo no aporta margen ni cuenta en la base del %.
+      if (l.sin_costo) { a.sinCosto += 1; a.kgSinCosto += Number(l.kg); a.ventaSinCosto += Number(l.venta); }
+      else { a.margen += Number(l.margen ?? 0); a.ventaConCosto += Number(l.venta); }
       m.set(k, a);
     }
     return [...m.values()]
-      .map((a) => ({ ...a, pct: a.venta > 0 ? (a.margen / a.venta) * 100 : 0 }))
+      .map((a) => ({ ...a, pct: a.ventaConCosto > 0 ? (a.margen / a.ventaConCosto) * 100 : null }))
       .sort((a, b) => b.venta - a.venta);
   }
   const brutoPedidos = sumarBruto((l) => String(l.pedido_id));
   const brutoFamilias = sumarBruto((l) => l.familia);
+
+  /* El resumen del período: el del mes sale de la vista; el de todos los
+     meses, de sumar las líneas (los pedidos se cuentan una vez aunque salgan
+     en dos meses). */
+  const mesBruto = todosLosMeses
+    ? (lineasBruto.length === 0 ? undefined : (() => {
+        const t = sumarBruto(() => 'todo')[0];
+        return {
+          venta: t.venta, costo: t.costo, margen: t.margen, kg: t.kg,
+          margen_pct: t.pct, pedidos: brutoPedidos.length, lineas_sin_costo: t.sinCosto,
+          kg_sin_costo: t.kgSinCosto, venta_sin_costo: t.ventaSinCosto, venta_con_costo: t.ventaConCosto,
+        } as Record<string, unknown>;
+      })())
+    : mesDeVista;
   const nombreMesBruto = (clave: string) => {
     const t = new Date(`${clave}-01T12:00:00`).toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
     return t.charAt(0).toUpperCase() + t.slice(1);
   };
-  const tonoPct = (v: number) => (v < 0 ? 'var(--critico)' : v < margenMinimo ? 'var(--atencion)' : 'var(--ok)');
+  const periodoBruto = todosLosMeses ? 'todos los meses' : claveBruto ? nombreMesBruto(claveBruto).toLowerCase() : '';
+  const brutoSinCosto = {
+    lineas: Number(mesBruto?.lineas_sin_costo ?? 0),
+    kg: Number(mesBruto?.kg_sin_costo ?? 0),
+    venta: Number(mesBruto?.venta_sin_costo ?? 0),
+    ventaConCosto: Number(mesBruto?.venta_con_costo ?? 0),
+  };
+  /** El % de margen, o una raya si no hay ninguna venta con costo. */
+  const textoPct = (v: number | null) => (v === null ? '—' : `${v.toFixed(1)} %`);
+
+  /** Celdas de margen y % de un pedido o familia del margen bruto. */
+  type Suma = { margen: number; pct: number | null; ventaConCosto: number; kgSinCosto: number };
+  const celdaMargen = (a: Suma) => (a.ventaConCosto > 0
+    ? <strong style={{ color: a.margen < 0 ? 'var(--critico)' : undefined }}>{dinero(a.margen, 'USD', 0)}</strong>
+    : <Etiqueta texto="Sin costo" tono="atencion" />);
+  const celdaPct = (a: Suma) => (
+    <>
+      <strong style={{ color: tonoPct(a.pct) }}>{textoPct(a.pct)}</strong>
+      {a.kgSinCosto > 0 && a.ventaConCosto > 0 && (
+        <><br /><span style={{ color: 'var(--atencion)', fontSize: '.68rem' }}>
+          {num(a.kgSinCosto / 1000, 1)} TM sin costo, fuera</span></>
+      )}
+    </>
+  );
+  const tonoPct = (v: number | null) =>
+    v === null ? 'var(--tinta-3)' : v < 0 ? 'var(--critico)' : v < margenMinimo ? 'var(--atencion)' : 'var(--ok)';
+  /* La página de la tabla de pedidos (Por pedido y Margen bajo). */
+  const filasPedidos = eje === 'bajo' ? bajoMargen : lista;
+  const pagina = Math.min(Math.max(1, Math.ceil(filasPedidos.length / POR_PAGINA)),
+    Math.max(1, Math.floor(Number(q.pagina ?? 1)) || 1));
+  const pedidosPagina = filasPedidos.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA);
 
   return (
     <>
@@ -150,11 +240,32 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
       <RejillaKpi>
         <Kpi etiqueta="Venta despachada" valor={dinero(venta, 'USD', 0)} tono="marca" href="/finanzas/rentabilidad?eje=pedido" />
         <Kpi etiqueta="Costo" valor={dinero(costo, 'USD', 0)} href="/finanzas/rentabilidad?eje=pedido" />
-        <Kpi etiqueta="Margen" valor={dinero(margen, 'USD', 0)} tono="ok" href="/finanzas/rentabilidad?eje=pedido" />
-        <Kpi etiqueta="Margen %" valor={pct(margenPct)} tono={margenPct < margenMinimo ? 'critico' : 'ok'} href="/finanzas/rentabilidad?eje=pedido" />
+        <Kpi etiqueta="Margen" valor={dinero(margen, 'USD', 0)} tono="ok"
+             nota={sinCosto.venta > 0 ? 'solo de las líneas con costo' : undefined}
+             href="/finanzas/rentabilidad?eje=pedido" />
+        <Kpi etiqueta="Margen %" valor={margenPct === null ? '—' : pct(margenPct)}
+             tono={margenPct === null ? 'neutro' : margenPct < margenMinimo ? 'critico' : 'ok'}
+             nota={sinCosto.venta > 0 ? `sobre ${dinero(ventaConCosto, 'USD', 0)} con costo` : undefined}
+             href="/finanzas/rentabilidad?eje=pedido" />
         <Kpi etiqueta="Pedidos con margen bajo" valor={num(bajoMargen.length)}
              tono={bajoMargen.length > 0 ? 'atencion' : 'ok'} href="/finanzas/rentabilidad?eje=bajo" />
+        <Kpi etiqueta="Venta sin costo" valor={dinero(sinCosto.venta, 'USD', 0)}
+             tono={sinCosto.venta > 0 ? 'atencion' : 'neutro'}
+             nota={sinCosto.venta > 0 ? `${num(sinCosto.tm, 1)} TM en ${num(sinCosto.pedidos)} pedidos · fuera del margen` : 'todas las líneas tienen costo'}
+             href="/finanzas/rentabilidad?eje=pedido" />
       </RejillaKpi>
+      )}
+
+      {eje !== 'bruto' && eje !== 'contribucion' && sinCosto.venta > 0 && (
+        <div className="ficha-aviso ficha-aviso-atencion" role="status" data-aviso="sin-costo">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>{num(sinCosto.tm, 1)} TM ({dinero(sinCosto.venta, 'USD', 0)} de venta) no tienen costo estimado</strong>{' '}
+            en su línea de pedido. Quedan fuera del margen y de su porcentaje: contarlas con costo
+            cero les daría un 100 % de margen que no existe. El margen se mide sobre{' '}
+            {dinero(ventaConCosto, 'USD', 0)} de venta con costo.
+          </span>
+        </div>
       )}
 
       <nav className="pestanas no-imprimir" aria-label="Ejes de análisis">
@@ -174,7 +285,8 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
               despachados por el precio de su pedido, menos esos kilos por el costo con el que
               ingresó cada pallet. El costo lo fija Gerencia en{' '}
               <Link href="/finanzas/costos">Costos de producción</Link> y cada pallet conserva el
-              que regía el día en que entró.
+              que regía el día en que entró. Un pallet sin costo cargado no tiene margen: se deja
+              fuera del margen y de su porcentaje, y se avisa aparte.
             </span>
           </div>
 
@@ -182,7 +294,13 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
             <Filtros
               campos={[{
                 tipo: 'select', clave: 'mes', etiqueta: 'Mes',
-                opciones: (mesesBruto ?? []).map((m) => ({ valor: String(m.clave), texto: nombreMesBruto(String(m.clave)) })),
+                textoTodos: mesesBruto?.[0]
+                  ? `El más reciente (${nombreMesBruto(String(mesesBruto[0].clave)).toLowerCase()})`
+                  : 'El más reciente',
+                opciones: [
+                  { valor: TODOS, texto: 'Todos los meses' },
+                  ...(mesesBruto ?? []).map((m) => ({ valor: String(m.clave), texto: nombreMesBruto(String(m.clave)) })),
+                ],
               }]}
             />
           </Panel>
@@ -191,23 +309,48 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
             <Vacio titulo="Sin despachos" mensaje="No hay despachos en ese mes, así que no hay margen que medir." />
           ) : (
             <>
+              {brutoSinCosto.lineas > 0 && (
+                <div className="ficha-aviso ficha-aviso-atencion" role="status" data-aviso="sin-costo">
+                  <Icono nombre="alerta" tamano={17} />
+                  <span>
+                    <strong>
+                      {num(brutoSinCosto.lineas)} línea{brutoSinCosto.lineas === 1 ? '' : 's'} despachada{brutoSinCosto.lineas === 1 ? '' : 's'} sin
+                      costo cargado: {num(brutoSinCosto.kg / 1000, 1)} TM y {dinero(brutoSinCosto.venta, 'USD', 0)} de venta
+                    </strong>{' '}
+                    en {periodoBruto}. Quedan fuera del margen bruto y de su porcentaje (contarlas con
+                    costo cero les daría un 100 % de margen que no existe). El margen se mide sobre{' '}
+                    {dinero(brutoSinCosto.ventaConCosto, 'USD', 0)} de venta con costo.{' '}
+                    <Link href="/finanzas/costos">Cargar los costos que faltan</Link>.
+                  </span>
+                </div>
+              )}
+
               <RejillaKpi>
                 <Kpi etiqueta="Venta" valor={dinero(Number(mesBruto.venta), 'USD', 0)} tono="marca"
                      nota={`${num(Number(mesBruto.kg) / 1000, 1)} TM despachadas`} href="#bruto-pedidos" />
                 <Kpi etiqueta="Costo" valor={dinero(Number(mesBruto.costo), 'USD', 0)}
                      nota="costo de ingreso de los pallets" href="#bruto-familias" />
-                <Kpi etiqueta="Margen bruto" valor={dinero(Number(mesBruto.margen), 'USD', 0)}
-                     tono={Number(mesBruto.margen) >= 0 ? 'ok' : 'critico'} href="#bruto-pedidos" />
-                <Kpi etiqueta="Margen bruto %" valor={pct(Number(mesBruto.margen_pct ?? 0))}
-                     tono={Number(mesBruto.margen_pct ?? 0) < 0 ? 'critico' : Number(mesBruto.margen_pct ?? 0) < margenMinimo ? 'atencion' : 'ok'}
-                     nota={`el mínimo aceptable es ${margenMinimo} %`} href="#bruto-evolucion" />
+                <Kpi etiqueta="Margen bruto" valor={dinero(Number(mesBruto.margen ?? 0), 'USD', 0)}
+                     tono={Number(mesBruto.margen ?? 0) >= 0 ? 'ok' : 'critico'}
+                     nota={brutoSinCosto.lineas > 0 ? 'solo de las líneas con costo' : undefined}
+                     href="#bruto-pedidos" />
+                <Kpi etiqueta="Margen bruto %"
+                     valor={mesBruto.margen_pct === null || mesBruto.margen_pct === undefined ? '—' : pct(Number(mesBruto.margen_pct))}
+                     tono={mesBruto.margen_pct === null || mesBruto.margen_pct === undefined ? 'neutro'
+                       : Number(mesBruto.margen_pct) < 0 ? 'critico' : Number(mesBruto.margen_pct) < margenMinimo ? 'atencion' : 'ok'}
+                     nota={brutoSinCosto.lineas > 0
+                       ? `sobre ${dinero(brutoSinCosto.ventaConCosto, 'USD', 0)} con costo · mínimo ${margenMinimo} %`
+                       : `el mínimo aceptable es ${margenMinimo} %`}
+                     href="#bruto-evolucion" />
                 <Kpi etiqueta="Pedidos" valor={num(Number(mesBruto.pedidos))}
-                     nota={Number(mesBruto.lineas_sin_costo) > 0 ? `${num(Number(mesBruto.lineas_sin_costo))} líneas sin costo` : 'con salida en el mes'}
-                     tono={Number(mesBruto.lineas_sin_costo) > 0 ? 'atencion' : 'neutro'} href="#bruto-pedidos" />
+                     nota={brutoSinCosto.lineas > 0
+                       ? `${num(brutoSinCosto.lineas)} líneas sin costo · ${num(brutoSinCosto.kg / 1000, 1)} TM`
+                       : todosLosMeses ? 'con salida en algún mes' : 'con salida en el mes'}
+                     tono={brutoSinCosto.lineas > 0 ? 'atencion' : 'neutro'} href="#bruto-pedidos" />
               </RejillaKpi>
 
               <div id="bruto-pedidos">
-                <Panel titulo={`${num(brutoPedidos.length)} pedidos con salida en ${nombreMesBruto(claveBruto).toLowerCase()}`} className="mb-espacio">
+                <Panel titulo={`${num(brutoPedidos.length)} pedidos con salida en ${periodoBruto}`} className="mb-espacio">
                   <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
                     <table className="datos" data-cuadro="bruto-pedidos">
                       <thead>
@@ -229,8 +372,8 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
                             <td className="num">{num(a.kg / 1000, 1)}</td>
                             <td className="num">{dinero(a.venta, 'USD', 0)}</td>
                             <td className="num">{dinero(a.costo, 'USD', 0)}</td>
-                            <td className="num"><strong style={{ color: a.margen < 0 ? 'var(--critico)' : undefined }}>{dinero(a.margen, 'USD', 0)}</strong></td>
-                            <td className="num"><strong style={{ color: tonoPct(a.pct) }}>{a.pct.toFixed(1)} %</strong></td>
+                            <td className="num">{celdaMargen(a)}</td>
+                            <td className="num">{celdaPct(a)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -256,8 +399,8 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
                             <td className="num">{num(a.kg / 1000, 1)}</td>
                             <td className="num">{dinero(a.venta, 'USD', 0)}</td>
                             <td className="num">{dinero(a.costo, 'USD', 0)}</td>
-                            <td className="num"><strong style={{ color: a.margen < 0 ? 'var(--critico)' : undefined }}>{dinero(a.margen, 'USD', 0)}</strong></td>
-                            <td className="num"><strong style={{ color: tonoPct(a.pct) }}>{a.pct.toFixed(1)} %</strong></td>
+                            <td className="num">{celdaMargen(a)}</td>
+                            <td className="num">{celdaPct(a)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -277,6 +420,7 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
                       <th>Mes</th><th className="num">Pedidos</th><th className="num">TM</th>
                       <th className="num">Venta</th><th className="num">Costo</th>
                       <th className="num">Margen bruto</th><th className="num">%</th>
+                      <th className="num">Sin costo</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -291,8 +435,17 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
                         <td className="num">{num(Number(m.kg) / 1000, 1)}</td>
                         <td className="num">{dinero(Number(m.venta), 'USD', 0)}</td>
                         <td className="num">{dinero(Number(m.costo), 'USD', 0)}</td>
-                        <td className="num">{dinero(Number(m.margen), 'USD', 0)}</td>
-                        <td className="num"><strong style={{ color: tonoPct(Number(m.margen_pct ?? 0)) }}>{pct(Number(m.margen_pct ?? 0))}</strong></td>
+                        <td className="num">{dinero(Number(m.margen ?? 0), 'USD', 0)}</td>
+                        <td className="num">
+                          <strong style={{ color: tonoPct(m.margen_pct === null ? null : Number(m.margen_pct)) }}>
+                            {m.margen_pct === null ? '—' : pct(Number(m.margen_pct))}
+                          </strong>
+                        </td>
+                        <td className="num" style={{ color: Number(m.kg_sin_costo) > 0 ? 'var(--atencion)' : 'var(--tinta-3)' }}>
+                          {Number(m.kg_sin_costo) > 0
+                            ? `${num(Number(m.kg_sin_costo) / 1000, 1)} TM · ${dinero(Number(m.venta_sin_costo), 'USD', 0)}`
+                            : '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -453,7 +606,7 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
               datos={agrupado.slice(0, 12).map((a) => ({
                 etiqueta: a.nombre.length > 26 ? a.nombre.slice(0, 25) + '…' : a.nombre,
                 valor: a.venta,
-                nota: `margen ${a.pct.toFixed(1)} %`,
+                nota: a.pct === null ? 'sin costo' : `margen ${a.pct.toFixed(1)} %`,
               }))}
               formato="dolares"
               horizontal
@@ -465,18 +618,24 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
               <table className="datos">
                 <thead>
                   <tr><th>{eje === 'cliente' ? 'Cliente' : 'Vendedor'}</th>
-                      <th className="num">Venta</th><th className="num">Margen</th><th className="num">Margen %</th></tr>
+                      <th className="num">Venta</th><th className="num">Margen</th><th className="num">Margen %</th>
+                      <th className="num">Venta sin costo</th></tr>
                 </thead>
                 <tbody>
                   {agrupado.map((a) => (
                     <tr key={a.nombre}>
                       <td>{a.nombre}</td>
                       <td className="num">{dinero(a.venta, 'USD', 0)}</td>
-                      <td className="num">{dinero(a.margen, 'USD', 0)}</td>
                       <td className="num">
-                        <strong style={{ color: a.pct < margenMinimo ? 'var(--critico)' : 'var(--ok)' }}>
-                          {pct(a.pct)}
+                        {a.pct === null ? <Etiqueta texto="Sin costo" tono="atencion" /> : dinero(a.margen, 'USD', 0)}
+                      </td>
+                      <td className="num">
+                        <strong style={{ color: a.pct === null ? 'var(--tinta-3)' : a.pct < margenMinimo ? 'var(--critico)' : 'var(--ok)' }}>
+                          {a.pct === null ? '—' : pct(a.pct)}
                         </strong>
+                      </td>
+                      <td className="num" style={{ color: a.ventaSinCosto > 0 ? 'var(--atencion)' : 'var(--tinta-3)' }}>
+                        {a.ventaSinCosto > 0 ? dinero(a.ventaSinCosto, 'USD', 0) : '—'}
                       </td>
                     </tr>
                   ))}
@@ -489,11 +648,12 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
 
       {(eje === 'pedido' || eje === 'bajo') && (
         <Panel titulo={eje === 'bajo' ? `${bajoMargen.length} pedidos por debajo del margen mínimo` : `${lista.length} pedidos despachados`}>
-          {(eje === 'bajo' ? bajoMargen : lista).length === 0 ? (
+          {filasPedidos.length === 0 ? (
             <Vacio titulo="Sin resultados" mensaje="No hay pedidos en esta categoría." />
           ) : (
+            <>
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-              <table className="datos">
+              <table className="datos" data-cuadro="pedidos">
                 <thead>
                   <tr>
                     <th>Proforma</th><th>Cliente</th><th className="num">Fecha</th><th className="num">TM</th>
@@ -502,7 +662,7 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
                   </tr>
                 </thead>
                 <tbody>
-                  {(eje === 'bajo' ? bajoMargen : lista).slice(0, 200).map((f) => (
+                  {pedidosPagina.map((f) => (
                     <tr key={f.pedido_id as number}>
                       <td>
                         <Link href={`/ventas/pedidos/${f.pedido_id}?t=rentabilidad`} className="enlace-dato">
@@ -513,24 +673,41 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
                         {String(f.cliente).length > 26 ? String(f.cliente).slice(0, 25) + '…' : String(f.cliente)}
                       </td>
                       <td className="num">{fecha(f.fecha_solicitada as string)}</td>
-                      <td className="num">{num(f.tm, 1)}</td>
+                      <td className="num">{num(f.tm as number, 1)}</td>
                       {/* La vista devuelve estas tres cifras YA en dólares:
                           es la única forma de restar la venta contra un costo
                           que siempre se registra en dólares. */}
                       <td className="num">{dinero(f.venta as number, 'USD', 0)}</td>
                       <td className="num">{dinero(f.costo_estimado as number, 'USD', 0)}</td>
-                      <td className="num">{dinero(f.margen as number, 'USD', 0)}</td>
-                      <td className="num">
-                        <strong style={{ color: Number(f.margen_pct) < margenMinimo ? 'var(--critico)' : 'var(--ok)' }}>
-                          {pct(f.margen_pct)}
-                        </strong>
-                        {Number(f.margen_pct) < margenMinimo && <> <Etiqueta texto="Bajo" tono="critico" /></>}
-                      </td>
+                      {/* El margen, SOLO de las líneas con costo (071). Un pedido
+                          sin ningún costo no tiene margen: ni bueno ni bajo. */}
+                      {f.margen_con_costo_pct === null ? (
+                        <>
+                          <td className="num"><Etiqueta texto="Sin costo" tono="atencion" /></td>
+                          <td className="num" style={{ color: 'var(--tinta-3)' }}>—</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="num">{dinero(f.margen_con_costo as number, 'USD', 0)}</td>
+                          <td className="num">
+                            <strong style={{ color: n0(f.margen_con_costo_pct) < margenMinimo ? 'var(--critico)' : 'var(--ok)' }}>
+                              {pct(f.margen_con_costo_pct as number)}
+                            </strong>
+                            {n0(f.margen_con_costo_pct) < margenMinimo && <> <Etiqueta texto="Bajo" tono="critico" /></>}
+                            {n0(f.tm_sin_costo) > 0 && (
+                              <><br /><span style={{ color: 'var(--atencion)', fontSize: '.68rem' }}>
+                                {num(n0(f.tm_sin_costo), 1)} TM sin costo, fuera</span></>
+                            )}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <Paginacion pagina={pagina} porPagina={POR_PAGINA} total={filasPedidos.length} />
+            </>
           )}
         </Panel>
       )}

@@ -93,7 +93,7 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
       // deduce los tipos de la consulta leyendo ese texto en tiempo de
       // compilación, y una suma de cadenas le impide hacerlo.
       .select(
-        'id, numero, fecha_programada, estado, booking, naviera, almacenes(nombre), destinos(puerto, pais), packing_lists(contenedor, packing_lineas(bultos, peso_neto_kg)), embarque_pedidos(pedidos(id, numero_proforma, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, clientes(razon_social), pedido_lineas(cantidad_tm, sku_presentaciones(skus(codigo, corte)))))'
+        'id, numero, fecha_programada, estado, booking, naviera, observaciones, almacenes(nombre), destinos(puerto, pais), packing_lists(contenedor, packing_lineas(bultos, peso_neto_kg)), embarque_pedidos(pedidos(id, numero_proforma, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, clientes(razon_social), pedido_lineas(cantidad_tm, sku_presentaciones(skus(codigo, corte)))))'
       )
       .gte('fecha_programada', desde)
       .lte('fecha_programada', hasta)
@@ -243,6 +243,9 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
       // edita la restricción.
       pedidoId: pedidos.length === 1 ? (Number(pedidos[0]?.id) || null) : null,
       notaComercial: notas,
+      // Las observaciones del propio embarque (las de su ficha): coordinaciones,
+      // cambios de booking… La guía avisaba que el calendario no las mostraba.
+      observaciones: ((e.observaciones as string) ?? '').trim() || null,
       // Solo se compara con la carga REAL: contrastar un tope contra una
       // previsión daría avisos que no significan nada.
       excedeTope: hayPacking && topeNeto !== null ? kg > topeNeto : false,
@@ -330,8 +333,8 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
         El tope de bodegas simultáneas y el recargo de domingo se cambian en{' '}
         <Link href="/configuracion?t=parametros">Configuración → Parámetros</Link>: el calendario
         recalcula los avisos con el valor nuevo, sin tocar el programa. La carga de cada día sale de
-        los packing lists ya cargados; un embarque todavía sin packing aparece con cero toneladas,
-        que es la verdad: aún no se le ha asignado producto.
+        los packing lists ya cargados; un embarque todavía sin packing muestra lo comprometido en sus
+        pedidos, marcado con un asterisco, porque todavía es una previsión.
       </p>
     </>
   );

@@ -41,7 +41,12 @@ const RANGOS = [
   { valor: '12-18', texto: 'Entre 12 y 18 meses' },
   { valor: '18-24', texto: 'Entre 18 y 24 meses' },
   { valor: '>24', texto: 'Más de 24 meses' },
+  /* Los dos últimos juntos: es lo que suma la tarjeta «+18 meses» (069). */
+  { valor: '18+', texto: '18 meses o más' },
 ];
+
+/** Los rangos de la vista que caen en «18 meses o más». */
+const VIEJOS = ['18-24', '>24'];
 
 export default async function PaginaValorizado(props: PageProps<'/almacenes/valorizado'>) {
   const usuario = await obtenerUsuarioActual();
@@ -70,7 +75,8 @@ export default async function PaginaValorizado(props: PageProps<'/almacenes/valo
     if (desde) c = c.gte('fecha_produccion', desde);
     if (hasta) c = c.lte('fecha_produccion', hasta);
     if (almacen) c = c.eq('almacen_id', Number(almacen));
-    if (rango) c = c.eq('rango', rango);
+    if (rango === '18+') c = c.in('rango', VIEJOS);
+    else if (rango) c = c.eq('rango', rango);
     if (especie) c = c.eq('especie', especie);
     if (buscar) {
       const limpio = buscar.replace(/[%,()]/g, ' ');
@@ -113,8 +119,25 @@ export default async function PaginaValorizado(props: PageProps<'/almacenes/valo
 
   // Capital retenido en producto viejo: la cifra que despierta a un gerente.
   const valorViejo = total
-    .filter((r) => r.rango === '18-24' || r.rango === '>24')
+    .filter((r) => VIEJOS.includes(r.rango))
     .reduce((s, r) => s + Number(r.valor ?? 0), 0);
+
+  /*
+   * Adónde lleva la tarjeta: al MISMO conjunto que suma. Antes la cifra sumaba
+   * 18-24 y >24 pero el clic filtraba solo >24, y el detalle no cuadraba con
+   * la tarjeta. Se conservan los demás filtros (la cifra también los tiene) y,
+   * si ya se está mirando uno de los dos rangos viejos, se queda ese.
+   */
+  const enlaceViejo = (() => {
+    const p = new URLSearchParams();
+    if (desde) p.set('desde', desde);
+    if (hasta) p.set('hasta', hasta);
+    if (almacen) p.set('almacen', almacen);
+    if (especie) p.set('especie', especie);
+    if (buscar) p.set('buscar', buscar);
+    p.set('rango', VIEJOS.includes(rango) ? rango : '18+');
+    return `/almacenes/valorizado?${p.toString()}#detalle`;
+  })();
 
   /* Valor por almacén, calculado sobre el universo FILTRADO, no sobre todo. */
   const porAlmacen = [...total.reduce((mapa, r) => {
@@ -151,7 +174,7 @@ export default async function PaginaValorizado(props: PageProps<'/almacenes/valo
           valor={dinero(valorViejo, 'USD', 0)}
           tono={valorViejo > 0 ? 'critico' : 'ok'}
           nota={valor > 0 ? `${num((valorViejo / valor) * 100, 1)} % del total` : 'Sin producto viejo'}
-          href="/almacenes/valorizado?rango=%3E24"
+          href={valorViejo > 0 ? enlaceViejo : undefined}
         />
       </RejillaKpi>
 

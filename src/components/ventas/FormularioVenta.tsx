@@ -97,6 +97,8 @@ type LineaUI = {
   descuento_pct: number;
   disponible_kg: number;
   consultando: boolean;
+  /** Al editar: hasta qué % ya estaba autorizado el descuento de esta línea. */
+  descuento_autorizado_pct?: number | null;
 };
 
 /**
@@ -137,6 +139,12 @@ export type DatosEdicion = {
     precio_lista_tm: number;
     precio_tm: number;
     descuento_pct: number;
+    /**
+     * Hasta qué % alguien de Gerencia u Operaciones ya autorizó el descuento.
+     * El servidor respeta esa autorización si no se sube el descuento, así
+     * que la marca «Requiere autorización» no debe asustar en esa línea.
+     */
+    descuento_autorizado_pct?: number | null;
   }[];
 };
 
@@ -190,6 +198,7 @@ export function FormularioVenta({
   puedeAutorizarDescuento,
   edicion,
   plazos = PLAZO_DIAS_DEFECTO,
+  clienteInicial,
 }: {
   modo: Modo;
   clientes: (Opcion & { pais: string; moneda: string; bloqueado: boolean; forma_pago?: FormaPago | null; adelanto_pct?: number | null })[];
@@ -208,6 +217,8 @@ export function FormularioVenta({
   edicion?: DatosEdicion;
   /** Días de plazo de cada prioridad, de Configuración (punto 5). */
   plazos?: Record<Prioridad, number>;
+  /** Cliente ya elegido al llegar desde su ficha («Cotizar» / «Nuevo pedido» con ?cliente=). */
+  clienteInicial?: number;
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
@@ -220,14 +231,45 @@ export function FormularioVenta({
      valor por defecto si estamos creando. Es el único sitio donde el modo
      edición cambia algo: de ahí en adelante el formulario se comporta igual.
      ---------------------------------------------------------------------- */
-  const [clienteId, setClienteId] = useState<number | ''>(edicion?.cliente_id ?? '');
+  /*
+   * Lo que se propone al elegir un cliente: su contacto principal y las
+   * cuentas que se imprimen (la principal en la moneda del documento, y la de
+   * detracción solo si el cliente es peruano —a un importador de China la
+   * detracción no le dice nada—). Sirve para el desplegable y para el
+   * cliente que llega elegido desde su ficha.
+   */
+  const contactoPrincipalDe = (id: number): ContactoDocumento => {
+    const principal = contactos.find((c) => c.cliente_id === id && c.principal);
+    return principal
+      ? { id: principal.id, nombre: principal.nombre, cargo: principal.cargo, telefono: principal.telefono, email: principal.email }
+      : { id: null, nombre: '', cargo: '', telefono: '', email: '' };
+  };
+  const cuentasPropuestasPara = (id: number, mon: string): number[] => {
+    const esPeruano = clientes.find((c) => c.id === id)?.pais === 'Perú';
+    return cuentas
+      .filter((c) => (c.tipo === 'detraccion' ? esPeruano : c.principal && c.moneda === mon))
+      .map((c) => c.id);
+  };
+
+  /*
+   * Cliente que llega elegido desde su ficha («Cotizar» / «Nuevo pedido» con
+   * ?cliente=). Antes ese parámetro se ignoraba. Solo al crear, y solo si se
+   * le puede vender (un cliente bloqueado no se propone).
+   */
+  const deEntrada = !edicion && clienteInicial
+    ? clientes.find((c) => c.id === clienteInicial && !c.bloqueado) ?? null
+    : null;
+
+  const [clienteId, setClienteId] = useState<number | ''>(edicion?.cliente_id ?? deEntrada?.id ?? '');
   const [vendedorId, setVendedorId] = useState<number | ''>(edicion?.vendedor_id ?? '');
   const [destinoId, setDestinoId] = useState<number | ''>(edicion?.destino_id ?? '');
   const [listaId, setListaId] = useState<number | ''>(edicion?.lista_id ?? listas[0]?.id ?? '');
-  const [moneda, setMoneda] = useState<'USD' | 'PEN'>(edicion?.moneda ?? 'USD');
+  const [moneda, setMoneda] = useState<'USD' | 'PEN'>(
+    edicion?.moneda ?? (deEntrada?.moneda as 'USD' | 'PEN' | undefined) ?? 'USD'
+  );
   const [tipoCambio, setTipoCambio] = useState(edicion?.tipo_cambio ?? tipoCambioDefecto);
   const [incoterm, setIncoterm] = useState<'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP'>(
-    edicion?.incoterm ?? 'FOB'
+    edicion?.incoterm ?? (deEntrada?.moneda === 'PEN' ? 'EXW' : 'FOB')
   );
   const [observaciones, setObservaciones] = useState(edicion?.observaciones ?? '');
 
@@ -238,9 +280,11 @@ export function FormularioVenta({
      contacto y sin cuentas. Por eso no aparecen en ninguna validación.
      ---------------------------------------------------------------------- */
   const [contacto, setContacto] = useState<ContactoDocumento>(
-    edicion?.contacto ?? { id: null, nombre: '', cargo: '', telefono: '', email: '' }
+    edicion?.contacto ?? (deEntrada ? contactoPrincipalDe(deEntrada.id) : { id: null, nombre: '', cargo: '', telefono: '', email: '' })
   );
-  const [cuentasElegidas, setCuentasElegidas] = useState<number[]>(edicion?.cuentas ?? []);
+  const [cuentasElegidas, setCuentasElegidas] = useState<number[]>(
+    edicion?.cuentas ?? (deEntrada ? cuentasPropuestasPara(deEntrada.id, deEntrada.moneda) : [])
+  );
 
   /* ---- Solo cotización ---- */
   const [validez, setValidez] = useState(edicion?.validez_dias ?? validezDefecto);
@@ -281,8 +325,10 @@ export function FormularioVenta({
 
   /* ---- Entrega y pago (puntos 4, 5 y 6) ---- */
   const [fechaTentativa, setFechaTentativa] = useState(edicion?.fecha_tentativa_despacho ?? '');
-  const [formaPago, setFormaPago] = useState<FormaPago | ''>(edicion?.forma_pago ?? '');
-  const [adelantoPct, setAdelantoPct] = useState(edicion?.adelanto_pct ?? 0);
+  const [formaPago, setFormaPago] = useState<FormaPago | ''>(edicion?.forma_pago ?? deEntrada?.forma_pago ?? '');
+  const [adelantoPct, setAdelantoPct] = useState(
+    edicion?.adelanto_pct ?? (deEntrada?.forma_pago ? Number(deEntrada.adelanto_pct ?? 0) : 0)
+  );
   const [abonado, setAbonado] = useState(
     edicion?.adelanto_abonado === null || edicion?.adelanto_abonado === undefined ? '' : String(edicion.adelanto_abonado)
   );
@@ -361,34 +407,8 @@ export function FormularioVenta({
   function proponerParaCliente(id: number) {
     if (esEdicion) return;
 
-    const principal = contactos.find((c) => c.cliente_id === id && c.principal);
-    setContacto(
-      principal
-        ? {
-            id: principal.id,
-            nombre: principal.nombre,
-            cargo: principal.cargo,
-            telefono: principal.telefono,
-            email: principal.email,
-          }
-        : { id: null, nombre: '', cargo: '', telefono: '', email: '' }
-    );
-
-    /*
-     * Las cuentas que se proponen: la principal en la moneda del documento, y
-     * la de detracción solo si el cliente es peruano —a un importador de
-     * China la detracción no le dice nada—.
-     */
-    const esPeruano = clientes.find((c) => c.id === id)?.pais === 'Perú';
-    setCuentasElegidas(
-      cuentas
-        .filter((c) =>
-          c.tipo === 'detraccion'
-            ? esPeruano
-            : c.principal && c.moneda === moneda
-        )
-        .map((c) => c.id)
-    );
+    setContacto(contactoPrincipalDe(id));
+    setCuentasElegidas(cuentasPropuestasPara(id, moneda));
   }
 
   /** Marca o desmarca una cuenta de la lista que irá impresa. */
@@ -619,7 +639,7 @@ export function FormularioVenta({
     // Se descartan las tres ayudas de pantalla —la clave de React, el
     // disponible y el indicador de consulta en curso— porque son del
     // formulario, no del documento que se guarda.
-    const lineasLimpias = lineas.map(({ clave: _c, disponible_kg: _d, consultando: _q, ...l }) => l);
+    const lineasLimpias = lineas.map(({ clave: _c, disponible_kg: _d, consultando: _q, descuento_autorizado_pct: _a, ...l }) => l);
 
     iniciar(async () => {
       const r = esEdicion
@@ -656,6 +676,10 @@ export function FormularioVenta({
             contacto,
             cuentas: cuentasElegidas,
             lineas: lineasLimpias,
+            //  De dónde salió el tipo de cambio, igual que en la cotización.
+            tipo_cambio_fecha: condiciones.tipo_cambio_fecha,
+            tipo_cambio_fuente: condiciones.tipo_cambio_fuente,
+            tipo_cambio_clase: condiciones.tipo_cambio_clase,
           })
         : await crearCotizacion({
             cliente_id: Number(clienteId),
@@ -701,6 +725,37 @@ export function FormularioVenta({
     ? 'Registrar pedido'
     : 'Guardar cotización';
 
+  /*
+   * Elegir el cliente propone su moneda, incoterm y forma de pago, y rehace
+   * los precios. Es la misma función para el desplegable y para el cliente
+   * que llega elegido desde su ficha (antes ese ?cliente= se ignoraba).
+   */
+  function elegirCliente(id: number | '') {
+    if (id) proponerParaCliente(id);
+    setClienteId(id);
+    const c = clientes.find((x) => x.id === id);
+    if (c) {
+      setMoneda(c.moneda as 'USD' | 'PEN');
+      setIncoterm(c.moneda === 'PEN' ? 'EXW' : 'FOB');
+      /*
+       * La forma de pago habitual del cliente (lista de Comex): se
+       * propone al crear, no al reabrir una cotización ya hecha.
+       */
+      if (!esEdicion && c.forma_pago) {
+        setFormaPago(c.forma_pago);
+        setAdelantoPct(Number(c.adelanto_pct ?? 0));
+      }
+    }
+    // Los precios dependen del cliente: hay que rehacerlos
+    if (lineas.length) {
+      setLineas([]);
+      setMensaje({
+        ok: false,
+        texto: 'Se limpiaron las líneas: los precios dependen del cliente.',
+      });
+    }
+  }
+
   return (
     <div className="form-venta">
       {/* ══════ CABECERA ══════ */}
@@ -716,32 +771,7 @@ export function FormularioVenta({
             <select
               className="campo"
               value={clienteId}
-              onChange={(e) => {
-                const id = e.target.value ? Number(e.target.value) : '';
-                if (id) proponerParaCliente(id);
-                setClienteId(id);
-                const c = clientes.find((x) => x.id === id);
-                if (c) {
-                  setMoneda(c.moneda as 'USD' | 'PEN');
-                  setIncoterm(c.moneda === 'PEN' ? 'EXW' : 'FOB');
-                  /*
-                   * La forma de pago habitual del cliente (lista de Comex): se
-                   * propone al crear, no al reabrir una cotización ya hecha.
-                   */
-                  if (!esEdicion && c.forma_pago) {
-                    setFormaPago(c.forma_pago);
-                    setAdelantoPct(Number(c.adelanto_pct ?? 0));
-                  }
-                }
-                // Los precios dependen del cliente: hay que rehacerlos
-                if (lineas.length) {
-                  setLineas([]);
-                  setMensaje({
-                    ok: false,
-                    texto: 'Se limpiaron las líneas: los precios dependen del cliente.',
-                  });
-                }
-              }}
+              onChange={(e) => elegirCliente(e.target.value ? Number(e.target.value) : '')}
             >
               <option value="">— Elija un cliente —</option>
               {clientes.map((c) => (
@@ -1339,7 +1369,9 @@ export function FormularioVenta({
                   const u = unidades.find((x) => x.id === l.sku_presentacion_id);
                   const importe = l.cantidad_tm * l.precio_tm * (1 - l.descuento_pct / 100);
                   const excede = l.cantidad_tm * 1000 > l.disponible_kg;
-                  const descAlto = l.descuento_pct > topeDescuento;
+                  //  Por encima del tope, salvo que ya estuviera autorizado hasta ese % (al editar).
+                  const descAlto = l.descuento_pct > topeDescuento
+                    && !(l.descuento_autorizado_pct != null && l.descuento_pct <= l.descuento_autorizado_pct);
                   return (
                     <tr key={l.clave} data-alerta={excede || descAlto ? 'si' : 'no'}>
                       <td>

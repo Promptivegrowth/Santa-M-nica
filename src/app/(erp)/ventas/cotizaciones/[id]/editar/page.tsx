@@ -5,10 +5,15 @@
  *  Corregir una oferta que todavía no cerró: cambió el precio acordado, el
  *  cliente pidió más volumen, se equivocaron de presentación.
  *
- *  Solo se llega aquí si la cotización está en borrador o enviada y NO generó
- *  pedido. Esa regla se comprueba tres veces —al pintar el botón, al abrir
- *  esta página y dentro de actualizarCotizacion()— porque una URL se puede
- *  escribir a mano y el servidor es el único sitio donde una regla es real.
+ *  Solo se llega aquí si la cotización está en borrador, aprobada o enviada y
+ *  NO generó pedido. Esa regla se comprueba tres veces —al pintar el botón,
+ *  al abrir esta página y dentro de actualizarCotizacion()— porque una URL se
+ *  puede escribir a mano y el servidor es el único sitio donde una regla es
+ *  real. (Antes el botón de la ficha se ofrecía en una aprobada, pero esta
+ *  página la rebotaba sin decir nada: lo encontró la revisión de la Guía.)
+ *
+ *  Si la cotización ya tiene la aprobación, se avisa ANTES de tocar nada que
+ *  un cambio comercial la anula al guardar (lo decide el servidor).
  *
  *  Es el MISMO formulario que se usa para crear. Se le pasa el contenido
  *  actual y él sabe que debe actualizar en vez de insertar.
@@ -20,7 +25,11 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina } from '@/components/ui/Pagina';
 import { FormularioVenta, type DatosEdicion } from '@/components/ventas/FormularioVenta';
 import { cargarCatalogoVenta } from '@/lib/catalogoVenta';
-import { puedeVender, type Rol } from '@/lib/navegacion';
+import { type Rol } from '@/lib/navegacion';
+import { puedeCotizar } from '@/lib/permisosVentas';
+import { aprobacionObligatoria } from '../../acciones';
+import { fechaHora } from '@/lib/formato';
+import { campo } from '@/lib/relaciones';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,34 +48,38 @@ export default async function PaginaEditarCotizacion(
 
   const usuario = await obtenerUsuarioActual();
   const rol = (usuario?.rol ?? 'consulta') as Rol;
-  if (!puedeVender(rol)) redirect(`/ventas/cotizaciones/${cotId}`);
+  if (!puedeCotizar(rol)) redirect(`/ventas/cotizaciones/${cotId}`);
 
   const supabase = await crearClienteServidor();
 
-  const [{ data: cot }, { data: lineas }, { data: pedido }, { data: cuentas }] = await Promise.all([
+  const [{ data: cot }, { data: lineas }, { data: pedido }, { data: cuentas }, exigeAprobacion] = await Promise.all([
     supabase
       .from('cotizaciones')
-      .select('id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, prioridad, observaciones, contacto_id, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, tipo_cambio_fecha, tipo_cambio_fuente, tipo_cambio_clase, fecha_tentativa_despacho, forma_pago, adelanto_pct, adelanto_abonado, adelanto_abonado_en')
+      .select('aprobada_en, aprobador:usuarios!cotizaciones_aprobada_por_fkey(nombre), id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, prioridad, observaciones, contacto_id, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, tipo_cambio_fecha, tipo_cambio_fuente, tipo_cambio_clase, fecha_tentativa_despacho, forma_pago, adelanto_pct, adelanto_abonado, adelanto_abonado_en')
       .eq('id', cotId)
       .single(),
     supabase
       .from('cotizacion_lineas')
-      .select('sku_presentacion_id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct')
+      .select('sku_presentacion_id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct, descuento_autorizado_por')
       .eq('cotizacion_id', cotId)
       .order('orden'),
     supabase.from('pedidos').select('id').eq('cotizacion_id', cotId).maybeSingle(),
     supabase.from('cotizacion_cuentas').select('cuenta_id').eq('cotizacion_id', cotId),
+    aprobacionObligatoria(),
   ]);
 
   if (!cot) notFound();
 
   /* ---- Las mismas dos reglas que aplica el servidor al guardar ---- */
   if (pedido) redirect(`/ventas/cotizaciones/${cotId}?nohayeditar=convertida`);
-  if (!['borrador', 'enviada'].includes(cot.estado as string)) {
+  if (!['borrador', 'aprobada', 'enviada'].includes(cot.estado as string)) {
     redirect(`/ventas/cotizaciones/${cotId}?nohayeditar=${cot.estado}`);
   }
 
   const cat = await cargarCatalogoVenta();
+
+  /* ¿Guardar un cambio comercial anularía la aprobación? La misma regla que el servidor. */
+  const conFirma = exigeAprobacion && (Boolean(cot.aprobada_en) || ['aprobada', 'enviada'].includes(cot.estado as string));
 
   const edicion: DatosEdicion = {
     id: cot.id as number,
@@ -106,6 +119,8 @@ export default async function PaginaEditarCotizacion(
       precio_lista_tm: Number(l.precio_lista_tm),
       precio_tm: Number(l.precio_tm),
       descuento_pct: Number(l.descuento_pct),
+      //  Un descuento ya autorizado se respeta mientras no se suba (lo decide el servidor).
+      descuento_autorizado_pct: l.descuento_autorizado_por ? Number(l.descuento_pct) : null,
     })),
   };
 
@@ -117,14 +132,37 @@ export default async function PaginaEditarCotizacion(
         volver={{ href: `/ventas/cotizaciones/${cotId}`, texto: `Volver a ${cot.numero}` }}
       />
 
-      <div className="aviso-camino">
-        <span aria-hidden style={{ fontSize: '1.1rem', lineHeight: 1 }}>✏️</span>
-        <span>
-          <strong>Está modificando una oferta ya emitida.</strong> Si el cliente recibió la versión
-          anterior, conviene reenviársela después de guardar: el sistema conserva ambas versiones en
-          el historial, pero el correo del cliente no.
-        </span>
-      </div>
+      {/*
+        EL AVISO DE LA APROBACIÓN, antes de tocar nada. Es la regla que
+        aplica el servidor al guardar: aquí solo se anuncia.
+      */}
+      {conFirma && (
+        <div className="ficha-aviso ficha-aviso-atencion" role="status" data-aviso="anula-aprobacion">
+          <span aria-hidden style={{ fontSize: '1.1rem', lineHeight: 1 }}>⚠️</span>
+          <span>
+            <strong>
+              Esta cotización está {cot.estado === 'enviada' ? 'enviada' : 'aprobada'}
+              {cot.aprobada_en ? ` (la aprobó ${campo(cot.aprobador, 'nombre', 'quien aprueba cotizaciones')} el ${fechaHora(cot.aprobada_en as string)})` : ''}.
+            </strong>{' '}
+            Si al guardar cambia algo comercial —productos, cantidades, precios, descuentos, moneda,
+            incoterm, forma de pago o % de adelanto, destino o cliente—, <strong>la aprobación se
+            anula</strong>: la cotización vuelve a borrador y habrá que aprobarla otra vez antes de
+            enviarla. Corregir observaciones, contacto, cuentas, vendedor, validez o prioridad la
+            conserva.
+          </span>
+        </div>
+      )}
+
+      {cot.estado === 'enviada' && (
+        <div className="aviso-camino">
+          <span aria-hidden style={{ fontSize: '1.1rem', lineHeight: 1 }}>✏️</span>
+          <span>
+            <strong>Está modificando una oferta ya enviada.</strong> Si el cliente recibió la versión
+            anterior, conviene reenviársela después de guardar: el sistema conserva ambas versiones en
+            el historial, pero el correo del cliente no.
+          </span>
+        </div>
+      )}
 
       <FormularioVenta
         modo="cotizacion"

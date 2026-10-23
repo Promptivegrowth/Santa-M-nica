@@ -26,6 +26,7 @@ import { revalidatePath } from 'next/cache';
 import { columnasContacto, type ContactoDocumento } from '@/lib/contactoDocumento';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { revisarTipoCambio } from '@/lib/moneda';
+import { hoyEnLima } from '@/lib/fechas';
 import { puedeVender, type Rol } from '@/lib/navegacion';
 
 export type LineaPedido = {
@@ -53,6 +54,15 @@ export type DatosPedido = {
   /** Opcional: cuentas de cobro que se imprimirán en la proforma. */
   cuentas?: number[];
   lineas: LineaPedido[];
+  /**
+   * De qué día es el tipo de cambio y si lo trajo SUNAT o se escribió a mano.
+   * La cotización ya lo guardaba; el pedido directo lo perdía y su ficha
+   * decía «Anterior al tipo de cambio automático» aunque se hubiera traído de
+   * SUNAT ese mismo día. Lo encontró la revisión de la Guía de uso.
+   */
+  tipo_cambio_fecha?: string | null;
+  tipo_cambio_fuente?: 'sunat' | 'manual' | null;
+  tipo_cambio_clase?: 'compra' | 'venta' | null;
 };
 
 export type Resultado =
@@ -90,6 +100,12 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
   if (problemaTc) {
     return { ok: false, mensaje: problemaTc, campo: 'tipo_cambio' };
   }
+  //  Solo dos orígenes posibles; lo que no sea SUNAT se guarda como escrito a mano.
+  const fuenteTc: 'sunat' | 'manual' = datos.tipo_cambio_fuente === 'sunat' ? 'sunat' : 'manual';
+  const fechaTc = datos.tipo_cambio_fecha && /^\d{4}-\d{2}-\d{2}$/.test(datos.tipo_cambio_fecha)
+    ? datos.tipo_cambio_fecha : hoyEnLima();
+  const claseTc = fuenteTc === 'sunat' ? (datos.tipo_cambio_clase === 'compra' ? 'compra' : 'venta') : null;
+
   if (!datos.fecha_solicitada || !datos.fecha_comprometida) {
     return { ok: false, mensaje: 'Indique la fecha de solicitud y la fecha comprometida.', campo: 'fechas' };
   }
@@ -175,6 +191,9 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
       oc_cliente: datos.oc_cliente,
       moneda: datos.moneda,
       tipo_cambio: datos.tipo_cambio,
+      tipo_cambio_fecha: fechaTc,
+      tipo_cambio_fuente: fuenteTc,
+      tipo_cambio_clase: claseTc,
       incoterm: datos.incoterm,
       destino_id: datos.destino_id,
       tipo_despacho: datos.incoterm === 'EXW' ? 'mercado_nacional' : 'exportacion',
@@ -213,7 +232,12 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
       precio_tm: l.precio_tm,
       descuento_pct: l.descuento_pct,
       descuento_autorizado_por: l.descuento_pct > topeDescuento ? usuario.id : null,
-      costo_estimado_tm: 0,
+      /*
+       * Sin costo aquí a propósito (067): el disparador de la base pone el
+       * costo vigente de Finanzas para ese producto, o 0 si no hay. Así
+       * también lo tienen los pedidos que registra Comex, que no ve costos.
+       */
+      costo_estimado_tm: null,
       orden: i + 1,
     }))
   );

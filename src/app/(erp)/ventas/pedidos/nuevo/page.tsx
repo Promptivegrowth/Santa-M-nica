@@ -23,11 +23,15 @@ import { CabeceraPagina } from '@/components/ui/Pagina';
 import { FormularioVenta } from '@/components/ventas/FormularioVenta';
 import { cargarCatalogoVenta } from '@/lib/catalogoVenta';
 import { puedeVender, type Rol } from '@/lib/navegacion';
+import { puedeCotizar } from '@/lib/permisosVentas';
 
 export const metadata: Metadata = { title: 'Nuevo pedido' };
 export const dynamic = 'force-dynamic';
 
-export default async function PaginaNuevoPedido() {
+export default async function PaginaNuevoPedido(props: PageProps<'/ventas/pedidos/nuevo'>) {
+  //  ?cliente=ID: se llega desde la ficha del cliente y ya viene elegido.
+  const q = await props.searchParams;
+  const clienteInicial = Number(q.cliente) || undefined;
   const usuario = await obtenerUsuarioActual();
   const rol = (usuario?.rol ?? 'consulta') as Rol;
 
@@ -49,8 +53,12 @@ export default async function PaginaNuevoPedido() {
         <span>
           <strong>Use esta pantalla cuando el cliente pide sin negociar.</strong> Si en cambio le
           está pasando un precio para que lo evalúe, empiece por una{' '}
-          <Link href="/ventas/cotizaciones/nueva">cotización</Link> y conviértala cuando acepte: así
-          queda registro de la oferta y el sistema puede medir cuántas se cierran.
+          {/* Comex registra pedidos pero no entra a Cotizaciones: no se le ofrece el enlace. */}
+          {puedeCotizar(rol)
+            ? <Link href="/ventas/cotizaciones/nueva">cotización</Link>
+            : <>cotización (la prepara Comercial)</>}{' '}
+          y conviértala cuando acepte: así queda registro de la oferta y el sistema puede medir
+          cuántas se cierran.
         </span>
       </div>
 
@@ -68,6 +76,7 @@ export default async function PaginaNuevoPedido() {
         tipoCambioDefecto={cat.tipoCambioDefecto}
         topeDescuento={cat.topeDescuento}
         puedeAutorizarDescuento={['gerencia', 'operaciones'].includes(rol)}
+        clienteInicial={clienteInicial}
       />
     </>
   );

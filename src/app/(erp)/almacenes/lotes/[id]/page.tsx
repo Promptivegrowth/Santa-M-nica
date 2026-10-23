@@ -82,6 +82,9 @@ export default async function FichaLote(props: PageProps<'/almacenes/lotes/[id]'
   if (!lote) notFound();
 
   const puedeDictaminar = ['gerencia', 'operaciones', 'calidad'].includes(usuarioActual?.rol ?? '');
+  /* Ajustes, mermas y muestras (069). Cada rol ve en el formulario solo lo que
+     puede registrar; Comercial, Comercio Exterior y Consulta no lo ven. */
+  const puedeAjustar = ['gerencia', 'operaciones', 'almacen', 'calidad'].includes(usuarioActual?.rol ?? '');
 
   const sp = uno<Record<string, unknown>>(lote.sku_presentaciones);
   const sku = uno<Record<string, unknown>>(sp?.skus);
@@ -101,6 +104,12 @@ export default async function FichaLote(props: PageProps<'/almacenes/lotes/[id]'
           <Icono nombre="retiro" tamano={15} />
           Simular retiro
         </Link>
+        {puedeAjustar && (
+          <Link href={`/almacenes/ajustes/nuevo?lote=${loteId}`} className="btn btn-secundario" data-accion="ajustar-stock">
+            <Icono nombre="ajustes" tamano={15} />
+            Ajustar stock
+          </Link>
+        )}
         <FormularioDictamen
           loteId={loteId}
           pallet={lote.codigo_pallet as string}
@@ -163,6 +172,7 @@ async function CuerpoLote({
     { data: reservas },
     { data: traza },
     { data: antiguedad },
+    { data: stock },
   ] = await Promise.all([
     supabase
       .from('existencias')
@@ -170,30 +180,60 @@ async function CuerpoLote({
       .eq('lote_id', loteId),
     supabase
       .from('dictamenes_calidad')
-      .select('id, tipo, estado, motivo_texto, emitido_en, vigente, observaciones, motivos(nombre)')
+      .select('id, tipo, estado, motivo_texto, emitido_en, vigente, observaciones, motivos(nombre, condiciona_venta)')
       .eq('lote_id', loteId)
       .order('emitido_en', { ascending: false }),
+    /* Activas Y en preparación: las dos tienen el stock apartado para un
+       pedido (es lo mismo que descuenta el disponible en la base). */
     supabase
       .from('reservas')
       .select('id, bultos, peso_neto_kg, estado, vence_el, creado_en, observaciones, pedido_lineas(pedido_id, pedidos(numero_proforma, ciclo, clientes(id, razon_social)))')
       .eq('lote_id', loteId)
-      .eq('estado', 'activa'),
+      .in('estado', ['activa', 'en_preparacion']),
     supabase.rpc('trazar_lote_adelante', { p_lote_id: loteId }),
     supabase.from('v_anticuamiento').select('meses_almacenado, rango, en_alerta, vencido').eq('lote_id', loteId).limit(1),
+    /* Lo libre lo calcula la base (v_stock_lote), con la misma regla que usan
+       Existencias, Disponibilidad y las reservas: físico − bloqueado por
+       Calidad − reservado − en preparación. Calcularlo aquí aparte es como
+       llegó a decir «libre» un pallet inmovilizado. */
+    supabase
+      .from('v_stock_lote')
+      .select('almacen_id, fisico_kg, bloqueado_kg, reservado_kg, preparacion_kg, disponible_kg, solo_nacional_kg')
+      .eq('lote_id', loteId),
   ]);
 
   /* ---- Cuánto hay, cuánto está comprometido, cuánto queda libre ---- */
   const fisicoKg = (existencias ?? []).reduce((s, e) => s + Number(e.peso_neto_kg ?? 0), 0);
   const bultos = (existencias ?? []).reduce((s, e) => s + Number(e.bultos ?? 0), 0);
   const reservadoKg = (reservas ?? []).reduce((s, r) => s + Number(r.peso_neto_kg ?? 0), 0);
-  const libreKg = fisicoKg - reservadoKg;
+  const bloqueadoKg = (stock ?? []).reduce((s, v) => s + Number(v.bloqueado_kg ?? 0), 0);
+  const libreKg = (stock ?? []).reduce((s, v) => s + Number(v.disponible_kg ?? 0), 0);
+  const soloNacionalKg = (stock ?? []).reduce((s, v) => s + Number(v.solo_nacional_kg ?? 0), 0);
   const costoProm = (existencias ?? [])[0]?.costo_promedio ?? lote.costo_unitario;
   const valor = fisicoKg * Number(costoProm ?? 0);
 
-  /* ---- ¿Está bloqueado por calidad? ---- */
-  const bloqueoVigente = (dictamenes ?? []).find(
-    (d) => d.vigente === true && ['retenido', 'rechazado'].includes(d.estado as string)
-  );
+  /*
+   * ---- ¿Está bloqueado por calidad? ----
+   * Los dictámenes reales son liberado, observado, inmovilizado y en espera de
+   * resultados (enum estado_dictamen). Bloquea cualquier dictamen VIGENTE que
+   * no esté liberado, salvo que su motivo solo condicione la venta («Solo
+   * mercado nacional»): ese no bloquea, limita a quién se vende. Es la misma
+   * regla que lote_bloqueado() en la base (061).
+   */
+  const GRAVEDAD: Record<string, number> = { inmovilizado: 3, observado: 2, espera_resultados: 1 };
+  const abiertos = (dictamenes ?? []).filter((d) => d.vigente === true && d.estado !== 'liberado');
+  const condicionaVenta = (d: (typeof abiertos)[number]) =>
+    Boolean(uno<Record<string, unknown>>(d.motivos)?.condiciona_venta);
+  const bloqueantes = abiertos
+    .filter((d) => !condicionaVenta(d))
+    .sort((a, b) => (GRAVEDAD[b.estado as string] ?? 0) - (GRAVEDAD[a.estado as string] ?? 0));
+  const bloqueoVigente = bloqueantes[0];
+  const condicionVigente = abiertos.find((d) => condicionaVenta(d));
+  const TEXTO_BLOQUEO: Record<string, string> = {
+    inmovilizado: 'inmovilizado',
+    observado: 'observado',
+    espera_resultados: 'en espera de resultados',
+  };
 
   const edad = (antiguedad ?? [])[0];
   const meses = Number(edad?.meses_almacenado ?? 0);
@@ -202,12 +242,30 @@ async function CuerpoLote({
     <>
       {/* ---- Avisos que condicionan si este lote se puede vender ---- */}
       {bloqueoVigente && (
-        <div className="ficha-aviso ficha-aviso-critico">
+        <div className="ficha-aviso ficha-aviso-critico" data-aviso="bloqueo-calidad">
           <Icono nombre="calidad" tamano={17} />
           <span>
-            <strong>Lote {etiquetaEstado(bloqueoVigente.estado as string)} por calidad.</strong>{' '}
-            {campo(bloqueoVigente.motivos, 'nombre', bloqueoVigente.motivo_texto as string)}. No
-            puede reservarse ni despacharse hasta que Calidad lo libere.
+            <strong>
+              Pallet {TEXTO_BLOQUEO[bloqueoVigente.estado as string] ?? etiquetaEstado(bloqueoVigente.estado as string)} por
+              Calidad
+            </strong>{' '}
+            ({etiquetaEstado(bloqueoVigente.tipo as string)}:{' '}
+            {campo(bloqueoVigente.motivos, 'nombre', (bloqueoVigente.motivo_texto as string) ?? 'sin motivo')})
+            {bloqueantes.length > 1 && ` y ${bloqueantes.length - 1} dictamen${bloqueantes.length > 2 ? 'es' : ''} abierto${bloqueantes.length > 2 ? 's' : ''} más`}.
+            Sus {tm(bloqueadoKg)} TM no se pueden reservar, trasladar ni despachar hasta que Calidad libere
+            {bloqueantes.length > 1 ? ' todos los dictámenes abiertos' : ' el dictamen'}.
+          </span>
+        </div>
+      )}
+
+      {!bloqueoVigente && condicionVigente && (
+        <div className="ficha-aviso ficha-aviso-atencion" data-aviso="solo-nacional">
+          <Icono nombre="calidad" tamano={17} />
+          <span>
+            <strong>Solo mercado nacional.</strong>{' '}
+            {campo(condicionVigente.motivos, 'nombre')}: el pallet está libre, pero solo puede
+            reservarse o despacharse para pedidos de mercado nacional
+            {soloNacionalKg > 0 ? ` (${tm(soloNacionalKg)} TM de lo libre)` : ''}. No se puede exportar.
           </span>
         </div>
       )}
@@ -250,15 +308,17 @@ async function CuerpoLote({
           etiqueta="Apartado"
           valor={tm(reservadoKg)}
           tono={reservadoKg > 0 ? 'atencion' : 'ok'}
-          nota="Reservas activas"
+          nota="Reservas activas y en preparación"
           href="#reservas"
         />
         <Kpi
           etiqueta="Libre para vender"
           valor={tm(libreKg)}
           tono={libreKg > 0 ? 'ok' : 'critico'}
-          nota="Físico menos apartado"
-          href="#ubicacion"
+          nota={bloqueadoKg > 0
+            ? `${tm(bloqueadoKg)} TM bloqueadas por Calidad`
+            : 'Físico − bloqueado − apartado'}
+          href={bloqueadoKg > 0 ? '#calidad' : '#ubicacion'}
         />
         <Kpi etiqueta="Antigüedad" valor={`${num(meses, 1)} m`} nota={(edad?.rango as string) ?? '—'} href="/almacenes/anticuamiento" />
         {puedeVerCostos && (
@@ -325,7 +385,7 @@ async function CuerpoLote({
 
       {/* ---- Reservas: el corazón del problema del cliente ---- */}
       <Panel id="reservas"
-        titulo={`Reservas activas · ${(reservas ?? []).length}`}
+        titulo={`Reservas vigentes · ${(reservas ?? []).length}`}
         className="mb-espacio"
         acciones={
           <Link href="/almacenes/reservas" className="btn btn-sutil">Ver todas las reservas</Link>
@@ -334,7 +394,9 @@ async function CuerpoLote({
         {(reservas ?? []).length === 0 ? (
           <Vacio
             titulo="Nada apartado"
-            mensaje="Todo el peso físico de este lote está libre para vender."
+            mensaje={bloqueadoKg > 0
+              ? 'Ningún pedido lo tiene apartado, pero está bloqueado por Calidad: no se puede vender hasta que lo liberen.'
+              : 'Ningún pedido tiene apartado este pallet.'}
           />
         ) : (
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
@@ -344,7 +406,7 @@ async function CuerpoLote({
                   <th>Pedido</th><th>Cliente</th>
                   <th className="num">Bultos</th><th className="num">Peso</th>
                   <th className="num">Reservado</th><th className="num">Vence</th>
-                  <th></th>
+                  <th>Estado</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -376,6 +438,10 @@ async function CuerpoLote({
                         )}
                       </td>
                       <td>
+                        <Etiqueta texto={etiquetaEstado(r.estado as string)}
+                                  tono={r.estado === 'en_preparacion' ? 'atencion' : 'info'} />
+                      </td>
+                      <td>
                         {pl?.pedido_id ? (
                           <Link href={`/ventas/pedidos/${pl.pedido_id}`} className="accion-btn" title="Abrir el pedido para liberar">
                             <Icono nombre="expandir" tamano={14} />
@@ -392,7 +458,7 @@ async function CuerpoLote({
       </Panel>
 
       {/* ---- Calidad ---- */}
-      <Panel titulo={`Dictámenes de calidad · ${(dictamenes ?? []).length}`} className="mb-espacio">
+      <Panel id="calidad" titulo={`Dictámenes de calidad · ${(dictamenes ?? []).length}`} className="mb-espacio">
         {(dictamenes ?? []).length === 0 ? (
           <Vacio
             titulo="Sin dictámenes"
@@ -417,7 +483,7 @@ async function CuerpoLote({
                         texto={etiquetaEstado(d.estado as string)}
                         tono={
                           d.estado === 'liberado' ? 'ok'
-                          : d.estado === 'rechazado' ? 'critico'
+                          : d.estado === 'inmovilizado' ? 'critico'
                           : 'atencion'
                         }
                       />
@@ -493,7 +559,8 @@ async function CuerpoLote({
       <p className="pie-explicativo">
         Todo movimiento de este lote quedó escrito en el Kardex, que es de solo lectura: la base de
         datos rechaza cualquier intento de modificar o borrar un movimiento ya registrado. Si hubo un
-        error, se corrige con un movimiento de ajuste que también queda a la vista.
+        error, o se perdió o salió producto como merma o muestra, se registra con <strong>Ajustar
+        stock</strong>: un movimiento nuevo que también queda a la vista.
       </p>
     </>
   );

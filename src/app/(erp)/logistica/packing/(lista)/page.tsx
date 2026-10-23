@@ -14,11 +14,18 @@ import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
 import { num, fecha, etiquetaEstado } from '@/lib/formato';
-import { Filtros } from '@/components/ui/Filtros';
+import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 
 export const metadata: Metadata = { title: 'Packing y estiba' };
 export const dynamic = 'force-dynamic';
+
+/*
+ * Antes la lista se cortaba en 200 sin avisar (y el contador decía 200). Con
+ * los datos reales eso llega pronto: ahora va por páginas y la cifra es el
+ * total de verdad.
+ */
+const POR_PAGINA = 50;
 
 export default async function PaginaPacking(props: PageProps<'/logistica/packing'>) {
   const q = await props.searchParams;
@@ -26,13 +33,15 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
   const buscar = ((q.buscar as string) ?? '').trim();
   const desde = (q.desde as string) ?? '';
   const hasta = (q.hasta as string) ?? '';
+  const pagina = Math.max(1, Number(q.pagina ?? 1));
   const supabase = await crearClienteServidor();
 
   let consulta = supabase
     .from('packing_lists')
-    .select('id, codigo, contenedor, guia_remision, dam, fecha_carga, hora_inicio, hora_fin, turno, estado, filas_contenedor, sacos_por_fila, embarques(id, numero, almacenes(nombre), destinos(puerto))')
+    .select('id, codigo, contenedor, guia_remision, dam, fecha_carga, hora_inicio, hora_fin, turno, estado, filas_contenedor, sacos_por_fila, embarques(id, numero, almacenes(nombre), destinos(puerto))', { count: 'exact' })
     .order('fecha_carga', { ascending: false, nullsFirst: true })
-    .limit(200);
+    .order('id', { ascending: false })
+    .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
   if (estado) consulta = consulta.eq('estado', estado);
 
   /*
@@ -52,7 +61,7 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
     );
   }
 
-  const [{ data: filas }, { data: prod }] = await Promise.all([
+  const [{ data: filas, count }, { data: prod }] = await Promise.all([
     consulta,
     supabase.from('v_productividad_despacho').select('horas_carga, horas_objetivo, tm'),
   ]);
@@ -87,7 +96,7 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
       />
 
       <RejillaKpi>
-        <Kpi etiqueta="Contenedores cargados" valor={num((filas ?? []).length)} href="#lista" />
+        <Kpi etiqueta="Contenedores cargados" valor={num(count ?? 0)} href="#lista" />
         <Kpi etiqueta="Tiempo promedio de carga" valor={num(promedio, 1)} sufijo="h"
              tono={promedio > objetivo ? 'atencion' : 'ok'} nota={`Objetivo: ${num(objetivo, 1)} h`}
   href="#lista" />
@@ -96,10 +105,15 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
   href="#lista" />
       </RejillaKpi>
 
-      <Panel id="lista" titulo={`${(filas ?? []).length} packing lists`}>
+      <Panel id="lista" titulo={`${num(count ?? 0)} packing lists`}>
         <nav className="pestanas no-imprimir" style={{ padding: '.7rem 1rem 0', margin: 0 }}>
           <Link href={enlace({ estado: '' })} className="pestana" data-activa={!estado ? 'si' : 'no'}>Todos</Link>
-          {['abierto', 'en_carga', 'cerrado'].map((e) => (
+          {/*
+            El estado lo pone la carga (migración 068): «Abierto» sin pallets,
+            «En carga» desde el primero, «Cerrado» al despacharse, «Anulado» si
+            su embarque se canceló.
+          */}
+          {['abierto', 'en_carga', 'cerrado', 'anulado'].map((e) => (
             <Link key={e} href={enlace({ estado: e })} className="pestana" data-activa={estado === e ? 'si' : 'no'}>
               {etiquetaEstado(e)}
             </Link>
@@ -167,7 +181,7 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
                       <td>
                         <Etiqueta
                           texto={etiquetaEstado(String(p.estado))}
-                          tono={p.estado === 'cerrado' ? 'ok' : p.estado === 'en_carga' ? 'atencion' : 'neutro'}
+                          tono={p.estado === 'cerrado' ? 'ok' : p.estado === 'en_carga' ? 'atencion' : p.estado === 'anulado' ? 'critico' : 'neutro'}
                         />
                       </td>
                       <td>
@@ -190,6 +204,7 @@ export default async function PaginaPacking(props: PageProps<'/logistica/packing
                 })}
               </tbody>
             </table>
+            <Paginacion pagina={pagina} porPagina={POR_PAGINA} total={count ?? 0} />
           </div>
         )}
       </Panel>

@@ -45,7 +45,7 @@ async function autorizar() {
     return {
       error:
         'Usted no tiene permiso para cargar costos de producción. Lo da Gerencia en ' +
-        'Configuración → Usuarios, columna «Carga costos».',
+        'Configuración → Usuarios y roles, columna «Carga costos».',
     };
   }
   return { usuario };

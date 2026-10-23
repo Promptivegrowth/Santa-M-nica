@@ -13,7 +13,7 @@
  */
 import { chromium } from 'playwright';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
-import './db.mjs';
+import { ejecutarSQL } from './db.mjs';
 
 /*
  * El puerto se puede cambiar con BASE_URL. En esta máquina conviven varios
@@ -72,7 +72,14 @@ await entrar();
    ======================================================================== */
 console.log('\n== CALENDARIO DE EMBARQUES =======================================\n');
 
-await p.goto(`${BASE}/logistica/planificador`, { waitUntil: 'networkidle' });
+/*
+ * El mes más reciente que tiene embarques: los datos de demostración no
+ * siempre llegan al mes en curso, y un calendario vacío no prueba nada.
+ */
+const [{ mes: mesConCarga } = { mes: '' }] = await ejecutarSQL(
+  `select to_char(max(fecha_programada), 'YYYY-MM') mes from embarques where estado <> 'cancelado'`
+);
+await p.goto(`${BASE}/logistica/planificador${mesConCarga ? `?mes=${mesConCarga}` : ''}`, { waitUntil: 'networkidle' });
 await p.waitForTimeout(1200);
 
 comprobar('Se dibuja una cuadrícula de calendario, no una lista',
@@ -93,12 +100,22 @@ comprobar('Hay días con embarques pintados', conCarga > 0, `${conCarga} días c
 const fichas = await p.locator('.cal-ficha').count();
 comprobar('Las fichas muestran destino y toneladas', fichas > 0, `${fichas} fichas`);
 
+//  «Hoy» solo cae en el mes en curso; si se abrió otro mes, se mira en el actual.
+if (mesConCarga && mesConCarga !== new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' }).slice(0, 7)) {
+  await p.goto(`${BASE}/logistica/planificador`, { waitUntil: 'networkidle' });
+  await p.waitForTimeout(800);
+}
 comprobar('El día de hoy está marcado',
   (await p.locator('.cal-dia[data-hoy="si"]').count()) === 1);
 comprobar('Los domingos están diferenciados',
   (await p.locator('.cal-dia[data-domingo="si"]').count()) >= 4);
 comprobar('Hay leyenda de estados',
   (await p.locator('.cal-leyenda-item').count()) >= 4);
+//  De vuelta al mes con embarques para probar la interacción.
+if (mesConCarga) {
+  await p.goto(`${BASE}/logistica/planificador?mes=${mesConCarga}`, { waitUntil: 'networkidle' });
+  await p.waitForTimeout(800);
+}
 
 /* --- Interacción: elegir un día con el ratón --- */
 const conCargaPrimero = p.locator('.cal-dia:has(.cal-ficha)').first();
@@ -146,7 +163,7 @@ await p.screenshot({ path: 'capturas/nuevo-calendario.png' });
 /* --- El mismo calendario en un móvil --- */
 const movil = await ctx.newPage();
 await movil.setViewportSize({ width: 390, height: 844 });
-await movil.goto(`${BASE}/logistica/planificador`, { waitUntil: 'networkidle' });
+await movil.goto(`${BASE}/logistica/planificador${mesConCarga ? `?mes=${mesConCarga}` : ''}`, { waitUntil: 'networkidle' });
 await movil.waitForTimeout(1500);
 const anchoCuerpo = await movil.evaluate(() => document.body.scrollWidth);
 comprobar('En móvil no hay desbordamiento horizontal', anchoCuerpo <= 400, `${anchoCuerpo} px`);

@@ -38,6 +38,7 @@ import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, fecha } from '@/lib/formato';
 import { uno, campo } from '@/lib/relaciones';
 import { aDolares } from '@/lib/moneda';
+import { puedeCotizar } from '@/lib/permisosVentas';
 
 export const metadata: Metadata = { title: 'Productos' };
 export const dynamic = 'force-dynamic';
@@ -213,10 +214,13 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
           <Icono nombre="disponibilidad" tamano={15} />
           Ver solo lo disponible
         </Link>
-        <Link href="/ventas/cotizaciones/nueva" className="btn btn-primario">
-          <Icono nombre="cotizacion" tamano={15} />
-          Cotizar
-        </Link>
+        {/* Solo a quien entra a Cotizaciones (no Comex, Almacén, Calidad ni Consulta). */}
+        {puedeCotizar(usuarioActual?.rol) && (
+          <Link href="/ventas/cotizaciones/nueva" className="btn btn-primario">
+            <Icono nombre="cotizacion" tamano={15} />
+            Cotizar
+          </Link>
+        )}
       </CabeceraPagina>
 
       {/*

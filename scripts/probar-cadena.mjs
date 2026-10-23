@@ -223,6 +223,7 @@ const linea = sql(`
   select pl.id linea_id, p.id pedido_id
   from pedido_lineas pl join pedidos p on p.id = pl.pedido_id
   where p.situacion not in ('facturado','parcialmente_cobrado','cobrado')
+    and p.ciclo in ('borrador','pendiente_validacion','confirmado')
     and (select count(*) from v_stock_lote v
           where v.sku_presentacion_id = pl.sku_presentacion_id and v.disponible_kg > 0) > 1
     and coalesce((select sum(r.peso_neto_kg) from reservas r
@@ -237,7 +238,8 @@ if (!linea) {
 } else {
   await p.goto(`${BASE}/ventas/pedidos/${linea.pedido_id}?t=disponibilidad`, { waitUntil: 'networkidle' });
   await p.waitForTimeout(2500);
-  await p.locator('button', { hasText: 'Apartar stock' }).first().click();
+  // El botón de ESA línea: el primero de la página puede ser de otra sin candidatos.
+  await p.locator(`tr[data-linea="${linea.linea_id}"] button`, { hasText: 'Apartar stock' }).click();
   await p.waitForTimeout(4000);
 
   const botonLote = p.locator('button', { hasText: /Apartar de los \d+ pallets/ });

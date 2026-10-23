@@ -29,20 +29,24 @@ export function AccionesFicha({
   aprobada,
   requiereAprobacion,
   puedeAprobar,
+  puedeRechazar = true,
 }: {
   cotizacionId: number;
   numero: string;
   estado: string;
   yaConvertida: boolean;
-  /** ¿Ya tiene la firma de Gerencia? */
+  /** ¿Ya tiene la firma de quien aprueba cotizaciones? */
   aprobada: boolean;
   /** ¿La empresa exige esa firma? Se configura, no está en el código. */
   requiereAprobacion: boolean;
-  /** ¿El usuario que está mirando puede darla? */
+  /** ¿El usuario que está mirando puede darla? (facultad personal, no del cargo) */
   puedeAprobar: boolean;
+  /** Gerencia, Operaciones o Comercial: marcar que el cliente dijo que no. */
+  puedeRechazar?: boolean;
 }) {
   const router = useRouter();
-  const [confirmando, setConfirmando] = useState(false);
+  /* Las dos acciones que no se deshacen piden confirmación en el sitio. */
+  const [confirmando, setConfirmando] = useState<'eliminar' | 'rechazar' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendiente, iniciar] = useTransition();
 
@@ -68,7 +72,7 @@ export function AccionesFicha({
       } else {
         setError(r.mensaje ?? 'No se pudo completar la acción.');
       }
-      setConfirmando(false);
+      setConfirmando(null);
     });
   }
 
@@ -83,7 +87,7 @@ export function AccionesFicha({
     iniciar(async () => {
       const r = await eliminarCotizacion(cotizacionId);
       if (r.ok) router.push('/ventas/cotizaciones?borrada=' + encodeURIComponent(numero));
-      else { setError(r.mensaje); setConfirmando(false); }
+      else { setError(r.mensaje); setConfirmando(null); }
     });
   }
 
@@ -97,7 +101,7 @@ export function AccionesFicha({
           disabled={pendiente || !puedeAprobar}
           title={puedeAprobar
             ? 'Autoriza el precio para que la oferta pueda salir al cliente'
-            : 'Solo Gerencia puede aprobar una cotización'}
+            : 'Usted no tiene la facultad «Aprueba cotizaciones». Aprueban solo las personas que la tienen marcada en Configuración › Usuarios'}
           onClick={() => accion(() => aprobarCotizacion(cotizacionId))}
         >
           <Icono nombre="guardar" tamano={15} />
@@ -113,7 +117,7 @@ export function AccionesFicha({
           disabled={pendiente || !puedeEnviar}
           title={puedeEnviar
             ? 'Registra que la oferta ya se le pasó al cliente'
-            : `${numero} todavía no está aprobada: el precio no puede salir sin el visto bueno de Gerencia`}
+            : `${numero} todavía no está aprobada: el precio no puede salir sin el visto bueno de quien aprueba cotizaciones`}
           onClick={() => accion(() => cambiarEstadoCotizacion(cotizacionId, 'enviada'))}
         >
           <Icono nombre="reportes" tamano={15} />
@@ -121,21 +125,62 @@ export function AccionesFicha({
         </button>
       )}
 
-      {/* --- Rechazo: el cliente dijo que no --- */}
-      {estado === 'enviada' && (
-        <button
-          type="button"
-          className="btn btn-secundario"
-          disabled={pendiente}
-          onClick={() => accion(() => cambiarEstadoCotizacion(cotizacionId, 'rechazada'))}
-        >
-          <Icono nombre="cerrar" tamano={15} />
-          Marcar rechazada
-        </button>
+      {/*
+        --- Rechazo: el cliente dijo que no ---
+        En una aprobada o en una enviada: el cliente puede decir que no por
+        teléfono antes de que la oferta se marque como enviada. Antes solo se
+        ofrecía en las enviadas. Pide confirmación porque no se deshace.
+      */}
+      {!yaConvertida && ['aprobada', 'enviada'].includes(estado) && (
+        confirmando === 'rechazar' ? (
+          <span className="accion-confirmar" data-confirmar="rechazar">
+            <span>¿Marcar {numero} como rechazada? Ya no se podrá enviar ni convertir.</span>
+            <button
+              type="button"
+              className="btn btn-primario"
+              style={{ padding: '.2rem .5rem', fontSize: '.75rem' }}
+              disabled={pendiente}
+              data-accion="confirmar-rechazo"
+              onClick={() => accion(() => cambiarEstadoCotizacion(cotizacionId, 'rechazada'))}
+            >
+              {pendiente ? 'Marcando…' : 'Sí, rechazada'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-sutil"
+              style={{ padding: '.2rem .5rem', fontSize: '.75rem' }}
+              disabled={pendiente}
+              onClick={() => setConfirmando(null)}
+            >
+              Cancelar
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-secundario"
+            disabled={pendiente || !puedeRechazar}
+            data-accion="rechazar"
+            title={puedeRechazar
+              ? 'El cliente no aceptó la oferta: la cierra como rechazada'
+              : 'Marcar una cotización como rechazada corresponde a Gerencia, Operaciones o Comercial'}
+            onClick={() => { setError(null); setConfirmando('rechazar'); }}
+          >
+            <Icono nombre="cerrar" tamano={15} />
+            Marcar rechazada
+          </button>
+        )
       )}
 
       {editable ? (
-        <Link href={`/ventas/cotizaciones/${cotizacionId}/editar`} className="btn btn-secundario">
+        <Link
+          href={`/ventas/cotizaciones/${cotizacionId}/editar`}
+          className="btn btn-secundario"
+          data-accion="editar"
+          title={requiereAprobacion && (aprobada || estado === 'enviada')
+            ? 'Abre el formulario. Ojo: si cambia productos, precios, descuentos o condiciones, al guardar la aprobación se anula y habrá que aprobarla otra vez'
+            : `Corregir ${numero}`}
+        >
           <Icono nombre="configuracion" tamano={15} />
           Editar
         </Link>
@@ -156,7 +201,7 @@ export function AccionesFicha({
       )}
 
       {/* --- Eliminar, con confirmación en dos pasos --- */}
-      {confirmando ? (
+      {confirmando === 'eliminar' ? (
         <span className="accion-confirmar">
           <span>¿Eliminar {numero}?</span>
           <button
@@ -173,7 +218,7 @@ export function AccionesFicha({
             className="btn btn-sutil"
             style={{ padding: '.2rem .5rem', fontSize: '.75rem' }}
             disabled={pendiente}
-            onClick={() => setConfirmando(false)}
+            onClick={() => setConfirmando(null)}
           >
             Cancelar
           </button>
@@ -183,7 +228,7 @@ export function AccionesFicha({
           type="button"
           className="btn btn-peligro-borde"
           disabled={yaConvertida || pendiente}
-          onClick={() => setConfirmando(true)}
+          onClick={() => setConfirmando('eliminar')}
           title={yaConvertida ? 'No se puede eliminar: ya generó un pedido' : `Eliminar ${numero}`}
         >
           <Icono nombre="papelera" tamano={15} />

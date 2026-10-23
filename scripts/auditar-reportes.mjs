@@ -112,14 +112,14 @@ console.log('\n─── Rentabilidad por pedido ───');
   const { cabeceras, filas } = await abrir('rentabilidad');
   console.log('   columnas:', cabeceras.filter(Boolean).join(' · '));
   const iVenta = cabeceras.findIndex((c) => /^Venta$/i.test(c));
-  const iMargen = cabeceras.findIndex((c) => /^Margen$/i.test(c));
+  const iMargen = cabeceras.findIndex((c) => /^Margen \(con costo\)$/i.test(c));
 
   const ventaExcel = suma(filas, iVenta);
-  /* Sin filtro de ciclo: el REPORTE exporta la vista entera. La pantalla sí
-     se queda solo con lo despachado, pero eso es de la pantalla. */
+  /* Desde la 071 el reporte exporta lo mismo que la pantalla —los pedidos
+     despachados y cerrados— y el margen solo de las líneas con costo. */
   const [{ venta, margen }] = await consultar(
-    `select round(sum(venta)::numeric,2) as venta, round(sum(margen)::numeric,2) as margen
-       from v_rentabilidad_pedido`);
+    `select round(sum(venta)::numeric,2) as venta, round(sum(margen_con_costo)::numeric,2) as margen
+       from v_rentabilidad_pedido where ciclo in ('despachado','cerrado')`);
 
   ok(cerca(ventaExcel, Number(venta), Math.max(2, Number(venta) * 0.0001)),
      'la venta del Excel coincide con la de la base',

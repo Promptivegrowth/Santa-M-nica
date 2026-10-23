@@ -19,8 +19,13 @@
  *    3. ACEPTAR    → el destino confirma la recepción (jefe del almacén destino)
  *
  *  Entre el paso 2 y el 3 el producto está EN TRÁNSITO: no está en ninguna de
- *  las dos bodegas y no se puede vender. Si en destino llega menos de lo que
- *  salió, se abre una discrepancia que exige un ajuste autorizado.
+ *  las dos bodegas y no se puede vender. Si en destino llega distinto de lo
+ *  que salió, la diferencia queda descrita en el historial del traslado y como
+ *  aviso en Alertas (069). No se escribe ningún ajuste solo: si el faltante
+ *  aparece, o el sobrante era un error, se corrige en «Ajustes de stock».
+ *
+ *  Los traslados se crean con «Nuevo traslado» (069) o, desde Logística, al
+ *  consolidar un embarque.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -28,6 +33,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
+import { Icono } from '@/components/estructura/Icono';
 import { num, fechaHora } from '@/lib/formato';
 
 export const metadata: Metadata = { title: 'Traslados' };
@@ -45,7 +51,9 @@ export default async function PaginaTraslados(props: PageProps<'/almacenes/trasl
   const q = await props.searchParams;
   const estado = (q.estado as string) ?? '';
   const supabase = await crearClienteServidor();
-  await obtenerUsuarioActual();
+  const usuario = await obtenerUsuarioActual();
+  // Los mismos que pueden solicitar un traslado en la acción del servidor.
+  const puedeCrear = ['gerencia', 'operaciones', 'almacen'].includes(usuario?.rol ?? '');
 
   let consulta = supabase
     .from('traslados')
@@ -66,7 +74,14 @@ export default async function PaginaTraslados(props: PageProps<'/almacenes/trasl
       <CabeceraPagina
         titulo="Traslados entre bodegas"
         descripcion="Cada traslado recorre tres firmas: autorización, salida y aceptación en destino. Entre la salida y la aceptación el producto viaja y no se puede vender."
-      />
+      >
+        {puedeCrear && (
+          <Link href="/almacenes/traslados/nuevo" className="btn btn-primario" data-accion="nuevo-traslado">
+            <Icono nombre="mas" tamano={15} />
+            Nuevo traslado
+          </Link>
+        )}
+      </CabeceraPagina>
 
       <RejillaKpi>
         <Kpi etiqueta="En borrador" valor={num(cuenta('borrador'))} href="/almacenes/traslados?estado=borrador" />
@@ -81,7 +96,7 @@ export default async function PaginaTraslados(props: PageProps<'/almacenes/trasl
         <ol className="pasos-traslado">
           <li><span className="pasos-num">1</span><div><strong>Autorizar</strong><span>Jefatura de operaciones aprueba el movimiento. Sin esta firma no puede salir nada.</span></div></li>
           <li><span className="pasos-num">2</span><div><strong>Despachar</strong><span>El almacén de origen ejecuta la salida y emite la guía. El stock sale del origen y pasa a tránsito.</span></div></li>
-          <li><span className="pasos-num">3</span><div><strong>Aceptar</strong><span>El responsable del almacén destino confirma lo que realmente llegó. Si falta, se abre una discrepancia.</span></div></li>
+          <li><span className="pasos-num">3</span><div><strong>Aceptar</strong><span>El responsable del almacén destino confirma lo que realmente llegó. Si no coincide con lo enviado, la diferencia (faltante o sobrante) queda en el historial del traslado y como aviso en Alertas.</span></div></li>
         </ol>
       </Panel>
 

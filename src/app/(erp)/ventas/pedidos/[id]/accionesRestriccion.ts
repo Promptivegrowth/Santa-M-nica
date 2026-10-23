@@ -28,13 +28,18 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { puedeFijarRestriccionPeso } from '@/lib/permisosVentas';
 
 export type Resultado =
   | { ok: true; mensaje: string }
   | { ok: false; mensaje: string };
 
-/** Quién puede dejar anotada la restricción del cliente. */
-const PUEDEN = ['gerencia', 'operaciones', 'comercial', 'comex'];
+/*
+ * Quién puede dejar anotada la restricción del cliente: la lista vive en
+ * `permisosVentas` (ROLES_RESTRICCION_PESO) y la usan también la ficha del
+ * pedido y, con la misma lista, la función de la base. Antes la ficha usaba
+ * otra (con Almacén y sin Comex) y no coincidían.
+ */
 
 export type DatosRestriccion = {
   pedido_id: number;
@@ -48,10 +53,10 @@ export type DatosRestriccion = {
 export async function guardarRestriccionPedido(d: DatosRestriccion): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
-  if (!PUEDEN.includes(usuario.rol)) {
+  if (!puedeFijarRestriccionPeso(usuario.rol)) {
     return {
       ok: false,
-      mensaje: `Su rol (${usuario.rol}) no puede fijar restricciones de peso.`,
+      mensaje: 'Fijar la restricción de peso corresponde a Gerencia, Operaciones, Comercial o Comercio Exterior.',
     };
   }
 

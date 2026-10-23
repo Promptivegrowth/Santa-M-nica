@@ -72,8 +72,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(destino);
   }
 
-  // Con sesión y entrando al login → directo al panel
-  if (user && ruta === '/login') {
+  // Con sesión y entrando al login → directo al panel. Salvo que se llegue
+  // aquí PORQUE la cuenta está desactivada: entonces el login cierra esa
+  // sesión, y mandarlo al panel sería un rebote sin fin panel ↔ login.
+  if (user && ruta === '/login' && !request.nextUrl.searchParams.has('motivo')) {
     const destino = request.nextUrl.clone();
     destino.pathname = '/panel';
     destino.search = '';
@@ -93,7 +95,7 @@ export async function proxy(request: NextRequest) {
   if (user && !esPublica && ruta !== '/') {
     const { data: ficha } = await supabase
       .from('usuarios')
-      .select('rol, activo')
+      .select('rol, activo, debe_cambiar_clave')
       .eq('id', user.id)
       .single();
 
@@ -102,6 +104,24 @@ export async function proxy(request: NextRequest) {
       const destino = request.nextUrl.clone();
       destino.pathname = '/login';
       destino.searchParams.set('motivo', 'cuenta-inactiva');
+      return NextResponse.redirect(destino);
+    }
+
+    /*
+     * Contraseña temporal (la puso Gerencia al crear la cuenta o al
+     * restablecerla): hasta cambiarla, la única pantalla es la de cambiarla.
+     * Las API responden con un error en vez de redirigir.
+     */
+    if (ficha.debe_cambiar_clave && ruta !== '/cuenta/clave') {
+      if (ruta.startsWith('/api/')) {
+        return NextResponse.json(
+          { error: 'Antes de seguir, cambie la contraseña temporal que le dio Gerencia.' },
+          { status: 403 }
+        );
+      }
+      const destino = request.nextUrl.clone();
+      destino.pathname = '/cuenta/clave';
+      destino.search = '';
       return NextResponse.redirect(destino);
     }
 

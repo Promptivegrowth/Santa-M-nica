@@ -20,7 +20,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { BuscadorTrazabilidad } from '../Buscador';
-import { tm, num, fechaHora } from '@/lib/formato';
+import { tm, num, fecha, fechaHora } from '@/lib/formato';
 
 export const metadata: Metadata = { title: 'Retiro sanitario' };
 export const dynamic = 'force-dynamic';
@@ -30,13 +30,19 @@ export default async function PaginaRetiro(props: PageProps<'/trazabilidad/retir
   const texto = ((q.q as string) ?? '').trim();
   const supabase = await crearClienteServidor();
 
-  // Se busca el lote por su código de pallet o de lote
-  const { data: lotes } = texto.length >= 2
+  /*
+   * Se busca el lote por su código de pallet o de lote, AQUÍ MISMO: la caja de
+   * esta pantalla ya no lleva al buscador universal. Las comas y paréntesis
+   * se quitan porque romperían el filtro `or` de la consulta.
+   */
+  const patron = texto.replace(/[%,()*]/g, ' ').trim();
+  const { data: lotes } = patron.length >= 2
     ? await supabase
         .from('lotes')
         .select('id, codigo_pallet, codigo_lote, fecha_produccion')
-        .or(`codigo_pallet.ilike.%${texto}%,codigo_lote.ilike.%${texto}%`)
-        .limit(10)
+        .or(`codigo_pallet.ilike.%${patron}%,codigo_lote.ilike.%${patron}%`)
+        .order('codigo_pallet')
+        .limit(30)
     : { data: null };
 
   const loteId = q.lote ? Number(q.lote) : (lotes && lotes.length === 1 ? (lotes[0].id as number) : null);
@@ -63,18 +69,34 @@ export default async function PaginaRetiro(props: PageProps<'/trazabilidad/retir
         volver={{ href: '/trazabilidad', texto: 'Volver a trazabilidad' }}
       />
 
-      <BuscadorTrazabilidad valorInicial={texto} />
+      <BuscadorTrazabilidad
+        valorInicial={texto}
+        destino="/trazabilidad/retiro"
+        placeholder="Código de pallet o de lote afectado…"
+        etiqueta="Buscar el lote del retiro"
+        vacio="Escriba el código del pallet o del lote afectado para calcular el alcance del retiro."
+      />
+
+      {/* Buscó y no hay ningún lote con ese código */}
+      {texto.length >= 2 && !q.lote && (lotes ?? []).length === 0 && (
+        <Panel titulo={`Ningún lote coincide con «${texto}»`} className="mb-espacio">
+          <Vacio
+            titulo="Sin lotes"
+            mensaje="Pruebe con el código completo del pallet (SM 26 02 0001) o con el código de lote. Si busca otra cosa —una proforma, un contenedor—, use el Buscador universal."
+          />
+        </Panel>
+      )}
 
       {/* Si la búsqueda devolvió varios lotes, hay que elegir uno */}
       {lotes && lotes.length > 1 && !q.lote && (
-        <Panel titulo={`${lotes.length} lotes coinciden · elija uno`} className="mb-espacio">
+        <Panel titulo={`${lotes.length}${lotes.length === 30 ? ' o más' : ''} lotes coinciden · elija uno`} className="mb-espacio">
           <ul className="lista-simple">
             {lotes.map((l) => (
               <li key={l.id as number}>
                 <Link href={`/trazabilidad/retiro?q=${encodeURIComponent(texto)}&lote=${l.id}`} className="enlace-dato">
                   {l.codigo_pallet as string}
                 </Link>
-                <span>lote {(l.codigo_lote as string) ?? '—'}</span>
+                <span>lote {(l.codigo_lote as string) ?? '—'} · producido el {fecha(l.fecha_produccion as string)}</span>
               </li>
             ))}
           </ul>

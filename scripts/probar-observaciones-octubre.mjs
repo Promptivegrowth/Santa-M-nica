@@ -109,8 +109,10 @@ try {
     const ret = (await p.locator('main table.datos tbody tr td:first-child a').allInnerTexts()).map((s) => s.trim());
     const espRet = (await consultar(`
       select p.numero_proforma from v_control_pedidos v join pedidos p on p.id = v.id
-       where v.situacion_control = 'por_atender' and v.retrasado order by p.creado_en desc, p.id desc limit 200`)).map((x) => x.numero_proforma);
-    ok(JSON.stringify(ret) === JSON.stringify(espRet), 'también en cada tarjeta (retrasados)', `${ret.length} pedidos`);
+       where v.situacion_control = 'por_atender' and v.retrasado order by p.creado_en desc, p.id desc`)).map((x) => x.numero_proforma);
+    // Desde la 071 la tabla va paginada: se compara la primera página con el mismo orden de la base.
+    ok(ret.length > 0 && JSON.stringify(ret) === JSON.stringify(espRet.slice(0, ret.length)),
+       'también en cada tarjeta (retrasados)', `${ret.length} de ${espRet.length} pedidos en la primera página`);
   }
 
   console.log(SEC('3 a 6', 'La cotización nueva: tipo de cambio SUNAT, fecha tentativa, plazo y adelanto'));

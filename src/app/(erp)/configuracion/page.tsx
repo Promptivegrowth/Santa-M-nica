@@ -26,9 +26,10 @@ import { InterruptorObjetivos } from './InterruptorObjetivos';
 import { InterruptorCostos } from './InterruptorCostos';
 import { InterruptorRegla } from './InterruptorRegla';
 import { ContactosYCuentas } from './ContactosYCuentas';
+import { NuevoUsuario, SelectorRol, AccesoUsuario } from './GestionUsuarios';
 import { Icono } from '@/components/estructura/Icono';
 import { num, fecha, fechaHora } from '@/lib/formato';
-import type { Rol } from '@/lib/navegacion';
+import { NOMBRE_ROL, type Rol } from '@/lib/navegacion';
 
 export const metadata: Metadata = { title: 'Configuración' };
 export const dynamic = 'force-dynamic';
@@ -162,7 +163,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
       supabase.from('parametros').select('*').order('grupo').order('etiqueta'),
       supabase.from('reglas').select('*').order('severidad', { ascending: false }).order('nombre'),
       supabase.from('motivos').select('*').order('ambito').order('nombre'),
-      supabase.from('usuarios').select('id, nombre, email, rol, activo, aprueba_cotizaciones, ve_objetivos, carga_costos, creado_en').order('rol'),
+      supabase.from('usuarios').select('id, nombre, email, rol, almacen_id, activo, aprueba_cotizaciones, ve_objetivos, carga_costos, debe_cambiar_clave, creado_en').order('activo', { ascending: false }).order('rol').order('nombre'),
       Promise.all([
         supabase.from('almacenes').select('id', { count: 'exact', head: true }),
         supabase.from('skus').select('id', { count: 'exact', head: true }),
@@ -177,6 +178,24 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
         },
       })),
     ]);
+
+  /* ----------------------------------------------------------------------
+     Lo que solo necesitan dos pestañas: la última pasada del evaluador de
+     reglas y los almacenes (para el rol Almacén de un usuario).
+     ---------------------------------------------------------------------- */
+  const [{ data: evaluacion }, { data: almacenesBd }] = await Promise.all([
+    pestana === 'reglas'
+      ? supabase.from('reglas_evaluacion').select('regla_id, evaluada_en, abiertas, medible')
+      : Promise.resolve({ data: null }),
+    pestana === 'usuarios'
+      ? supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre')
+      : Promise.resolve({ data: null }),
+  ]);
+  const evalPorRegla = new Map(
+    ((evaluacion ?? []) as { regla_id: number; evaluada_en: string; abiertas: number; medible: boolean }[])
+      .map((e) => [Number(e.regla_id), e])
+  );
+  const almacenes = ((almacenesBd ?? []) as { id: number; nombre: string }[]).map((x) => ({ id: Number(x.id), nombre: String(x.nombre) }));
 
   /* ----------------------------------------------------------------------
      Contactos y cuentas.
@@ -339,13 +358,16 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
       {pestana === 'reglas' && (
         <Panel titulo={`${(reglas ?? []).length} reglas configuradas`}>
           <p className="pie-explicativo" style={{ padding: '.9rem 1rem 0' }}>
-            Cada regla vigila una condición del negocio y genera alertas cuando se cumple.
-            Se pueden activar y desactivar sin tocar código.
+            Cada regla vigila una condición del negocio y abre una alerta por cada registro que la
+            cumple. El sistema las revisa <strong>cada mañana</strong> y <strong>al mover el
+            interruptor</strong>: al apagar una regla se cierran sus alertas abiertas; al encenderla
+            se abren las que correspondan. Una alerta que alguien marcó como atendida no se vuelve a
+            abrir para el mismo registro.
           </p>
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0, marginTop: '.7rem' }}>
             <table className="datos">
               <thead>
-                <tr><th>Regla</th><th>Qué vigila</th><th>Sobre</th><th>Severidad</th><th>Estado</th></tr>
+                <tr><th>Regla</th><th>Qué vigila</th><th>Sobre</th><th>Severidad</th><th className="num">Alertas abiertas</th><th>Estado</th></tr>
               </thead>
               <tbody>
                 {(reglas ?? []).map((r) => (
@@ -364,6 +386,23 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                         texto={r.severidad === 'critica' ? 'Crítica' : r.severidad === 'advertencia' ? 'Advertencia' : 'Info'}
                         tono={r.severidad === 'critica' ? 'critico' : r.severidad === 'advertencia' ? 'atencion' : 'info'}
                       />
+                    </td>
+                    <td className="num" data-regla-abiertas={r.id as number}>
+                      {(() => {
+                        const ev = evalPorRegla.get(Number(r.id));
+                        if (!ev) return <span style={{ color: 'var(--tinta-3)' }}>Sin evaluar</span>;
+                        return (
+                          <>
+                            <Link href={`/alertas?titulo=${encodeURIComponent(String(r.nombre))}`} className="enlace-dato">
+                              {num(ev.abiertas)}
+                            </Link>
+                            <br />
+                            <span style={{ fontSize: '.68rem', color: 'var(--tinta-3)' }}>
+                              {ev.medible ? `revisada ${fechaHora(ev.evaluada_en)}` : 'el sistema no sabe medir este campo'}
+                            </span>
+                          </>
+                        );
+                      })()}
                     </td>
                     <td>
                       <InterruptorRegla id={r.id as number} activaInicial={r.activa as boolean} />
@@ -527,20 +566,53 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
 
       {/* ══════ USUARIOS ══════ */}
       {pestana === 'usuarios' && (
-        <Panel titulo={`${(usuarios ?? []).length} usuarios del sistema`}>
+        <Panel titulo={`${(usuarios ?? []).length} usuarios del sistema · ${(usuarios ?? []).filter((u) => u.activo).length} activos`}>
+          <NuevoUsuario editable={rol === 'gerencia'} almacenes={almacenes} />
           {(usuarios ?? []).length === 0 ? (
             <Vacio titulo="Sin usuarios" mensaje="No hay usuarios registrados." />
           ) : (
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
               <table className="datos">
-                <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Aprueba cotizaciones</th><th>Carga costos</th>{usuario?.ve_objetivos === true && <th>Objetivos</th>}<th>Alta</th></tr></thead>
+                <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acceso</th><th>Aprueba cotizaciones</th><th>Carga costos</th>{usuario?.ve_objetivos === true && <th>Objetivos</th>}<th>Alta</th></tr></thead>
                 <tbody>
                   {(usuarios ?? []).map((u) => (
-                    <tr key={u.id as string}>
-                      <td><strong style={{ fontWeight: 600 }}>{u.nombre as string}</strong></td>
+                    <tr key={u.id as string} data-usuario={u.email as string}>
+                      <td>
+                        <strong style={{ fontWeight: 600 }}>{u.nombre as string}</strong>
+                        {u.id === usuario?.id && <span style={{ fontSize: '.7rem', color: 'var(--tinta-3)' }}> (usted)</span>}
+                      </td>
                       <td className="mono">{u.email as string}</td>
-                      <td><Etiqueta texto={u.rol as string} tono="info" /></td>
+                      <td>
+                        {/*
+                          Gerencia cambia el rol aquí mismo. Los demás ven el
+                          selector apagado con el motivo; nadie se quita a sí
+                          mismo el rol Gerencia.
+                        */}
+                        {rol === 'gerencia' ? (
+                          <SelectorRol
+                            id={u.id as string}
+                            nombre={u.nombre as string}
+                            rol={u.rol as Rol}
+                            almacenId={(u.almacen_id as number | null) ?? null}
+                            almacenes={almacenes}
+                            editable
+                            esUnoMismo={u.id === usuario?.id}
+                          />
+                        ) : (
+                          <span title="Solo Gerencia cambia roles."><Etiqueta texto={NOMBRE_ROL[u.rol as Rol] ?? String(u.rol)} tono="info" /></span>
+                        )}
+                      </td>
                       <td>{u.activo ? <Etiqueta texto="Activo" tono="ok" /> : <Etiqueta texto="Inactivo" tono="neutro" />}</td>
+                      <td>
+                        <AccesoUsuario
+                          id={u.id as string}
+                          nombre={u.nombre as string}
+                          activo={u.activo === true}
+                          debeCambiar={u.debe_cambiar_clave === true}
+                          editable={rol === 'gerencia'}
+                          esUnoMismo={u.id === usuario?.id}
+                        />
+                      </td>
                       <td>
                         {/*
                           Facultad PERSONAL, no del rol: Oliver nombró a tres
@@ -572,7 +644,10 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
           <p className="pie-explicativo" style={{ padding: '.9rem 1rem 1rem' }}>
             El rol de cada usuario gobierna sus permisos <strong>dentro de la base de datos</strong>,
             no solo en la pantalla. Aunque alguien manipulara el navegador, PostgreSQL rechazaría la
-            operación que no le corresponde.
+            operación que no le corresponde. Una cuenta <strong>desactivada</strong> no puede entrar,
+            pierde sus sesiones abiertas y deja de aparecer en las listas para elegir responsables;
+            sus registros y su historial se conservan. Las contraseñas temporales las comunica
+            Gerencia en persona y el sistema obliga a cambiarlas al entrar.
           </p>
         </Panel>
       )}

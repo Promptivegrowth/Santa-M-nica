@@ -76,6 +76,7 @@ const candidatos = sql(`
   from pedido_lineas pl
   join pedidos p on p.id = pl.pedido_id
   where p.situacion not in ('facturado','parcialmente_cobrado','cobrado')
+    and p.ciclo in ('borrador','pendiente_validacion','confirmado')
   order by lotes desc, pl.id
   limit 40;
 `);
@@ -110,8 +111,8 @@ await p.waitForTimeout(2000);
 comprobar('La pestaña de cobertura ofrece «Apartar stock»',
   (await p.locator('button', { hasText: 'Apartar stock' }).count()) > 0);
 
-/* ---- Se abre el panel ---- */
-await p.locator('button', { hasText: 'Apartar stock' }).first().click();
+/* ---- Se abre el panel de ESA línea (el primer botón puede ser de otra) ---- */
+await p.locator(`tr[data-linea="${caso.linea_id}"] button`, { hasText: 'Apartar stock' }).click();
 await p.waitForTimeout(3500);
 
 comprobar('Se abre el panel con los lotes candidatos',

@@ -7,9 +7,10 @@
  *  Cuatro cosas se pueden hacer desde el listado:
  *
  *   VER        siempre disponible
- *   EDITAR     solo mientras sea borrador o esté enviada, y no se haya
+ *   EDITAR     mientras sea borrador, aprobada o enviada, y no se haya
  *              convertido en pedido. Los precios de una venta cerrada no
- *              se cambian.
+ *              se cambian. (Un cambio comercial en una aprobada anula la
+ *              aprobación al guardar: lo decide el servidor.)
  *   CONVERTIR  cuando el cliente acepta. Crea el pedido heredando todo.
  *   ELIMINAR   solo si no generó pedido. Si lo generó, borrarla dejaría el
  *              pedido huérfano y rompería la trazabilidad del precio.
@@ -50,7 +51,7 @@ export function AccionesFila({
   const [error, setError] = useState<string | null>(null);
   const [pendiente, iniciar] = useTransition();
 
-  const editable = puedeOperar && !yaConvertida && ['borrador', 'enviada'].includes(estado);
+  const editable = puedeOperar && !yaConvertida && ['borrador', 'aprobada', 'enviada'].includes(estado);
   const convertible = puedeOperar && !yaConvertida && !sinAprobar && !['rechazada', 'vencida'].includes(estado);
   const borrable = puedeOperar && !yaConvertida;
 

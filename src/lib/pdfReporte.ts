@@ -333,8 +333,20 @@ export async function generarPdfReporte(opciones: OpcionesPdfReporte): Promise<B
             width: anchos[i] * 2, lineBreak: false,
           });
       } else if (op.totalizar?.includes(c.clave)) {
-        doc.fillColor(MARCA.blanco).font('Courier-Bold').fontSize(6.8)
-          .text(celda(totales[c.clave], c.tipo), x + 3, y + 5, {
+        /*
+         * El total suele ser la cifra más larga de su columna, y en negrita
+         * no cabía: «US$» saltaba a una segunda línea fuera de la franja. Se
+         * achica la letra lo justo para que entre en una sola línea.
+         */
+        const texto = celda(totales[c.clave], c.tipo);
+        let tamano = 6.8;
+        doc.font('Courier-Bold').fontSize(tamano);
+        while (tamano > 4.6 && doc.widthOfString(texto) > anchos[i] - 6) {
+          tamano -= 0.2;
+          doc.fontSize(tamano);
+        }
+        doc.fillColor(MARCA.blanco)
+          .text(texto, x + 3, y + 5, {
             width: anchos[i] - 6, align: 'right', lineBreak: false,
           });
       }

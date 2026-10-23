@@ -122,16 +122,27 @@ export async function guardarParametro(
   return { ok: true, mensaje: `${parametro.etiqueta} actualizado correctamente.` };
 }
 
-/** Activa o desactiva una regla del motor de alertas. */
+/**
+ * Activa o desactiva una regla del motor de alertas.
+ *
+ * Y la evalúa en el acto (reglas_evaluar, 070): antes el interruptor cambiaba
+ * un dato que nada consultaba. Ahora, al apagarla se cierran sus alertas
+ * abiertas y al encenderla se abren las que correspondan, sin esperar a la
+ * pasada de cada mañana.
+ */
 export async function alternarRegla(id: number, activa: boolean): Promise<ResultadoAccion> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
+  if (!['gerencia', 'operaciones'].includes(usuario.rol)) {
+    return { ok: false, mensaje: 'Solo Gerencia y Operaciones encienden o apagan reglas.' };
+  }
 
   const supabase = await crearClienteServidor();
-  const { error } = await supabase
+  const { data: guardada, error } = await supabase
     .from('reglas')
     .update({ activa, actualizado_en: new Date().toISOString() })
-    .eq('id', id);
+    .eq('id', id)
+    .select('id, activa');
 
   if (error) {
     return {
@@ -141,10 +152,33 @@ export async function alternarRegla(id: number, activa: boolean): Promise<Result
         : `No se pudo guardar: ${error.message}`,
     };
   }
+  // Una escritura bloqueada por las políticas no da error: no devuelve filas.
+  if (!guardada?.length || guardada[0].activa !== activa) {
+    return { ok: false, mensaje: 'El cambio no llegó a guardarse. Es un problema de permisos: avise a soporte.' };
+  }
 
+  const { data: pasada, error: errEval } = await supabase.rpc('reglas_evaluar', { p_regla_id: id });
   revalidatePath('/configuracion');
   revalidatePath('/alertas');
-  return { ok: true, mensaje: activa ? 'Regla activada.' : 'Regla desactivada.' };
+  revalidatePath('/panel');
+
+  if (errEval) {
+    return {
+      ok: true,
+      mensaje: `${activa ? 'Regla activada' : 'Regla desactivada'}, pero no se pudo revisar ahora (${errEval.message}). Se revisará en la pasada de mañana.`,
+    };
+  }
+  const r = ((pasada ?? []) as { abiertas: number; nuevas: number; cerradas: number; medible: boolean }[])[0];
+  if (!r) return { ok: true, mensaje: activa ? 'Regla activada.' : 'Regla desactivada.' };
+  if (activa && !r.medible) {
+    return { ok: true, mensaje: 'Regla activada, pero el sistema no sabe medir su campo: no abrirá alertas.' };
+  }
+  return {
+    ok: true,
+    mensaje: activa
+      ? `Regla activada: ${r.abiertas} alerta${r.abiertas === 1 ? '' : 's'} abierta${r.abiertas === 1 ? '' : 's'} (${r.nuevas} nueva${r.nuevas === 1 ? '' : 's'}).`
+      : `Regla desactivada: se cerraron ${r.cerradas} alerta${r.cerradas === 1 ? '' : 's'} y no abrirá más mientras esté apagada.`,
+  };
 }
 
 /**

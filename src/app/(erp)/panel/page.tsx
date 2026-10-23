@@ -57,7 +57,12 @@ export default async function PaginaPanel() {
     // nueve tipos —incluido el aviso de stock por vencer que pidió el cliente—.
     supabase.from('v_alertas_resumen').select('titulo, severidad, entidad, cuantas, mensaje, entidad_id, ultima')
       .order('severidad', { ascending: false })
-      .order('cuantas', { ascending: false }).limit(10),
+      /*
+       * Tipos, no alertas: son pocos (uno por regla o aviso). Con tope 10, las
+       * reglas conectadas en la 070 dejaron fuera avisos de una sola fila
+       * —«Stock por vencer», que el cliente pidió ver aquí—. Se muestran todos.
+       */
+      .order('cuantas', { ascending: false }).limit(30),
     supabase.from('v_pedidos_tablero').select('id, numero_proforma, cliente, venta, moneda, tm_pedidas, tm_faltantes, fecha_comprometida, semaforo, prioridad')
       .in('semaforo', ['riesgo', 'bloqueado']).order('fecha_comprometida').limit(8),
     supabase.from('v_rentabilidad_pedido').select('cliente, venta').in('ciclo', ['despachado', 'cerrado']),

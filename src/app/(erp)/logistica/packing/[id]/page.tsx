@@ -30,7 +30,7 @@ import { CabeceraPagina, RejillaKpi, Kpi, Panel, Etiqueta } from '@/components/u
 import { Icono } from '@/components/estructura/Icono';
 import { EsqueletoKpi, EsqueletoTabla } from '@/components/ui/Esqueleto';
 import { Historial } from '@/components/ui/Historial';
-import { tm, num, fecha } from '@/lib/formato';
+import { tm, num, fecha, etiquetaEstado } from '@/lib/formato';
 import { BotonDespachar } from './Despachar';
 import { PlanoEditable } from './PlanoEditable';
 import { CargarLotes } from './CargarLotes';
@@ -97,14 +97,16 @@ export default async function PaginaPlano(props: PageProps<'/logistica/packing/[
         volver={{ href: '/logistica/packing', texto: 'Volver a packing lists' }}
       >
         {embCab?.numero ? (
-          <Link href={`/logistica/embarques?buscar=${embCab.numero}`} className="btn btn-sutil">
+          //  A la ficha del embarque, no a la lista: la lista corta en «desde hoy»
+          //  y un embarque ya pasado no aparecía.
+          <Link href={`/logistica/embarques/${pk.embarque_id}`} className="btn btn-sutil">
             <Icono nombre="embarques" tamano={15} />
             Ver el embarque
           </Link>
         ) : null}
         <Etiqueta
-          texto={String(pk.estado).replace('_', ' ')}
-          tono={pk.estado === 'cerrado' ? 'ok' : 'atencion'}
+          texto={etiquetaEstado(String(pk.estado))}
+          tono={pk.estado === 'cerrado' ? 'ok' : pk.estado === 'en_carga' ? 'atencion' : pk.estado === 'anulado' ? 'critico' : 'neutro'}
         />
       </CabeceraPagina>
 
