@@ -119,11 +119,14 @@ export function CalendarioEmbarques({
   topeSimultaneo,
   recargoDomingo,
   puedeFijarTopes,
+  diaInicial,
 }: {
   embarques: EmbarqueCalendario[];
   anio: number;
   mes: number;
   hoy: string;
+  /** El día que se quiere ver abierto (al llegar desde la ficha de un embarque). */
+  diaInicial?: string;
   /** ¿El usuario puede escribir los topes de peso? Comercial, Comex y jefaturas. */
   puedeFijarTopes: boolean;
   topeSimultaneo: number;
@@ -147,7 +150,7 @@ export function CalendarioEmbarques({
    */
   const primeroConCarga = dias.find((d) => porDia.has(d)) ?? dias[0];
   const [elegido, setElegido] = useState<string>(
-    porDia.has(hoy) ? hoy : primeroConCarga
+    diaInicial && dias.includes(diaInicial) ? diaInicial : porDia.has(hoy) ? hoy : primeroConCarga
   );
 
   const celdas = useRef<Map<string, HTMLButtonElement | null>>(new Map());

@@ -339,7 +339,12 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
 
     /* Un pallet puede tener varias reservas del mismo embarque: viajan juntas
        en una sola línea de packing, que es como sube al contenedor. */
-    const porLote = new Map<number, { bultos: number; kg: number }>();
+    /*
+     * Cada pallet va con la línea del pedido a la que pertenece (la de más
+     * kilos si el pallet está repartido entre dos). Sin ese vínculo, el
+     * despacho no sabía a qué proforma correspondía cada pallet.
+     */
+    const porLote = new Map<number, { bultos: number; kg: number; lineas: Map<number, number> }>();
     for (const r of reservas ?? []) {
       let kg = Number(r.peso_neto_kg ?? 0);
       let bultos = Number(r.bultos ?? 0);
@@ -351,9 +356,10 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
         cupo.set(k, queda - kg);
       }
       const id = Number(r.lote_id);
-      const previo = porLote.get(id) ?? { bultos: 0, kg: 0 };
+      const previo = porLote.get(id) ?? { bultos: 0, kg: 0, lineas: new Map<number, number>() };
       previo.bultos += bultos;
       previo.kg += kg;
+      previo.lineas.set(Number(r.pedido_linea_id), (previo.lineas.get(Number(r.pedido_linea_id)) ?? 0) + kg);
       porLote.set(id, previo);
     }
 
@@ -362,6 +368,7 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
         [...porLote.entries()].map(([lote_id, v]) => ({
           packing_list_id: packing.id,
           lote_id,
+          pedido_linea_id: [...v.lineas.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
           bultos: Math.max(1, Math.round(v.bultos)),
           peso_neto_kg: v.kg,
         }))

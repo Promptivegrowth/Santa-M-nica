@@ -48,6 +48,8 @@ export function AccionesFicha({
 
   const editable = !yaConvertida && ['borrador', 'aprobada', 'enviada'].includes(estado);
   const convertible = !yaConvertida && !['rechazada', 'vencida'].includes(estado);
+  // Si la empresa exige aprobar, convertir también espera la firma (el servidor lo vuelve a comprobar).
+  const puedeConvertir = !requiereAprobacion || aprobada;
 
   /*
    * Una oferta solo sale al cliente si lleva la firma —cuando la empresa la
@@ -194,7 +196,9 @@ export function AccionesFicha({
         <button
           type="button"
           className="btn btn-primario"
-          disabled={pendiente}
+          disabled={pendiente || !puedeConvertir}
+          title={puedeConvertir ? undefined : 'Primero tiene que aprobarse: solo una cotización aprobada se convierte en pedido'}
+          data-accion="convertir"
           onClick={() => accion(() => convertirEnPedido(cotizacionId), true)}
         >
           <Icono nombre="pedido" tamano={15} />

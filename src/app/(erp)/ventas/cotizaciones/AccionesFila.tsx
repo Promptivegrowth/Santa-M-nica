@@ -29,12 +29,15 @@ export function AccionesFila({
   numero,
   estado,
   yaConvertida,
+  sinAprobar = false,
   puedeOperar,
 }: {
   cotizacionId: number;
   numero: string;
   estado: string;
   yaConvertida: boolean;
+  /** La empresa exige aprobar y esta todavía no lo está: no se convierte. */
+  sinAprobar?: boolean;
   /**
    * Los roles de solo consulta (almacén, calidad, finanzas) también necesitan
    * abrir la ficha para saber qué se ofreció. Lo que no pueden es cambiarla:
@@ -48,7 +51,7 @@ export function AccionesFila({
   const [pendiente, iniciar] = useTransition();
 
   const editable = puedeOperar && !yaConvertida && ['borrador', 'enviada'].includes(estado);
-  const convertible = puedeOperar && !yaConvertida && !['rechazada', 'vencida'].includes(estado);
+  const convertible = puedeOperar && !yaConvertida && !sinAprobar && !['rechazada', 'vencida'].includes(estado);
   const borrable = puedeOperar && !yaConvertida;
 
   function convertir() {
@@ -148,7 +151,10 @@ export function AccionesFila({
         ) : yaConvertida ? (
           <span className="pill pill-ok" title="Esta cotización ya generó un pedido">Pedido</span>
         ) : (
-          <button type="button" className="accion-btn" disabled title={`Una cotización ${estado} no se convierte`}>
+          <button type="button" className="accion-btn" disabled
+                  title={sinAprobar && !['rechazada', 'vencida'].includes(estado)
+                    ? 'Primero tiene que aprobarse: solo una cotización aprobada se convierte en pedido'
+                    : `Una cotización ${estado} no se convierte`}>
             <Icono nombre="pedido" tamano={14} />
           </button>
         ))}

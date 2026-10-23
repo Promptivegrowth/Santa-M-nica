@@ -34,6 +34,7 @@ import { tm, num, fecha } from '@/lib/formato';
 import { BotonDespachar } from './Despachar';
 import { PlanoEditable } from './PlanoEditable';
 import { CargarLotes } from './CargarLotes';
+import { EditarDatosPacking } from './EditarDatos';
 
 export const dynamic = 'force-dynamic';
 
@@ -143,7 +144,7 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
 }) {
   const supabase = await crearClienteServidor();
 
-  const [{ data: lineas }, { data: celdas }] = await Promise.all([
+  const [{ data: lineas }, { data: celdas }, { data: supervisores }] = await Promise.all([
     supabase
       .from('packing_lineas')
       .select('lote_id, bultos, peso_neto_kg, lotes(codigo_pallet, codigo_lote, fecha_produccion, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg)))')
@@ -153,6 +154,10 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
       .select('lote_id, fila, sacos')
       .eq('packing_list_id', packingId)
       .order('fila'),
+    // Para elegir el supervisor de la carga al editar los datos del contenedor.
+    puedeDespachar
+      ? supabase.from('usuarios').select('id, nombre').eq('activo', true).in('rol', ['gerencia', 'operaciones', 'almacen', 'comex']).order('nombre')
+      : Promise.resolve({ data: [] as { id: string; nombre: string }[] }),
   ]);
 
   const emb = Array.isArray(pk.embarques) ? pk.embarques[0] : pk.embarques;
@@ -252,6 +257,37 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
           <div><dt>Hora inicio</dt><dd className="mono">{(pk.hora_inicio as string) ?? '—'}</dd></div>
           <div><dt>Hora fin</dt><dd className="mono">{(pk.hora_fin as string) ?? '—'}</dd></div>
         </dl>
+        {/* Precinto, guía y DAM llegan el día de la carga: se completan aquí mientras el packing esté abierto. */}
+        {puedeDespachar && (
+          <EditarDatosPacking
+            packingId={packingId}
+            /*
+             * El supervisor actual va siempre en la lista, aunque su rol no
+             * esté entre los de logística: si faltara, el formulario lo
+             * mostraría «sin asignar» y al guardar se borraría sin aviso.
+             */
+            supervisores={[
+              ...(pk.supervisor_id && !(supervisores ?? []).some((s) => String(s.id) === String(pk.supervisor_id))
+                ? [{ id: String(pk.supervisor_id), nombre: String(sup?.nombre ?? 'Supervisor actual') }]
+                : []),
+              ...(supervisores ?? []).map((s) => ({ id: String(s.id), nombre: String(s.nombre) })),
+            ]}
+            datos={{
+              contenedor: (pk.contenedor as string) ?? null,
+              precinto: (pk.precinto as string) ?? null,
+              guia_remision: (pk.guia_remision as string) ?? null,
+              dam: (pk.dam as string) ?? null,
+              supervisor_id: (pk.supervisor_id as string) ?? null,
+              turno: pk.turno === 'noche' ? 'noche' : 'dia',
+              fecha_carga: (pk.fecha_carga as string)?.slice(0, 10) ?? null,
+              hora_inicio: (pk.hora_inicio as string)?.slice(0, 5) ?? null,
+              hora_fin: (pk.hora_fin as string)?.slice(0, 5) ?? null,
+              filas_contenedor: filasContenedor,
+              sacos_por_fila: sacosPorFila,
+              observaciones: (pk.observaciones as string) ?? null,
+            }}
+          />
+        )}
       </Panel>
 
       {/* ══════ EL PLANO ══════ */}

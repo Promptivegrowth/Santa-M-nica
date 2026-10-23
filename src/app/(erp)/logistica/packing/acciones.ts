@@ -447,9 +447,28 @@ export async function agregarLoteAlPacking(
   const { data: lote } = await supabase
     .from('lotes').select('codigo_pallet').eq('id', loteId).maybeSingle();
 
+  /*
+   * ¿Para qué proforma va este pallet? Si está apartado para un pedido de
+   * este embarque, se guarda esa línea: es lo que después dice el despacho
+   * (y el reporte de carga) pallet por pallet. Si es stock libre, va sin línea.
+   */
+  const { data: pk } = await supabase.from('packing_lists').select('embarque_id, embarques(almacen_id)').eq('id', packingId).maybeSingle();
+  const almacen = Number((Array.isArray(pk?.embarques) ? pk?.embarques[0] : pk?.embarques)?.almacen_id);
+  const { data: delEmbarque } = await supabase.from('embarque_pedidos').select('pedido_id').eq('embarque_id', Number(pk?.embarque_id));
+  const pedidosEmbarque = (delEmbarque ?? []).map((x) => Number(x.pedido_id));
+  const { data: apartadas } = pedidosEmbarque.length
+    ? await supabase.from('reservas')
+        .select('pedido_linea_id, peso_neto_kg, pedido_lineas!inner(pedido_id)')
+        .eq('lote_id', loteId).eq('almacen_id', almacen).in('estado', ['activa', 'en_preparacion'])
+        .in('pedido_lineas.pedido_id', pedidosEmbarque)
+        .order('peso_neto_kg', { ascending: false })
+    : { data: [] };
+  const pedidoLineaId = apartadas?.[0]?.pedido_linea_id ? Number(apartadas[0].pedido_linea_id) : null;
+
   const { error } = await supabase.from('packing_lineas').insert({
     packing_list_id: packingId,
     lote_id: loteId,
+    pedido_linea_id: pedidoLineaId,
     bultos: Math.round(bultos),
     peso_neto_kg: kg,
   });

@@ -471,6 +471,22 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
   if (!cot) return { ok: false, mensaje: 'La cotización no existe.' };
   if (!lineas?.length) return { ok: false, mensaje: 'La cotización no tiene líneas de producto.' };
 
+  /*
+   * Si Configuración exige aprobar las cotizaciones, tampoco se convierte una
+   * sin aprobar: el precio que pasa al pedido es el que se revisó. Antes este
+   * candado solo existía para «enviar», y una cotización en borrador se podía
+   * convertir directo saltándose la aprobación.
+   */
+  if (['rechazada', 'vencida'].includes(String(cot.estado))) {
+    return { ok: false, mensaje: `${cot.numero} está ${cot.estado}: no se puede convertir en pedido.` };
+  }
+  if (!cot.aprobada_en && (await aprobacionObligatoria())) {
+    return {
+      ok: false,
+      mensaje: `${cot.numero} todavía no está aprobada, así que no se puede convertir en pedido. Pídale a quien aprueba cotizaciones que revise el precio.`,
+    };
+  }
+
   /* ---- No se convierte dos veces ---- */
   const { data: yaExiste } = await supabase
     .from('pedidos').select('id, numero_proforma').eq('cotizacion_id', cotizacionId).maybeSingle();

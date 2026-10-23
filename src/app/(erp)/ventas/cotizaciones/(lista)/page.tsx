@@ -17,6 +17,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { AccionesFila } from '../AccionesFila';
+import { aprobacionObligatoria } from '../acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
@@ -81,10 +82,11 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
     consulta = consulta.in('estado', VIVAS).gt('vence_el', desplazarDias(hoy, 3));
   }
 
-  const [{ data: filas, count }, { data: todas }, { data: convertidas }] = await Promise.all([
+  const [{ data: filas, count }, { data: todas }, { data: convertidas }, requiereAprobacion] = await Promise.all([
     consulta.order('fecha', { ascending: false }).range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
     supabase.from('cotizaciones').select('estado, vence_el, aprobada_en'),
     supabase.from('pedidos').select('cotizacion_id').not('cotizacion_id', 'is', null),
+    aprobacionObligatoria(),
   ]);
 
   const yaConvertidas = new Set((convertidas ?? []).map((p) => Number(p.cotizacion_id)));
@@ -294,6 +296,7 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
                             numero={c.numero as string}
                             estado={c.estado as string}
                             yaConvertida={yaConvertidas.has(c.id as number)}
+                            sinAprobar={requiereAprobacion && !c.aprobada_en}
                             puedeOperar={puedeCrear}
                           />
                         </td>

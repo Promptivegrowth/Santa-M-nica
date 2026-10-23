@@ -245,3 +245,106 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
     mensaje: `Pedido ${pedido.numero_proforma} registrado con ${datos.lineas.length} línea(s).`,
   };
 }
+
+/* ==========================================================================
+   CONFIRMAR Y CANCELAR UN PEDIDO
+   --------------------------------------------------------------------------
+   Todo pedido nace «pendiente de validación» (o «borrador»), pero no había
+   ninguna pantalla para confirmarlo, y el Control de pedidos, el backorder,
+   las necesidades de producción y los tableros solo cuentan los
+   CONFIRMADOS. Un pedido nuevo se quedaba fuera de todo eso. Lo encontró la
+   revisión de la Guía de uso.
+
+   Validar es una decisión de jefatura —el precio, el crédito, la fecha—, así
+   que la toman Gerencia y Operaciones, no quien vendió.
+   ========================================================================== */
+const PUEDEN_VALIDAR = ['gerencia', 'operaciones'];
+
+export async function confirmarPedido(id: number): Promise<{ ok: boolean; mensaje: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
+  if (!PUEDEN_VALIDAR.includes(usuario.rol)) {
+    return { ok: false, mensaje: 'Confirmar un pedido corresponde a Gerencia u Operaciones.' };
+  }
+  const supabase = await crearClienteServidor();
+  const { data: p } = await supabase
+    .from('pedidos').select('numero_proforma, ciclo, clientes(razon_social, bloqueado, motivo_bloqueo), pedido_lineas(id)')
+    .eq('id', id).maybeSingle();
+  if (!p) return { ok: false, mensaje: 'Ese pedido no existe.' };
+  if (!['borrador', 'pendiente_validacion'].includes(String(p.ciclo))) {
+    return { ok: false, mensaje: `${p.numero_proforma} ya está ${String(p.ciclo).replace('_', ' ')}.` };
+  }
+  const cli = Array.isArray(p.clientes) ? p.clientes[0] : p.clientes;
+  if (cli?.bloqueado) {
+    return { ok: false, mensaje: `${cli.razon_social} tiene el crédito bloqueado (${cli.motivo_bloqueo ?? 'sin motivo'}): no se puede confirmar.` };
+  }
+  if (!(p.pedido_lineas ?? []).length) return { ok: false, mensaje: 'El pedido no tiene productos.' };
+
+  const { data, error } = await supabase.from('pedidos').update({ ciclo: 'confirmado' }).eq('id', id).select('id');
+  if (error) return { ok: false, mensaje: `No se pudo confirmar: ${error.message}` };
+  if (!data?.length) return { ok: false, mensaje: 'No tiene permiso para modificar este pedido.' };
+
+  await supabase.rpc('registrar_evento', {
+    p_entidad: 'pedidos', p_entidad_id: id, p_tipo: 'pedido_confirmado',
+    p_descripcion: `${usuario.nombre} confirmó el pedido ${p.numero_proforma}.`, p_severidad: 'info',
+  }).then(() => undefined, () => undefined);
+
+  revalidatePath('/ventas/pedidos');
+  revalidatePath(`/ventas/pedidos/${id}`);
+  revalidatePath('/ventas/control');
+  return { ok: true, mensaje: `${p.numero_proforma} confirmado. Ya cuenta en el Control de pedidos y en las necesidades de producción.` };
+}
+
+/**
+ * Cancelar: con motivo, y soltando lo que tenía apartado para que vuelva a
+ * estar disponible. No se cancela lo que ya salió ni lo que está metido en un
+ * embarque vivo: primero hay que sacarlo de ahí.
+ */
+export async function cancelarPedido(id: number, motivo: string): Promise<{ ok: boolean; mensaje: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
+  if (!PUEDEN_VALIDAR.includes(usuario.rol)) {
+    return { ok: false, mensaje: 'Cancelar un pedido corresponde a Gerencia u Operaciones.' };
+  }
+  const limpio = motivo.trim();
+  if (limpio.length < 5) return { ok: false, mensaje: 'Explique por qué se cancela (al menos 5 caracteres): queda en el historial.' };
+
+  const supabase = await crearClienteServidor();
+  const { data: p } = await supabase.from('pedidos').select('numero_proforma, ciclo').eq('id', id).maybeSingle();
+  if (!p) return { ok: false, mensaje: 'Ese pedido no existe.' };
+  if (['despachado', 'cerrado', 'cancelado'].includes(String(p.ciclo))) {
+    return { ok: false, mensaje: `${p.numero_proforma} ya está ${p.ciclo}: no se puede cancelar.` };
+  }
+  const { data: emb } = await supabase
+    .from('embarque_pedidos').select('embarques!inner(numero, estado)').eq('pedido_id', id).neq('embarques.estado', 'cancelado');
+  if ((emb ?? []).length) {
+    const e = (emb ?? []).map((x) => (Array.isArray(x.embarques) ? x.embarques[0] : x.embarques)?.numero).join(', ');
+    return { ok: false, mensaje: `${p.numero_proforma} está en el embarque ${e}. Sáquelo del embarque antes de cancelar.` };
+  }
+
+  //  Lo apartado vuelve a estar disponible, con el motivo en cada reserva.
+  const { data: reservas } = await supabase
+    .from('reservas').select('id, pedido_lineas!inner(pedido_id)').eq('pedido_lineas.pedido_id', id).in('estado', ['activa', 'en_preparacion']);
+  for (const r of reservas ?? []) {
+    const { error } = await supabase.rpc('reserva_liberar', { p_reserva_id: r.id, p_motivo: `Pedido ${p.numero_proforma} cancelado: ${limpio}` });
+    if (error) return { ok: false, mensaje: `No se pudo soltar una reserva: ${error.message}` };
+  }
+
+  const { data, error } = await supabase.from('pedidos').update({ ciclo: 'cancelado' }).eq('id', id).select('id');
+  if (error) return { ok: false, mensaje: `No se pudo cancelar: ${error.message}` };
+  if (!data?.length) return { ok: false, mensaje: 'No tiene permiso para modificar este pedido.' };
+
+  await supabase.rpc('registrar_evento', {
+    p_entidad: 'pedidos', p_entidad_id: id, p_tipo: 'pedido_cancelado',
+    p_descripcion: `${usuario.nombre} canceló el pedido ${p.numero_proforma}: ${limpio}`, p_severidad: 'advertencia',
+  }).then(() => undefined, () => undefined);
+
+  revalidatePath('/ventas/pedidos');
+  revalidatePath(`/ventas/pedidos/${id}`);
+  revalidatePath('/ventas/control');
+  revalidatePath('/almacenes/reservas');
+  return {
+    ok: true,
+    mensaje: `${p.numero_proforma} cancelado.${(reservas ?? []).length ? ` Se soltaron ${(reservas ?? []).length} reserva(s): ese stock vuelve a estar disponible.` : ''}`,
+  };
+}

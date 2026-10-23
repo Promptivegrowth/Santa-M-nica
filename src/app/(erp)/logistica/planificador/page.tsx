@@ -63,7 +63,17 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
   const usuario = await obtenerUsuarioActual();
 
   const hoy = hoyEnLima();
-  const { anio, mes } = mesPedido(q.mes as string | undefined, hoy);
+  /*
+   * «Ver en el calendario» desde la ficha de un embarque llega con
+   * ?embarque=ID: se abre el mes de ese embarque y su día queda elegido.
+   * Antes el parámetro se ignoraba y siempre se abría el mes actual.
+   */
+  const idEmbarque = Number(q.embarque);
+  const { data: embPedido } = Number.isInteger(idEmbarque) && idEmbarque > 0
+    ? await supabase.from('embarques').select('fecha_programada').eq('id', idEmbarque).maybeSingle()
+    : { data: null };
+  const diaEmbarque = (embPedido?.fecha_programada as string | undefined)?.slice(0, 10);
+  const { anio, mes } = mesPedido((q.mes as string | undefined) ?? diaEmbarque?.slice(0, 7), hoy);
 
   /*
    * El rango que se pide a la base de datos incluye los días de relleno que
@@ -309,6 +319,7 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
           anio={anio}
           mes={mes}
           hoy={hoy}
+          diaInicial={diaEmbarque}
           puedeFijarTopes={PUEDEN_FIJAR_TOPES.includes(usuario?.rol ?? '')}
         topeSimultaneo={topeSimultaneo}
           recargoDomingo={recargoDomingo}

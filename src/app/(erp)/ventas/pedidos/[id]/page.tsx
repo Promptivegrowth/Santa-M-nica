@@ -37,6 +37,7 @@ import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
 import { RestriccionPeso } from './RestriccionPeso';
 import { uno, campo } from '@/lib/relaciones';
 import { BotonFacturar } from './Facturar';
+import { CicloPedido } from './CicloPedido';
 import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
 import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
 import { hoyEnLima } from '@/lib/fechas';
@@ -102,6 +103,8 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
   if (!pedido) notFound();
 
   const puedeFacturar = ['gerencia', 'operaciones', 'comercial'].includes(usuarioCab?.rol ?? '');
+  // Confirmar y cancelar el pedido: lo valida Gerencia u Operaciones.
+  const puedeValidar = ['gerencia', 'operaciones'].includes(usuarioCab?.rol ?? '');
 
   return (
     <>
@@ -121,6 +124,7 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
           Contrato
         </Link>
         <BotonFacturar pedidoId={pedidoId} puede={puedeFacturar} />
+        <CicloPedido pedidoId={pedidoId} ciclo={String(pedido.ciclo)} puede={puedeValidar} />
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>
