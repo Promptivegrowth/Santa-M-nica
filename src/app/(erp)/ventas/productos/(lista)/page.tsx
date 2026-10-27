@@ -39,6 +39,7 @@ import { num, dinero, fecha } from '@/lib/formato';
 import { uno, campo } from '@/lib/relaciones';
 import { aDolares } from '@/lib/moneda';
 import { puedeCotizar } from '@/lib/permisosVentas';
+import { veCostos, type Rol } from '@/lib/navegacion';
 
 export const metadata: Metadata = { title: 'Productos' };
 export const dynamic = 'force-dynamic';
@@ -57,13 +58,22 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
   const supabase = await crearClienteServidor();
   const usuarioActual = await obtenerUsuarioActual();
   const puedeEditar = ['gerencia', 'operaciones', 'comercial'].includes(usuarioActual?.rol ?? '');
+  /*
+   * El último precio de venta es un importe (076): lo ven Gerencia,
+   * Operaciones y Comercial (veCostos), como en el resto del sistema. Almacén,
+   * Calidad, Comercio Exterior y Consulta ven el maestro sin la columna, sin
+   * la tarjeta «Con precio de venta» y sin ordenar por precio.
+   */
+  const vePrecios = veCostos((usuarioActual?.rol ?? 'consulta') as Rol);
 
   const pagina = Math.max(1, Number(q.pagina ?? 1));
   const buscar = ((q.buscar as string) ?? '').trim();
   const especie = (q.especie as string) ?? '';
   const formato = (q.formato as string) ?? '';
   const corte = (q.corte as string) ?? '';
-  const orden = (q.orden as string) ?? '';
+  const ordenPedido = (q.orden as string) ?? '';
+  //  Sin precios, ordenar por precio no tiene sentido (y lo delataría).
+  const orden = !vePrecios && ordenPedido.startsWith('precio') ? '' : ordenPedido;
 
   /*
    * El maestro completo son 360 unidades vendibles: cabe entero en memoria y
@@ -232,13 +242,15 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
         <Kpi etiqueta="Unidades vendibles" valor={num(catalogo.length)} nota="SKU × presentación" href="#lista" />
         <Kpi etiqueta="Cortes distintos" valor={num(cortes)} href="#lista" />
         <Kpi etiqueta="Especies" valor={num((especies ?? []).length)} href="#lista" />
-        <Kpi
-          etiqueta="Con precio de venta"
-          valor={num(conPrecio)}
-          tono={conPrecio > 0 ? 'ok' : 'atencion'}
-          nota={`${num(catalogo.length - conPrecio)} nunca se han vendido`}
-          href="#lista"
-        />
+        {vePrecios && (
+          <Kpi
+            etiqueta="Con precio de venta"
+            valor={num(conPrecio)}
+            tono={conPrecio > 0 ? 'ok' : 'atencion'}
+            nota={`${num(catalogo.length - conPrecio)} nunca se han vendido`}
+            href="#lista"
+          />
+        )}
       </RejillaKpi>
 
       <Panel id="lista" titulo={`${num(filtrado.length)} productos`}>
@@ -262,8 +274,10 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
             {
               tipo: 'select', clave: 'orden', etiqueta: 'Ordenar por',
               opciones: [
-                { valor: 'precio_asc', texto: 'Precio: del más barato' },
-                { valor: 'precio_desc', texto: 'Precio: del más caro' },
+                ...(vePrecios ? [
+                  { valor: 'precio_asc', texto: 'Precio: del más barato' },
+                  { valor: 'precio_desc', texto: 'Precio: del más caro' },
+                ] : []),
                 { valor: 'reciente', texto: 'Vendido más recientemente' },
               ],
             },
@@ -292,7 +306,7 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
                     <th>Empaque</th>
                     <th>Congelamiento</th>
                     <th className="num">Bulto</th>
-                    <th className="num">Último precio</th>
+                    {vePrecios && <th className="num">Último precio</th>}
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -328,7 +342,7 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
                       </td>
                       <td style={{ fontSize: '.78rem' }}>{p.congelamiento || '—'}</td>
                       <td className="num">{num(p.pesoBulto, 1)} kg</td>
-                      <td className="num">
+                      {vePrecios && <td className="num">
                         {/*
                           El último precio al que se cerró una venta, siempre
                           en dólares. Debajo, cuándo fue: un precio de hace dos
@@ -346,7 +360,7 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
                             </span>
                           </>
                         )}
-                      </td>
+                      </td>}
                       <td>
                         <AccionesLista
                           ver={`/ventas/productos/${p.id}`}
@@ -364,11 +378,15 @@ export default async function PaginaProductos(props: PageProps<'/ventas/producto
       </Panel>
 
       <p className="pie-explicativo">
-        El <strong>último precio</strong> es el de la venta más reciente que se cerró de ese
-        producto, convertido a dólares con el tipo de cambio de ese mismo pedido. No es la tarifa
-        de la lista de precios: es lo que un cliente aceptó pagar. Los borradores y los pedidos
-        cancelados no cuentan.
-        <br /><br />
+        {vePrecios && (
+          <>
+            El <strong>último precio</strong> es el de la venta más reciente que se cerró de ese
+            producto, convertido a dólares con el tipo de cambio de ese mismo pedido. No es la tarifa
+            de la lista de precios: es lo que un cliente aceptó pagar. Los borradores y los pedidos
+            cancelados no cuentan.
+            <br /><br />
+          </>
+        )}
         El <strong>stock</strong> ya no se muestra aquí: se consulta en{' '}
         <Link href="/almacenes/existencias">Existencias</Link> y en{' '}
         <Link href="/ventas/disponibilidad">Disponibilidad</Link>, que es donde está completo y por

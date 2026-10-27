@@ -22,12 +22,16 @@
  *  multiplica movimientos y documentos. Lo que quede en otra bodega necesita
  *  un traslado antes, y esta pantalla lo dice con los kilos exactos para que
  *  se pueda decidir si compensa.
+ *
+ *  Un corte de red al guardar no borra el formulario (accionSegura): vuelve
+ *  como un aviso arriba y lo escrito sigue ahí.
  * ============================================================================
  */
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 import {
   crearEmbarque, lineasParaEmbarcar,
   type DatosEmbarque, type PedidoEmbarcable, type LineaEmbarcable,
@@ -45,6 +49,7 @@ export function FormularioEmbarque({
   conductores,
   pedidos,
   hoy,
+  noPuedeTrasladar = null,
 }: {
   almacenes: { id: number; nombre: string }[];
   destinos: { id: number; puerto: string; pais: string }[];
@@ -53,6 +58,12 @@ export function FormularioEmbarque({
   conductores: { id: number; nombre: string }[];
   pedidos: PedidoEmbarcable[];
   hoy: string;
+  /**
+   * Si el usuario no puede armar el traslado de consolidación, por qué. Lo
+   * arman Gerencia, Operaciones o Almacén; a los demás el botón se les apaga
+   * con la explicación (antes el servidor les respondía con un error).
+   */
+  noPuedeTrasladar?: string | null;
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
@@ -103,7 +114,7 @@ export function FormularioEmbarque({
   useEffect(() => {
     let vigente = true;
     const ids = idsElegidos ? idsElegidos.split(',').map(Number) : [];
-    lineasParaEmbarcar(ids).then((ls) => { if (vigente) setLineas(ls); });
+    accionSegura(() => lineasParaEmbarcar(ids)).then((ls) => { if (vigente && Array.isArray(ls)) setLineas(ls); });
     return () => { vigente = false; };
   }, [idsElegidos]);
 
@@ -191,7 +202,7 @@ export function FormularioEmbarque({
   function consolidar() {
     setConsolidado(null);
     iniciarConsolidacion(async () => {
-      const r = await consolidarEnBodega(d.pedidos, d.almacen_id);
+      const r = await accionSegura(() => consolidarEnBodega(d.pedidos, d.almacen_id));
       setConsolidado({
         ok: r.ok,
         texto: r.mensaje,
@@ -204,14 +215,14 @@ export function FormularioEmbarque({
     e.preventDefault();
     setProblema(null);
     iniciar(async () => {
-      const r = await crearEmbarque({
+      const r = await accionSegura(() => crearEmbarque({
         ...d,
         lineas: lineas
           .filter((l) => d.pedidos.includes(l.pedido_id))
           .map((l) => ({ pedido_linea_id: l.pedido_linea_id, sku_presentacion_id: l.sku_presentacion_id, cantidad_kg: Math.round(tmDe(l) * 1000 * 1000) / 1000 }))
           .filter((l) => l.cantidad_kg > 0),
-      });
-      if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: r.campo }); return; }
+      }));
+      if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: 'campo' in r ? r.campo : undefined }); return; }
 
       /*
        * Se va a la FICHA del embarque, no a la lista.
@@ -468,11 +479,15 @@ export function FormularioEmbarque({
                           Junta esas {cifra(tmVaradas, 2)} TM en {nombreBodega} y sale todo en un
                           solo contenedor. Compensa cuando son toneladas.
                         </small>
-                        <button type="button" className="btn btn-secundario btn-chico"
-                                onClick={consolidar} disabled={consolidando}>
+                        <button type="button" className="btn btn-secundario btn-chico" data-accion="consolidar-nuevo"
+                                onClick={consolidar} disabled={consolidando || !!noPuedeTrasladar}
+                                title={noPuedeTrasladar ?? undefined}>
                           <Icono nombre="traslados" tamano={14} />
                           {consolidando ? 'Armando…' : `Armar el traslado de ${cifra(tmVaradas, 2)} TM`}
                         </button>
+                        {noPuedeTrasladar && (
+                          <span className="decision-nada" data-motivo="consolidar">{noPuedeTrasladar}</span>
+                        )}
                       </div>
                     </div>
 

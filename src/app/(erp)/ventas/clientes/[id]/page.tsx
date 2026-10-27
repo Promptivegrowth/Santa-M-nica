@@ -227,7 +227,8 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
           <span>
             <strong>Cliente bloqueado.</strong>{' '}
             {(c.motivo_bloqueo as string) ?? 'Sin motivo registrado.'} No se le pueden confirmar
-            pedidos nuevos hasta que Gerencia lo desbloquee desde el maestro de clientes.
+            pedidos nuevos hasta que Gerencia u Operaciones lo desbloqueen (Editar → «Bloquear al
+            cliente»): el bloqueo y la línea de crédito son control financiero.
           </span>
         </div>
       )}
@@ -305,10 +306,13 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
               </dd>
             </div>
             <div><dt>Días de crédito</dt><dd>{num(Number(c.dias_credito))} días</dd></div>
-            <div>
-              <dt>Línea de crédito</dt>
-              <dd>{linea > 0 ? dinero(linea, c.moneda as 'USD' | 'PEN', 0) : 'Sin línea asignada'}</dd>
-            </div>
+            {/* La línea es un importe: la ven Gerencia, Operaciones y Comercial (076). */}
+            {puedeVerImportes && (
+              <div data-campo="linea-credito">
+                <dt>Línea de crédito</dt>
+                <dd>{linea > 0 ? dinero(linea, c.moneda as 'USD' | 'PEN', 0) : 'Sin línea asignada'}</dd>
+              </div>
+            )}
             <div><dt>Estado</dt>
               <dd>
                 <Etiqueta

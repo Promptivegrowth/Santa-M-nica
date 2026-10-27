@@ -30,6 +30,7 @@
 import { useState, useMemo, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 import { guardarPlano, regenerarPlano, type CeldaPlano } from '../acciones';
 
 export type LoteDelPlano = {
@@ -194,11 +195,11 @@ export function PlanoEditable({
     }
 
     iniciarGuardado(async () => {
-      const r = await guardarPlano(packingId, lista);
+      const r = await accionSegura(() => guardarPlano(packingId, lista));
       setAviso({
         tipo: r.ok ? 'ok' : 'mal',
         texto: r.mensaje,
-        detalles: r.ok ? undefined : r.detalles,
+        detalles: r.ok || !('detalles' in r) ? undefined : r.detalles,
       });
       if (r.ok) { setTocado(false); router.refresh(); }
     });
@@ -207,7 +208,7 @@ export function PlanoEditable({
   function rehacer() {
     setAviso(null);
     iniciarRehacer(async () => {
-      const r = await regenerarPlano(packingId);
+      const r = await accionSegura(() => regenerarPlano(packingId));
       setAviso({ tipo: r.ok ? 'ok' : 'mal', texto: r.mensaje });
       if (r.ok) router.refresh();
     });

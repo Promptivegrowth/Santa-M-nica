@@ -21,7 +21,8 @@
  */
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { BuscadorTrazabilidad } from './Buscador';
 import { tm, num, fecha, fechaHora } from '@/lib/formato';
@@ -46,11 +47,38 @@ export default async function PaginaTrazabilidad(props: PageProps<'/trazabilidad
   const loteId = q.lote ? Number(q.lote) : null;
 
   const supabase = await crearClienteServidor();
+  const usuario = await obtenerUsuarioActual();
+  const rol = (usuario?.rol ?? 'consulta') as Rol;
+  /* Enlaces a pantallas que el rol no tiene: no se muestran (076). */
+  const ve = (ruta: string) => rolPuedeVerRuta(rol, ruta.split('?')[0]);
 
   /* ---- Búsqueda universal ---- */
   const { data: resultados } = texto.length >= 2
     ? await supabase.rpc('buscar_universal', { p_texto: texto })
     : { data: null };
+
+  /*
+   * Un packing list para quien no tiene Packing y estiba (Calidad): se le
+   * lleva a la ficha del DESPACHO de ese contenedor, que sí ve. Si todavía no
+   * salió, no hay a dónde ir y se dice.
+   */
+  const packingsSinAcceso = ((resultados ?? []) as Record<string, unknown>[])
+    .filter((r) => r.tipo === 'Packing List' && !ve(String(r.ruta)))
+    .map((r) => Number(r.id));
+  const { data: despachosDePacking } = packingsSinAcceso.length
+    ? await supabase.from('despachos').select('id, packing_list_id').in('packing_list_id', packingsSinAcceso)
+    : { data: [] as { id: number; packing_list_id: number }[] };
+  const despachoDe = new Map((despachosDePacking ?? []).map((d) => [Number(d.packing_list_id), Number(d.id)]));
+  /** A dónde lleva «Abrir» para este rol, o null si no tiene esa pantalla. */
+  const destinoPara = (r: Record<string, unknown>): string | null => {
+    const ruta = String(r.ruta ?? '');
+    if (ve(ruta)) return ruta;
+    if (r.tipo === 'Packing List') {
+      const d = despachoDe.get(Number(r.id));
+      return d && ve(`/logistica/despachos/${d}`) ? `/logistica/despachos/${d}` : null;
+    }
+    return null;
+  };
 
   /* ---- Recorrido de un lote concreto ---- */
   const [{ data: recorrido }, { data: lote }] = loteId
@@ -70,7 +98,10 @@ export default async function PaginaTrazabilidad(props: PageProps<'/trazabilidad
         titulo="Trazabilidad"
         descripcion="Busque cualquier código del negocio y recorra su historia completa, hacia atrás hasta el día de producción y hacia adelante hasta el cliente que lo recibió."
       >
-        <Link href="/trazabilidad/retiro" className="btn btn-secundario">Retiro sanitario</Link>
+        {/* Solo para quien tiene esa pantalla (076): Almacén, Comercial y Consulta, no. */}
+        {ve('/trazabilidad/retiro') && (
+          <Link href="/trazabilidad/retiro" className="btn btn-secundario">Retiro sanitario</Link>
+        )}
       </CabeceraPagina>
 
       <BuscadorTrazabilidad valorInicial={texto} />
@@ -101,8 +132,15 @@ export default async function PaginaTrazabilidad(props: PageProps<'/trazabilidad
                           <Link href={`/trazabilidad?q=${encodeURIComponent(texto)}&lote=${r.id}`} className="btn btn-secundario">
                             Ver recorrido
                           </Link>
+                        ) : destinoPara(r) ? (
+                          <Link href={destinoPara(r)!} className="btn btn-sutil">
+                            {destinoPara(r) !== String(r.ruta) ? 'Ver despacho' : 'Abrir'}
+                          </Link>
                         ) : (
-                          <Link href={String(r.ruta)} className="btn btn-sutil">Abrir</Link>
+                          <span style={{ fontSize: '.72rem', color: 'var(--tinta-3)' }}
+                                title="Su rol no tiene la pantalla de este registro">
+                            {r.tipo === 'Packing List' ? 'Aún sin despacho' : 'Sin acceso'}
+                          </span>
                         )}
                       </td>
                     </tr>

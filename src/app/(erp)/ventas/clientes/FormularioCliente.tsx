@@ -23,7 +23,8 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
-import { crearCliente, actualizarCliente, type DatosCliente, type Resultado } from './acciones';
+import { crearCliente, actualizarCliente, type DatosCliente } from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 export type ClienteExistente = DatosCliente & { id: number; activo: boolean };
 
@@ -37,6 +38,10 @@ function rucCorrecto(ruc: string): boolean {
   return esperado === Number(ruc[10]);
 }
 
+/** Por qué Comercial ve apagados el bloqueo y la línea de crédito. */
+const AVISO_CREDITO =
+  'Bloquear, desbloquear y cambiar la línea de crédito lo hacen Gerencia u Operaciones: es control financiero.';
+
 const VACIO: DatosCliente = {
   codigo: '', razon_social: '', nombre_corto: '', tipo: 'final', pais: 'Perú',
   ruc_tax_id: '', contacto: '', email: '', telefono: '', vendedor_id: null,
@@ -48,11 +53,18 @@ export function FormularioCliente({
   codigoPropuesto,
   paises,
   vendedores,
+  gestionaCredito = false,
 }: {
   cliente?: ClienteExistente;
   codigoPropuesto?: string;
   paises: string[];
   vendedores: { id: number; nombre: string }[];
+  /**
+   * ¿Puede bloquear, desbloquear y cambiar la línea de crédito? Gerencia y
+   * Operaciones (076). Para Comercial esos campos se ven, apagados y con el
+   * porqué: es control financiero.
+   */
+  gestionaCredito?: boolean;
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
@@ -86,12 +98,11 @@ export function FormularioCliente({
     setProblema(null);
 
     iniciar(async () => {
-      const r: Resultado = cliente
-        ? await actualizarCliente(cliente.id, d)
-        : await crearCliente(d);
+      //  Un corte de red vuelve como aviso aquí, sin perder lo escrito (076).
+      const r = await accionSegura(() => (cliente ? actualizarCliente(cliente.id, d) : crearCliente(d)));
 
       if (!r.ok) {
-        setProblema({ mensaje: r.mensaje, campo: r.campo });
+        setProblema({ mensaje: r.mensaje, campo: 'campo' in r ? r.campo : undefined });
         return;
       }
       router.push(`/ventas/clientes/${r.id}`);
@@ -251,15 +262,20 @@ export function FormularioCliente({
               <option value="">Sin asignar</option>
               {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
             </select>
-            <small>Se propone solo al cotizar.</small>
+            <small>Es el responsable de la cuenta. Al cotizar se elige el vendedor de cada oferta: no se llena solo.</small>
           </label>
 
-          <label className="form-campo">
+          <label className="form-campo" title={gestionaCredito ? undefined : AVISO_CREDITO}>
             <span>Línea de crédito</span>
             <input className="campo mono" type="number" min={0} step={100}
                    value={d.linea_credito} data-error={error('linea_credito')}
+                   disabled={!gestionaCredito} name="linea_credito"
                    onChange={(e) => campo('linea_credito', Number(e.target.value))} />
-            <small>Cuánto se le puede deber. 0 = sin límite definido.</small>
+            <small>
+              {gestionaCredito
+                ? 'Cuánto se le puede deber. 0 = sin límite definido.'
+                : 'La fijan Gerencia u Operaciones (control financiero).'}
+            </small>
           </label>
 
           <label className="form-campo">
@@ -271,12 +287,15 @@ export function FormularioCliente({
           </label>
         </div>
 
-        <label className="form-check">
-          <input type="checkbox" checked={d.bloqueado}
+        <label className="form-check" title={gestionaCredito ? undefined : AVISO_CREDITO}>
+          <input type="checkbox" checked={d.bloqueado} disabled={!gestionaCredito} name="bloqueado"
                  onChange={(e) => campo('bloqueado', e.target.checked)} />
           <span>
             <b>Bloquear al cliente</b>
-            <small>Un cliente bloqueado no se puede elegir al cotizar. Se usa por deuda vencida o por una disputa abierta.</small>
+            <small>
+              Un cliente bloqueado no se puede elegir al cotizar. Se usa por deuda vencida o por una disputa abierta.
+              {!gestionaCredito && <> Bloquear y desbloquear lo hacen Gerencia u Operaciones.</>}
+            </small>
           </span>
         </label>
 
@@ -284,6 +303,7 @@ export function FormularioCliente({
           <label className="form-campo form-campo-ancho">
             <span>Motivo del bloqueo <b className="req">*</b></span>
             <input className="campo" value={d.motivo_bloqueo ?? ''} data-error={error('motivo_bloqueo')}
+                   disabled={!gestionaCredito}
                    onChange={(e) => campo('motivo_bloqueo', e.target.value)}
                    placeholder="Por qué está bloqueado" maxLength={200} />
             <small>Quien intente cotizarle va a ver este texto.</small>

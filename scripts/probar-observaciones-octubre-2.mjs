@@ -38,12 +38,12 @@ const p = await ctx.newPage();
 const entrar = async (pagina, email) => {
   await pagina.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await pagina.fill('input[type="email"]', email);
-  await pagina.fill('input[type="password"]', 'SantaMonica2026');
+  await pagina.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
   await pagina.click('button[type="submit"]');
   await pagina.waitForURL(/\/panel/, { timeout: 30000 });
 };
 const almacenamiento = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-await almacenamiento.auth.signInWithPassword({ email: 'gerencia@santamonica.pe', password: 'SantaMonica2026' });
+await almacenamiento.auth.signInWithPassword({ email: 'gerencia@santamonica.pe', password: (process.env.CLAVE_DEMO ?? '') });
 
 let observacionAntes = null;
 let embarqueObs = null;

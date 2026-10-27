@@ -9,6 +9,7 @@ import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { crearClienteNavegador } from '@/lib/supabase/navegador';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 import { registrarArchivoDespacho, borrarArchivoDespacho } from '../archivos';
 
 export type ArchivoVisible = {
@@ -55,9 +56,9 @@ export function ArchivosDespacho({
       const ruta = `despacho-${despachoId}/${tipo}/${Date.now()}-${limpio(f.name)}`;
       const { error } = await supabase.storage.from('despachos').upload(ruta, f, { contentType: f.type, upsert: false });
       if (error) { malos.push(`${f.name}: ${error.message}`); continue; }
-      const r = await registrarArchivoDespacho({
+      const r = await accionSegura(() => registrarArchivoDespacho({
         despacho_id: despachoId, tipo, ruta, nombre: f.name, tipo_mime: f.type, tamano_bytes: f.size,
-      });
+      }));
       if (r.ok) bien += 1; else malos.push(`${f.name}: ${r.mensaje}`);
     }
     setSubiendo(null);
@@ -105,7 +106,7 @@ export function ArchivosDespacho({
               {a.descarga && <a className="btn btn-secundario btn-chico" href={a.descarga} data-descargar="guia">Descargar</a>}
               {puede && (
                 <button type="button" className="btn btn-sutil btn-chico" disabled={quitando}
-                        onClick={() => iniciarQuitar(async () => { const r = await borrarArchivoDespacho(a.id); setAviso({ ok: r.ok, texto: r.mensaje }); router.refresh(); })}>
+                        onClick={() => iniciarQuitar(async () => { const r = await accionSegura(() => borrarArchivoDespacho(a.id)); setAviso({ ok: r.ok, texto: r.mensaje }); router.refresh(); })}>
                   Quitar
                 </button>
               )}
@@ -126,7 +127,7 @@ export function ArchivosDespacho({
                 <small>{a.nombre}</small>
                 {puede && (
                   <button type="button" className="enlace-boton" disabled={quitando}
-                          onClick={() => iniciarQuitar(async () => { const r = await borrarArchivoDespacho(a.id); setAviso({ ok: r.ok, texto: r.mensaje }); router.refresh(); })}>
+                          onClick={() => iniciarQuitar(async () => { const r = await accionSegura(() => borrarArchivoDespacho(a.id)); setAviso({ ok: r.ok, texto: r.mensaje }); router.refresh(); })}>
                     Quitar
                   </button>
                 )}

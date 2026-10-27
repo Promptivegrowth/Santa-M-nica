@@ -42,12 +42,15 @@ function sql(consulta) {
 const marca = String(process.pid).slice(-5);
 const PALLET = `ZZ 99 99 ${marca.padStart(4, '0').slice(-4)}`;
 
-/* ---- Red de seguridad: se apunta el estado previo ---- */
-const previos = {
-  lote: Number(sql('select coalesce(max(id),0) m from lotes;')[0].m),
-  reserva: Number(sql('select coalesce(max(id),0) m from reservas;')[0].m),
-  movimiento: Number(sql('select coalesce(max(id),0) m from movimientos;')[0].m),
-};
+/* ---- Red de seguridad: se apunta cuándo empezó y quién prueba ----
+   La base es la misma que usa el cliente en vivo (ronda de Oliver): la
+   limpieza ya NO borra «todo lo que tenga un id mayor que antes», que se
+   llevaba por delante lo que otros usuarios creaban mientras corría la
+   prueba. Borra solo lo suyo: el pallet de prueba (por su código), su Kardex
+   y sus existencias, y las reservas que esta sesión hizo en la línea probada. */
+const inicio = sql('select now()::text t;')[0].t;
+const gerente = sql(`select id from usuarios where email = 'gerencia@santamonica.pe' limit 1;`)[0]?.id;
+let lineaProbada = null;
 
 function limpiar() {
   /*
@@ -56,13 +59,28 @@ function limpiar() {
    * es la única forma de dejar la base como estaba.
    */
   try {
+    const lotes = sql(`select id from lotes where codigo_pallet = '${PALLET}';`).map((x) => x.id);
+    const reservas = sql(`
+      select id from reservas
+       where creado_en >= '${inicio}' and creado_por = '${gerente}'
+         and (lote_id in (${lotes.join(',') || 0})
+              ${lineaProbada ? `or pedido_linea_id = ${lineaProbada}` : ''});`).map((x) => x.id);
+    const movs = lotes.length ? sql(`select id from movimientos where lote_id in (${lotes.join(',')});`).map((x) => x.id) : [];
+    const ids = (a) => a.join(',') || '0';
+    const textos = (a) => a.map((x) => `'${x}'`).join(',') || "''";
     sql(`
+      delete from reservas where id in (${ids(reservas)});
       alter table movimientos disable trigger trg_kardex_no_delete;
-      delete from reservas where id > ${previos.reserva};
-      delete from movimientos where id > ${previos.movimiento};
-      delete from existencias where lote_id > ${previos.lote};
-      delete from lotes where id > ${previos.lote};
+      delete from movimientos where id in (${ids(movs)});
       alter table movimientos enable trigger trg_kardex_no_delete;
+      delete from existencias where lote_id in (${ids(lotes)});
+      delete from lotes where id in (${ids(lotes)});
+      delete from eventos where ocurrido_en >= '${inicio}' and (
+        (entidad = 'lotes' and entidad_id in (${ids(lotes)})) or (entidad = 'reservas' and entidad_id in (${ids(reservas)})));
+      delete from auditoria where ocurrido_en >= '${inicio}' and (
+        (tabla = 'lotes' and registro_id in (${textos(lotes)}))
+        or (tabla = 'reservas' and registro_id in (${textos(reservas)}))
+        or (tabla = 'movimientos' and registro_id in (${textos(movs)})));
     `);
   } catch (e) {
     console.log(`   .. limpieza incompleta: ${String(e.message).slice(0, 200)}`);
@@ -77,7 +95,7 @@ p.on('pageerror', (e) => fallosJs.push(e.message));
 
 await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
 await p.fill('input[type="email"]', 'gerencia@santamonica.pe');
-await p.fill('input[type="password"]', 'SantaMonica2026');
+await p.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
 await p.click('button[type="submit"]');
 await p.waitForURL(/\/panel/, { timeout: 30000 });
 
@@ -139,10 +157,16 @@ comprobar('El peso por bulto se multiplica solo', Number(total) === 500, `${tota
 const bodegaId = Number(await p.locator('select').nth(3).inputValue() || 0) ||
   Number(sql('select id from almacenes where activo order by nombre limit 1;')[0].id);
 
-const antes = sql(`
-  select coalesce(round(sum(peso_neto_kg)::numeric,1), 0) kg
-  from existencias where almacen_id = ${bodegaId};
-`)[0];
+/*
+ * El stock de TODAS las bodegas, antes. La de destino se lee del pallet ya
+ * ingresado: el orden de los desplegables del formulario cambió y adivinar
+ * cuál es la bodega comparaba dos bodegas distintas.
+ */
+const antesPorBodega = new Map(sql(`
+  select almacen_id, coalesce(round(sum(peso_neto_kg)::numeric,1), 0) kg
+  from existencias group by almacen_id;
+`).map((x) => [Number(x.almacen_id), Number(x.kg)]));
+void bodegaId;
 
 await p.locator('button[type="submit"]').click();
 await p.waitForTimeout(4000);
@@ -194,6 +218,7 @@ const despues = sql(`
   select coalesce(round(sum(peso_neto_kg)::numeric,1), 0) kg
   from existencias where almacen_id = ${stock?.almacen_id ?? bodegaId};
 `)[0];
+const antes = { kg: antesPorBodega.get(Number(stock?.almacen_id ?? bodegaId)) ?? 0 };
 comprobar('El stock de la bodega subió exactamente 500 kg',
   Math.abs(Number(despues.kg) - Number(antes.kg) - 500) < 1,
   `${antes.kg} → ${despues.kg}`);
@@ -233,6 +258,7 @@ const linea = sql(`
   order by pl.id limit 1;
 `)[0];
 
+if (linea) lineaProbada = Number(linea.linea_id);
 if (!linea) {
   console.log('   No hay líneas con varios lotes disponibles. Se salta esta parte.');
 } else {
@@ -247,11 +273,11 @@ if (!linea) {
     (await botonLote.count()) > 0);
 
   if (await botonLote.count()) {
-    const reservasAntes = Number(sql('select count(*) n from reservas;')[0].n);
+    const reservasAntes = Number(sql(`select count(*) n from reservas where pedido_linea_id = ${linea.linea_id};`)[0].n);
     await botonLote.click();
     await p.waitForTimeout(6000);
 
-    const reservasDespues = Number(sql('select count(*) n from reservas;')[0].n);
+    const reservasDespues = Number(sql(`select count(*) n from reservas where pedido_linea_id = ${linea.linea_id};`)[0].n);
     comprobar('Aparta de varios pallets en una sola acción',
       reservasDespues > reservasAntes + 1,
       `${reservasDespues - reservasAntes} reservas nuevas`);

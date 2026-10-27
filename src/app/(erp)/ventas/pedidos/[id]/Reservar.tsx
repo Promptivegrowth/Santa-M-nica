@@ -32,6 +32,7 @@ import {
   crearReserva, lotesParaLinea, apartarTodoDisponible,
   type LoteCandidato, type OpcionesDeLinea,
 } from '@/app/(erp)/almacenes/reservas/acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 const cifra = (n: number, d = 0) =>
   n.toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -80,7 +81,9 @@ export function FilaCobertura({
   function abrir(conEquivalentes = equivalentes) {
     setAviso(null);
     iniciarCarga(async () => {
-      const datos = await lotesParaLinea(pedidoLineaId, conEquivalentes);
+      //  Un corte de red vuelve como aviso aquí, sin romper la pantalla (076).
+      const datos = await accionSegura(() => lotesParaLinea(pedidoLineaId, conEquivalentes));
+      if ('sinConexion' in datos) { setAviso({ tipo: 'mal', texto: datos.mensaje }); return; }
       setOpciones(datos);
       setElegido(null);
       setKilos(0);
@@ -105,14 +108,16 @@ export function FilaCobertura({
   function apartarTodo() {
     setAviso(null);
     iniciarGuardado(async () => {
-      const r = await apartarTodoDisponible(pedidoLineaId);
+      const r = await accionSegura(() => apartarTodoDisponible(pedidoLineaId));
+      if ('sinConexion' in r) { setAviso({ tipo: 'mal', texto: r.mensaje }); return; }
       setAviso({
         tipo: r.apartados > 0 ? 'ok' : 'mal',
         texto: r.fallos.length ? `${r.mensaje} No se pudo con: ${r.fallos.join(' · ')}` : r.mensaje,
       });
       setElegido(null);
       router.refresh();
-      setOpciones(await lotesParaLinea(pedidoLineaId, equivalentes));
+      const nuevas = await accionSegura(() => lotesParaLinea(pedidoLineaId, equivalentes));
+      if (!('sinConexion' in nuevas)) setOpciones(nuevas);
     });
   }
 
@@ -121,7 +126,7 @@ export function FilaCobertura({
     setAviso(null);
 
     iniciarGuardado(async () => {
-      const r = await crearReserva({
+      const r = await accionSegura(() => crearReserva({
         pedido_linea_id: pedidoLineaId,
         lote_id: elegido.lote_id,
         almacen_id: elegido.almacen_id,
@@ -130,7 +135,7 @@ export function FilaCobertura({
         bultos: Math.max(1, Math.ceil(kilos / elegido.kg_por_bulto)),
         peso_neto_kg: kilos,
         equivalente: elegido.equivalente,
-      });
+      }));
 
       if (!r.ok) { setAviso({ tipo: 'mal', texto: r.mensaje }); return; }
 
@@ -138,8 +143,8 @@ export function FilaCobertura({
       setElegido(null);
       router.refresh();
       // Se recargan los candidatos: el disponible acaba de cambiar.
-      const datos = await lotesParaLinea(pedidoLineaId, equivalentes);
-      setOpciones(datos);
+      const datos = await accionSegura(() => lotesParaLinea(pedidoLineaId, equivalentes));
+      if (!('sinConexion' in datos)) setOpciones(datos);
     });
   }
 

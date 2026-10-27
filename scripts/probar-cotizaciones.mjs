@@ -22,7 +22,7 @@ import { ejecutarSQL } from './db.mjs';
  * matara el proceso de otro para liberarlo.
  */
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
-const CLAVE = 'SantaMonica2026';
+const CLAVE = (process.env.CLAVE_DEMO ?? '');
 
 const consultar = async (sql) => {
   const r = await ejecutarSQL(sql);

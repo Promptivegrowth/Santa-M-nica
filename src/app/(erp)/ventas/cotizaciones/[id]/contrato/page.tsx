@@ -16,6 +16,7 @@ import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel, Vacio } from '@/components/ui/Pagina';
 import { puedeVender, type Rol } from '@/lib/navegacion';
+import { puedeDescargarDocumentos, motivoSinDescarga } from '../../../DocumentosApagados';
 import { ProformaYContrato } from './ProformaYContrato';
 
 export const metadata: Metadata = { title: 'Contrato' };
@@ -35,6 +36,15 @@ export default async function ContratoDesdeCotizacion(props: PageProps<'/ventas/
   if (pedido) redirect(`/ventas/pedidos/${pedido.id}/contrato`);
 
   const volver = { href: `/ventas/cotizaciones/${cotId}`, texto: `Volver a ${cot.numero}` };
+  //  El contrato lleva precios (076): quien no descarga documentos no entra.
+  if (!puedeDescargarDocumentos(usuario?.rol)) {
+    return (
+      <>
+        <CabeceraPagina titulo={`Contrato · ${cot.numero}`} volver={volver} />
+        <Vacio titulo="El contrato no está disponible para su rol" mensaje={motivoSinDescarga(usuario?.rol)} />
+      </>
+    );
+  }
   if (!cot.aprobada_en) {
     return (
       <>

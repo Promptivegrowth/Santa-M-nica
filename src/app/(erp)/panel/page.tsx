@@ -19,7 +19,8 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { PanelGraficos } from './PanelGraficos';
 import { tm, dinero, num, fecha, haceTiempo } from '@/lib/formato';
-import { veCostos, type Rol } from '@/lib/navegacion';
+import { veCostos, rolPuedeVerRuta, NOMBRE_ROL, NAVEGACION, type Rol } from '@/lib/navegacion';
+import { Icono } from '@/components/estructura/Icono';
 import { enlaceEntidad } from '@/lib/enlaces';
 
 export const metadata: Metadata = { title: 'Control Tower' };
@@ -27,11 +28,33 @@ export const metadata: Metadata = { title: 'Control Tower' };
 // Los datos cambian con cada operación: no tiene sentido cachear esta pantalla.
 export const dynamic = 'force-dynamic';
 
-export default async function PaginaPanel() {
+/** El nombre de la pantalla a la que se quiso entrar, para el aviso de ?sinacceso=. */
+function nombrePantalla(ruta: string): string | null {
+  let mejor: { titulo: string; ruta: string } | null = null;
+  for (const g of NAVEGACION) {
+    for (const e of g.entradas) {
+      if ((ruta === e.ruta || ruta.startsWith(e.ruta + '/')) && (!mejor || e.ruta.length > mejor.ruta.length)) mejor = e;
+    }
+  }
+  return mejor?.titulo ?? null;
+}
+
+export default async function PaginaPanel(props: PageProps<'/panel'>) {
+  const q = await props.searchParams;
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const rol = (usuario?.rol ?? 'consulta') as Rol;
+  /* Importes (venta comprometida, US$ en juego): los de veCostos. El resto ve toneladas (076). */
   const puedeVerCostos = veCostos(rol);
+  /* Un enlace a una pantalla que el rol no tiene, no se muestra (076). */
+  const ve = (ruta: string) => rolPuedeVerRuta(rol, ruta);
+  const enlaceControl = ve('/ventas/control') ? '/ventas/control' : '/ventas/pedidos';
+  /*
+   * ?sinacceso=/ruta: el proxy (y Objetivos, Cierre semanal) devuelven aquí a
+   * quien pidió una pantalla que su rol no tiene. El aviso se prometía en el
+   * código del proxy, pero esta pantalla no leía el parámetro: ahora sí.
+   */
+  const sinAcceso = typeof q.sinacceso === 'string' && q.sinacceso.startsWith('/') ? q.sinacceso : null;
 
   // Todas las consultas salen a la vez: así la pantalla tarda lo que tarda la
   // más lenta, y no la suma de todas.
@@ -107,6 +130,19 @@ export default async function PaginaPanel() {
         <Link href="/alertas" className="btn btn-secundario">Ver todas las alertas</Link>
       </CabeceraPagina>
 
+      {sinAcceso && (
+        <div className="ficha-aviso ficha-aviso-atencion" role="alert" data-aviso="sin-acceso">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>
+              Esa pantalla{nombrePantalla(sinAcceso) ? ` (${nombrePantalla(sinAcceso)})` : ''} no está disponible
+              para su rol ({NOMBRE_ROL[rol]}).
+            </strong>{' '}
+            Lo trajimos al panel. Si la necesita para su trabajo, pídale a Gerencia que revise su acceso.
+          </span>
+        </div>
+      )}
+
       {/* ══════ NIVEL 1 · ¿Qué ocurrió? ══════ */}
       <RejillaKpi>
         <Kpi
@@ -148,12 +184,23 @@ export default async function PaginaPanel() {
             href="/almacenes/valorizado"
           />
         )}
-        <Kpi
-          etiqueta="Venta comprometida"
-          valor={dinero(k.venta_comprometida, 'USD', 0)}
-          nota={`${num(k.pedidos_abiertos)} pedidos abiertos`}
-          href="/ventas/pedidos"
-        />
+        {puedeVerCostos ? (
+          <Kpi
+            etiqueta="Venta comprometida"
+            valor={dinero(k.venta_comprometida, 'USD', 0)}
+            nota={`${num(k.pedidos_abiertos)} pedidos abiertos`}
+            href="/ventas/pedidos"
+          />
+        ) : (
+          /* Lo mismo, sin dólares: toneladas y cantidad de pedidos (076). */
+          <Kpi
+            etiqueta="Comprometido en pedidos"
+            valor={tm(Number((k as { tm_comprometidas?: number }).tm_comprometidas ?? 0) * 1000)}
+            sufijo="TM"
+            nota={`${num(k.pedidos_abiertos)} pedidos abiertos`}
+            href="/ventas/pedidos"
+          />
+        )}
       </RejillaKpi>
 
       {/* ══════ NIVEL 2 · ¿Qué problema tengo? ══════ */}
@@ -162,15 +209,17 @@ export default async function PaginaPanel() {
           etiqueta="Pedidos en riesgo"
           valor={num(k.pedidos_en_riesgo)}
           tono={Number(k.pedidos_en_riesgo) > 0 ? 'atencion' : 'ok'}
-          nota={`${dinero(k.venta_en_riesgo, 'USD', 0)} en juego`}
-          href="/ventas/control"
+          nota={puedeVerCostos
+            ? `${dinero(k.venta_en_riesgo, 'USD', 0)} en juego`
+            : `${tm(Number((k as { tm_en_riesgo?: number }).tm_en_riesgo ?? 0) * 1000)} TM sin stock completo`}
+          href={enlaceControl}
         />
         <Kpi
           etiqueta="Pedidos atrasados"
           valor={num(k.pedidos_atrasados)}
           tono={Number(k.pedidos_atrasados) > 0 ? 'critico' : 'ok'}
           nota="Pasaron su fecha comprometida"
-          href="/ventas/control"
+          href={enlaceControl}
         />
         <Kpi
           etiqueta="Stock sobre el umbral de antigüedad"
@@ -219,10 +268,11 @@ export default async function PaginaPanel() {
                 // `enlaceEntidad` devuelve null si esa entidad no tiene ficha
                 // propia; en ese caso se cae al listado filtrado, que siempre
                 // existe. Nunca se queda sin destino.
-                const destino =
-                  (cuantas === 1 && Number(a.entidad_id) > 0
-                    ? enlaceEntidad(a.entidad as string, Number(a.entidad_id))
-                    : null)
+                const ficha = cuantas === 1 && Number(a.entidad_id) > 0
+                  ? enlaceEntidad(a.entidad as string, Number(a.entidad_id))
+                  : null;
+                //  Si la ficha es de una pantalla que el rol no tiene, se va al listado de alertas (076).
+                const destino = (ficha && ve(ficha.split('?')[0]) ? ficha : null)
                   ?? `/alertas?titulo=${encodeURIComponent(a.titulo as string)}`;
                 return (
                   <li key={`${a.titulo}-${a.severidad}`}>
@@ -249,7 +299,8 @@ export default async function PaginaPanel() {
           )}
         </Panel>
 
-        <Panel titulo="Pedidos que requieren decisión" acciones={<Link href="/ventas/control" className="btn btn-sutil">Ver control</Link>}>
+        <Panel titulo="Pedidos que requieren decisión"
+               acciones={ve('/ventas/control') ? <Link href="/ventas/control" className="btn btn-sutil">Ver control</Link> : undefined}>
           {(pedidosRiesgo ?? []).length === 0 ? (
             <Vacio titulo="Sin pedidos en riesgo" mensaje="Ningún pedido está bloqueado ni atrasado." />
           ) : (

@@ -22,6 +22,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 import { crearTraslado, lotesEnBodega, type LoteTrasladable, type PalletsTrasladables } from './acciones';
 
 type Opcion = { id: number; nombre: string };
@@ -70,7 +71,12 @@ export function FormularioTraslado({
     setProblema(null);
     if (id === destino) setDestino(0);
     if (!id) return;
-    iniciarCarga(async () => setPallets(await lotesEnBodega(id)));
+    iniciarCarga(async () => {
+      //  Sin conexión, se avisa y se puede volver a elegir el origen.
+      const r = await accionSegura(() => lotesEnBodega(id));
+      if ('sinConexion' in r) { setProblema(r.mensaje); setOrigen(0); return; }
+      setPallets(r);
+    });
   }
 
   const visibles = useMemo(() => {
@@ -122,7 +128,8 @@ export function FormularioTraslado({
     e.preventDefault();
     setProblema(null);
     iniciar(async () => {
-      const r = await crearTraslado({
+      //  Un corte de red vuelve como mensaje: lo elegido sigue en pantalla.
+      const r = await accionSegura(() => crearTraslado({
         almacen_origen_id: origen,
         almacen_destino_id: destino,
         guia_numero: guia.trim() || null,
@@ -132,7 +139,7 @@ export function FormularioTraslado({
         conductor_id: conductor || null,
         observaciones: observaciones.trim() || null,
         lineas,
-      });
+      }));
       if (!r.ok) { setProblema(r.mensaje); return; }
       router.push(`/almacenes/traslados/${r.id}?creado=1`);
     });

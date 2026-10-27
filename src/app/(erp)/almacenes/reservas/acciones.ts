@@ -21,18 +21,46 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import {
+  ROLES_APARTAN_STOCK, ROLES_LIBERAN_CUALQUIER_RESERVA, puedeApartarStock, motivoNoLiberar,
+  nombreRol, listaDeRoles,
+} from '@/lib/permisosVentas';
 
 export type Resultado = { ok: true; mensaje: string } | { ok: false; mensaje: string };
 
-/** Roles que pueden soltar stock apartado. */
-const PUEDEN_LIBERAR = ['gerencia', 'operaciones', 'comercial', 'almacen'];
+/**
+ * Un rechazo de la base, en castellano. Las funciones de la base ya escriben
+ * sus motivos para el usuario; lo que NO puede llegar a la pantalla es lo
+ * técnico: «new row violates row-level security policy for table…», un
+ * nombre de columna o de restricción. Se traduce por el código del error.
+ */
+function motivoDeLaBase(error: { message?: string; code?: string } | null, accion: string): string {
+  const m = String(error?.message ?? '').replace(/^ERROR:\s*/i, '').trim();
+  if (error?.code === '42501' || /row-level security|permission denied|violates.*policy/i.test(m)) {
+    //  42501 también lo usa reserva_liberar con su propio texto, que sí sirve.
+    if (m && !/row-level security|permission denied|violates.*policy/i.test(m)) return m;
+    return `No tiene permiso para ${accion}. Lo hacen ${listaDeRoles(ROLES_APARTAN_STOCK)}.`;
+  }
+  if (error?.code === '23503') return 'El lote, la bodega o la línea del pedido ya no existen. Recargue la pantalla.';
+  if (error?.code === '23514' || error?.code === '23502' || error?.code === '22P02') {
+    return `Los datos no son válidos para ${accion}. Revise los kilos y los bultos y vuelva a intentarlo.`;
+  }
+  //  Un mensaje con aspecto técnico (nombres en inglés o de columnas) no se enseña tal cual.
+  if (!m || /violates|constraint|column|relation|syntax|null value/i.test(m)) {
+    return `No se pudo ${accion}. Recargue la pantalla y vuelva a intentarlo; si se repite, avise a Sistemas.`;
+  }
+  return m;
+}
 
 export async function liberarReserva(reservaId: number, motivo: string): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a entrar.' };
 
-  if (!PUEDEN_LIBERAR.includes(usuario.rol)) {
-    return { ok: false, mensaje: 'Su rol no puede liberar reservas.' };
+  if (!puedeApartarStock(usuario.rol)) {
+    return {
+      ok: false,
+      mensaje: `${nombreRol(usuario.rol)} no libera reservas: lo hacen ${listaDeRoles(ROLES_APARTAN_STOCK)}.`,
+    };
   }
 
   const limpio = motivo.trim();
@@ -47,12 +75,24 @@ export async function liberarReserva(reservaId: number, motivo: string): Promise
   }
 
   const supabase = await crearClienteServidor();
+
+  /*
+   * Una reserva ajena solo la liberan Gerencia u Operaciones (lo exige
+   * reserva_liberar). Se dice antes de llamar a la base, con la misma regla
+   * que apaga el botón en la pantalla.
+   */
+  const { data: reserva } = await supabase
+    .from('reservas').select('creado_por, estado').eq('id', reservaId).maybeSingle();
+  if (!reserva) return { ok: false, mensaje: 'Esa reserva ya no existe. Recargue la pantalla.' };
+  const noPuede = motivoNoLiberar(usuario.rol, usuario.id, reserva.creado_por as string | null);
+  if (noPuede) return { ok: false, mensaje: noPuede };
+
   const { error } = await supabase.rpc('reserva_liberar', {
     p_reserva_id: reservaId,
     p_motivo: limpio,
   });
 
-  if (error) return { ok: false, mensaje: `No se pudo liberar: ${error.message}` };
+  if (error) return { ok: false, mensaje: motivoDeLaBase(error, 'liberar esta reserva') };
 
   // Todo lo que cambia de número al soltar stock.
   revalidatePath('/almacenes/reservas');
@@ -73,14 +113,17 @@ export async function liberarReserva(reservaId: number, motivo: string): Promise
 export async function expirarReservasVencidas(): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a entrar.' };
-  if (!['gerencia', 'operaciones'].includes(usuario.rol)) {
-    return { ok: false, mensaje: 'Solo gerencia u operaciones pueden ejecutar la expiración masiva.' };
+  if (!ROLES_LIBERAN_CUALQUIER_RESERVA.includes(usuario.rol)) {
+    return {
+      ok: false,
+      mensaje: `${nombreRol(usuario.rol)} no ejecuta la expiración masiva: lo hacen ${listaDeRoles(ROLES_LIBERAN_CUALQUIER_RESERVA)}.`,
+    };
   }
 
   const supabase = await crearClienteServidor();
   const { data, error } = await supabase.rpc('reservas_expirar_vencidas');
 
-  if (error) return { ok: false, mensaje: `No se pudo ejecutar: ${error.message}` };
+  if (error) return { ok: false, mensaje: motivoDeLaBase(error, 'liberar las reservas vencidas') };
 
   revalidatePath('/almacenes/reservas');
   revalidatePath('/almacenes/existencias');
@@ -120,8 +163,11 @@ export type ResultadoReserva =
   | { ok: true; id: number; mensaje: string }
   | { ok: false; mensaje: string };
 
-/** Roles que pueden apartar stock. */
-const PUEDEN_RESERVAR = ['gerencia', 'operaciones', 'comercial', 'almacen'];
+/*
+ * Quién aparta stock: ROLES_APARTAN_STOCK (src/lib/permisosVentas.ts). Es la
+ * misma lista que usa el botón y la que exige la base (política
+ * reservas_apartar, 076).
+ */
 
 export type DatosReserva = {
   pedido_linea_id: number;
@@ -184,8 +230,11 @@ function refrescarReservas(pedidoId?: number) {
 export async function crearReserva(d: DatosReserva): Promise<ResultadoReserva> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a entrar.' };
-  if (!PUEDEN_RESERVAR.includes(usuario.rol)) {
-    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede apartar stock.` };
+  if (!puedeApartarStock(usuario.rol)) {
+    return {
+      ok: false,
+      mensaje: `${nombreRol(usuario.rol)} no aparta stock: lo hacen ${listaDeRoles(ROLES_APARTAN_STOCK)}.`,
+    };
   }
 
   if (!d.pedido_linea_id) return { ok: false, mensaje: 'Falta indicar para qué línea del pedido es.' };
@@ -212,7 +261,7 @@ export async function crearReserva(d: DatosReserva): Promise<ResultadoReserva> {
       ok: false,
       mensaje:
         `El pallet ${pallet} está bloqueado por calidad y no se puede apartar. ` +
-        'Revise su dictamen en Almacenes → Calidad: mientras esté observado, inmovilizado o ' +
+        'Revise su dictamen en Stock / Inventarios › Calidad: mientras esté observado, inmovilizado o ' +
         'en espera de resultados, no sale de cámara.',
     };
   }
@@ -331,7 +380,7 @@ export async function crearReserva(d: DatosReserva): Promise<ResultadoReserva> {
     .select('id')
     .single();
 
-  if (error) return { ok: false, mensaje: `No se pudo apartar: ${error.message}` };
+  if (error) return { ok: false, mensaje: motivoDeLaBase(error, 'apartar stock') };
 
   await supabase.rpc('registrar_evento', {
     p_entidad: 'reservas',

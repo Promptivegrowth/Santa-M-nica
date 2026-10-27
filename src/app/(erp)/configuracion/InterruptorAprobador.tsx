@@ -21,6 +21,7 @@
  */
 import { useState, useTransition } from 'react';
 import { alternarAprobador } from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 export function InterruptorAprobador({
   id,
@@ -53,7 +54,7 @@ export function InterruptorAprobador({
       if (!seguro) return;
     }
     iniciar(async () => {
-      const r = await alternarAprobador(id, !valor);
+      const r = await accionSegura(() => alternarAprobador(id, !valor));
       if (r.ok) setValor(!valor);
       else setError(r.mensaje);
     });

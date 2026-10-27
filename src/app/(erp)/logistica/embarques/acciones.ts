@@ -19,6 +19,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { mensajeNoPuede, mensajeDeBase } from '@/lib/permisosLogistica';
 
 export type Resultado =
   | { ok: true; id: number; numero: string; mensaje: string }
@@ -39,7 +40,7 @@ async function autorizar(que: string, permitidos: string[] = PUEDEN) {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { error: 'Su sesión caducó. Vuelva a entrar.' };
   if (!permitidos.includes(usuario.rol)) {
-    return { error: `Su rol (${usuario.rol}) no puede ${que}.` };
+    return { error: mensajeNoPuede(usuario.rol, que, permitidos) };
   }
   return { usuario };
 }
@@ -190,7 +191,7 @@ export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
   const anio = Number(d.fecha_programada.slice(0, 4));
   const { data: correlativo, error: errNum } = await supabase
     .rpc('siguiente_correlativo', { p_serie: 'EMB', p_anio: anio });
-  if (errNum) return { ok: false, mensaje: `No se pudo reservar el número: ${errNum.message}` };
+  if (errNum) return { ok: false, mensaje: mensajeDeBase(errNum, 'No se pudo reservar el número') };
 
   const numero = `EMB-${anio}-${String(correlativo).padStart(4, '0')}`;
 
@@ -214,7 +215,7 @@ export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
     .select('id')
     .single();
 
-  if (error || !embarque) return { ok: false, mensaje: `No se pudo crear el embarque: ${error?.message}` };
+  if (error || !embarque) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo crear el embarque') };
 
   if (d.pedidos?.length) {
     const { error: errPed } = await supabase
@@ -223,7 +224,7 @@ export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
 
     if (errPed) {
       await supabase.from('embarques').delete().eq('id', embarque.id);
-      return { ok: false, mensaje: `No se pudieron asociar los pedidos: ${errPed.message}` };
+      return { ok: false, mensaje: mensajeDeBase(errPed, 'No se pudieron asociar los pedidos') };
     }
   }
 
@@ -241,7 +242,7 @@ export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
     if (errLin) {
       await supabase.from('embarque_pedidos').delete().eq('embarque_id', embarque.id);
       await supabase.from('embarques').delete().eq('id', embarque.id);
-      return { ok: false, mensaje: `No se pudieron guardar las cantidades: ${errLin.message}` };
+      return { ok: false, mensaje: mensajeDeBase(errLin, 'No se pudieron guardar las cantidades') };
     }
   }
 
@@ -331,7 +332,7 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
     if (error?.code === '23505') {
       return { ok: false, mensaje: `Ya existe un packing con el código ${codigo}. Vuelva a intentarlo.` };
     }
-    return { ok: false, mensaje: `No se pudo crear el packing: ${error?.message}` };
+    return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo crear el packing') };
   }
 
   /* ══════════════════════════════════════════════════════════════════════
@@ -353,6 +354,7 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
 
   let precargados = 0;
   let kgPrecargados = 0;
+  const bloqueadosFuera: string[] = [];
 
   if (idsPedidos.length > 0) {
     const { data: emb2 } = await supabase
@@ -406,6 +408,19 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
       porLote.set(id, previo);
     }
 
+    /*
+     * Lo bloqueado por Calidad no se precarga (075): no podría salir. Se
+     * avisa cuál, para que Calidad o el responsable decida.
+     */
+    for (const loteId of [...porLote.keys()]) {
+      const { data: bloqueo } = await supabase.rpc('lote_bloqueo_texto', { p_lote_id: loteId });
+      if (bloqueo) {
+        const { data: l } = await supabase.from('lotes').select('codigo_pallet').eq('id', loteId).maybeSingle();
+        bloqueadosFuera.push(`${l?.codigo_pallet ?? loteId} (${bloqueo})`);
+        porLote.delete(loteId);
+      }
+    }
+
     if (porLote.size > 0) {
       const { error: errPre } = await supabase.from('packing_lineas').insert(
         [...porLote.entries()].map(([lote_id, v]) => ({
@@ -447,7 +462,10 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
         ? `Ya lleva cargados ${precargados} pallet${precargados === 1 ? '' : 's'} ` +
           `—${(kgPrecargados / 1000).toFixed(2)} TM— que estaban apartados para sus pedidos. ` +
           'Revíselos y arme el plano de estiba.'
-        : 'Ahora hay que cargarle los pallets y armar su plano de estiba.'),
+        : 'Ahora hay que cargarle los pallets y armar su plano de estiba.') +
+      (bloqueadosFuera.length
+        ? ` No se cargó lo bloqueado por Calidad: ${bloqueadosFuera.join(', ')}.`
+        : ''),
   };
 }
 
@@ -468,7 +486,7 @@ export async function guardarObservacionesEmbarque(id: number, texto: string): P
   const supabase = await crearClienteServidor();
   const { data, error } = await supabase
     .from('embarques').update({ observaciones: limpio || null }).eq('id', id).select('numero');
-  if (error) return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+  if (error) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo guardar') };
   //  Sin filas y sin error es una política que dijo que no.
   if (!data?.length) return { ok: false, mensaje: 'No tiene permiso para modificar este embarque.' };
 
@@ -541,7 +559,7 @@ export async function confirmarEmbarque(id: number): Promise<Resultado> {
   //  «Solo si sigue planificado»: dos personas a la vez no lo confirman dos veces.
   const { data, error } = await supabase
     .from('embarques').update({ estado: 'confirmado' }).eq('id', id).eq('estado', 'planificado').select('id');
-  if (error) return { ok: false, mensaje: `No se pudo confirmar: ${error.message}` };
+  if (error) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo confirmar') };
   if (!data?.length) return { ok: false, mensaje: 'No se pudo confirmar: el embarque cambió mientras tanto o no tiene permiso. Recargue la página.' };
 
   await supabase.rpc('registrar_evento', {
@@ -660,7 +678,7 @@ export async function editarEmbarque(id: number, d: DatosEdicionEmbarque): Promi
   if (!cambios.length) return { ok: true, id, numero: String(e.numero), mensaje: 'No había nada que cambiar.' };
 
   const { data, error } = await supabase.from('embarques').update(nuevo).eq('id', id).select('id');
-  if (error) return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+  if (error) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo guardar') };
   if (!data?.length) return { ok: false, mensaje: 'No tiene permiso para modificar este embarque.' };
 
   await supabase.rpc('registrar_evento', {
@@ -728,7 +746,7 @@ export async function agregarPedidosAEmbarque(
 
   const { error: errPed } = await supabase
     .from('embarque_pedidos').insert(ids.map((pedido_id) => ({ embarque_id: id, pedido_id })));
-  if (errPed) return { ok: false, mensaje: `No se pudieron agregar los pedidos: ${errPed.message}` };
+  if (errPed) return { ok: false, mensaje: mensajeDeBase(errPed, 'No se pudieron agregar los pedidos') };
 
   const { error: errLin } = await supabase.from('embarque_lineas').insert(
     lineas.map((l) => ({

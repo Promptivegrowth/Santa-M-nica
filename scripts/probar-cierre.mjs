@@ -56,7 +56,7 @@ try {
 
   console.log(SEC(2, 'Lo que pone el ERP'));
   const marco = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-  await marco.auth.signInWithPassword({ email: 'gerencia@santamonica.pe', password: 'SantaMonica2026' });
+  await marco.auth.signInWithPassword({ email: 'gerencia@santamonica.pe', password: (process.env.CLAVE_DEMO ?? '') });
   {
     const { data: erp } = await marco.rpc('cierre_erp', { p_anio: 2026, p_mes: 9 });
     const pota = (erp ?? []).find((x) => x.especie === 'POTA');
@@ -90,7 +90,7 @@ try {
   console.log(SEC(3, 'Solo Marco y Oliver'));
   {
     const comercial = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-    await comercial.auth.signInWithPassword({ email: 'comercial@santamonica.pe', password: 'SantaMonica2026' });
+    await comercial.auth.signInWithPassword({ email: 'comercial@santamonica.pe', password: (process.env.CLAVE_DEMO ?? '') });
     const { data: v } = await comercial.from('cierre_valores').select('id');
     const { data: erp } = await comercial.rpc('cierre_erp', { p_anio: 2026, p_mes: 9 });
     ok((v ?? []).length === 0 && (erp ?? []).length === 0, 'Comercial no ve nada, ni pidiéndolo a la API');
@@ -104,7 +104,7 @@ try {
     const p = await ctx.newPage();
     await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
     await p.fill('input[type="email"]', 'gerencia@santamonica.pe');
-    await p.fill('input[type="password"]', 'SantaMonica2026');
+    await p.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
     await p.click('button[type="submit"]');
     await p.waitForURL(/\/panel/, { timeout: 30000 });
     await p.goto(`${BASE}/produccion/cierre?mes=2026-09`, { waitUntil: 'networkidle' });
@@ -166,7 +166,7 @@ try {
     const po = await (await nav.newContext()).newPage();
     await po.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
     await po.fill('input[type="email"]', 'comercial@santamonica.pe');
-    await po.fill('input[type="password"]', 'SantaMonica2026');
+    await po.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
     await po.click('button[type="submit"]');
     await po.waitForURL(/\/panel/, { timeout: 30000 });
     ok(await po.locator('nav.barra a[href="/produccion/cierre"]').count() === 0, 'Comercial no tiene la entrada');

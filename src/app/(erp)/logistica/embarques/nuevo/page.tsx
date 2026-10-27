@@ -8,11 +8,12 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Panel } from '@/components/ui/Pagina';
 import { FormularioEmbarque } from './FormularioEmbarque';
 import { pedidosParaEmbarcar } from '../acciones';
+import { PUEDEN_EMBARQUES, PUEDEN_CONSOLIDAR, mensajeNoPuede, rolPuede } from '@/lib/permisosLogistica';
 
 export const metadata: Metadata = { title: 'Nuevo embarque' };
 export const dynamic = 'force-dynamic';
 
-const PUEDEN = ['gerencia', 'operaciones', 'comex', 'almacen'];
+const PUEDEN: string[] = PUEDEN_EMBARQUES;
 
 export default async function PaginaNuevoEmbarque() {
   const usuario = await obtenerUsuarioActual();
@@ -59,6 +60,9 @@ export default async function PaginaNuevoEmbarque() {
           conductores={(conductores ?? []).map((c) => ({ id: c.id as number, nombre: c.nombre as string }))}
           pedidos={pedidos}
           hoy={hoy}
+          noPuedeTrasladar={rolPuede(usuario?.rol, PUEDEN_CONSOLIDAR)
+            ? null
+            : mensajeNoPuede(usuario?.rol, 'armar traslados de consolidación', PUEDEN_CONSOLIDAR) + ' Pídales que lo armen.'}
         />
       </Panel>
     </>

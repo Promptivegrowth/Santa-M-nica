@@ -7,6 +7,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { alternarRegla } from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 export function InterruptorRegla({ id, activaInicial }: { id: number; activaInicial: boolean }) {
   const [activa, setActiva] = useState(activaInicial);
@@ -21,7 +22,7 @@ export function InterruptorRegla({ id, activaInicial }: { id: number; activaInic
     setError(null);
     setHecho(null);
     iniciar(async () => {
-      const r = await alternarRegla(id, nuevo);
+      const r = await accionSegura(() => alternarRegla(id, nuevo));
       if (!r.ok) {
         setActiva(!nuevo); // se revierte si el servidor la rechazó
         setError(r.mensaje);

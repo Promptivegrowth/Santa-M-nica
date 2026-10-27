@@ -28,7 +28,12 @@ const raiz = resolve(__dirname, '..');
 // --- Configuración -----------------------------------------------------------
 const URL_SUPABASE = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const CLAVE_DEMO = 'SantaMonica2026';
+// La contraseña de los usuarios de prueba no se escribe en el repositorio: viene de .env.local.
+const CLAVE_DEMO = process.env.CLAVE_DEMO ?? '';
+if (CLAVE_DEMO.length < 8) {
+  console.error('✗ Falta CLAVE_DEMO en .env.local (la contraseña de los usuarios de prueba, 8 caracteres o más).');
+  process.exit(1);
+}
 
 /* ==========================================================================
    GENERADOR PSEUDOALEATORIO CON SEMILLA
@@ -465,7 +470,7 @@ async function principal() {
   console.log('\n════════════════════════════════════════════════════════════');
   console.log('  ✓ SEMBRADO COMPLETO');
   console.log('════════════════════════════════════════════════════════════');
-  console.log(`\n  Usuarios de prueba (contraseña: ${CLAVE_DEMO}):`);
+  console.log('\n  Usuarios de prueba (contraseña: la de CLAVE_DEMO en .env.local):');
   USUARIOS.forEach((u) => console.log(`   · ${u.email.padEnd(30)} ${u.rol.padEnd(12)} ${u.nombre}`));
   console.log('');
 }

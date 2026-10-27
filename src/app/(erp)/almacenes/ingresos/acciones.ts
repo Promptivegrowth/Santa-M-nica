@@ -27,211 +27,49 @@
  *  pregunta que importa cuando hay un reclamo sanitario.
  * ============================================================================
  */
-import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { hoyEnLima } from '@/lib/fechas';
+import { rolNoPuede } from '@/lib/mensajesBase';
+import { PUEDEN_INGRESAR, type DatosIngreso } from './tipos';
+import { cargarContexto, revisarIngreso, crearIngreso, refrescarIngresos, normalizarCodigo } from './registro';
+
+export type { DatosIngreso } from './tipos';
 
 export type Resultado =
   | { ok: true; id: number; mensaje: string }
   | { ok: false; mensaje: string; campo?: string };
 
-/** Quién puede meter producto a cámara. */
-const PUEDEN_INGRESAR = ['gerencia', 'operaciones', 'almacen'];
-
-export type DatosIngreso = {
-  codigo_pallet: string;
-  sku_presentacion_id: number;
-  almacen_id: number;
-  camara_id: number | null;
-  fecha_produccion: string;      // AAAA-MM-DD
-  turno: 'dia' | 'noche';
-  proceso: 'propia' | 'maquila';
-  planta_id: number | null;
-  linea_procesadora_id: number | null;
-  bultos: number;
-  peso_neto_kg: number;
-  costo_unitario: number;
-  observaciones: string | null;
-  /**
-   * Observaciones de octubre, punto 11: de dónde viene el producto.
-   * Producción = planta propia o maquila; Compras = adquirido a un tercero.
-   * Se guarda en el MOVIMIENTO y se puede consultar en Ingresos y en el Kardex.
-   */
-  origen_ingreso: 'produccion' | 'compras' | '';
-  proveedor: string | null;
-};
-
-function refrescar() {
-  revalidatePath('/almacenes/ingresos');
-  revalidatePath('/almacenes/movimientos');
-  revalidatePath('/almacenes/kardex');
-  revalidatePath('/almacenes/existencias');
-  revalidatePath('/almacenes/valorizado');
-  revalidatePath('/almacenes/anticuamiento');
-  revalidatePath('/ventas/disponibilidad');
-  revalidatePath('/panel');
-}
-
-function validar(d: DatosIngreso): { mensaje: string; campo: string } | null {
-  if (!d.codigo_pallet?.trim()) {
-    return { mensaje: 'El pallet necesita un código: es su matrícula para toda la trazabilidad.', campo: 'codigo_pallet' };
-  }
-  if (d.codigo_pallet.trim().length > 30) {
-    return { mensaje: 'El código de pallet es demasiado largo.', campo: 'codigo_pallet' };
-  }
-  if (!d.sku_presentacion_id) return { mensaje: 'Elija qué producto entró.', campo: 'sku_presentacion_id' };
-  if (d.origen_ingreso !== 'produccion' && d.origen_ingreso !== 'compras') {
-    return { mensaje: 'Indique el origen del ingreso: Producción o Compras.', campo: 'origen_ingreso' };
-  }
-  if (d.origen_ingreso === 'compras' && !d.proveedor?.trim()) {
-    return { mensaje: 'Un ingreso por compra necesita el proveedor: es a quien se reclama si sale mal.', campo: 'proveedor' };
-  }
-  if (!d.almacen_id) return { mensaje: 'Elija a qué bodega entró.', campo: 'almacen_id' };
-  if (!d.fecha_produccion) return { mensaje: 'Falta la fecha de producción.', campo: 'fecha_produccion' };
-
-  /*
-   * Una fecha futura casi siempre es un dedazo en el año, y trae consecuencias
-   * caras: el anticuamiento sale negativo y el producto nunca entra en alerta
-   * de vida útil.
-   */
-  const hoy = hoyEnLima();
-  if (d.fecha_produccion > hoy) {
-    return { mensaje: `La fecha de producción no puede ser futura: hoy es ${hoy}.`, campo: 'fecha_produccion' };
-  }
-
-  if (!(d.bultos > 0)) return { mensaje: 'Los bultos tienen que ser más de cero.', campo: 'bultos' };
-  if (!Number.isInteger(d.bultos)) return { mensaje: 'Los bultos van en números enteros.', campo: 'bultos' };
-  if (!(d.peso_neto_kg > 0)) return { mensaje: 'El peso neto tiene que ser mayor que cero.', campo: 'peso_neto_kg' };
-  if (d.costo_unitario < 0) return { mensaje: 'El costo no puede ser negativo.', campo: 'costo_unitario' };
-
-  return null;
-}
-
 async function autorizar() {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { error: 'Su sesión caducó. Vuelva a entrar.' };
-  if (!PUEDEN_INGRESAR.includes(usuario.rol)) {
-    return { error: `Su rol (${usuario.rol}) no puede registrar ingresos a cámara.` };
+  if (!(PUEDEN_INGRESAR as readonly string[]).includes(usuario.rol)) {
+    return { error: rolNoPuede(usuario.rol, 'registrar ingresos a cámara', PUEDEN_INGRESAR) };
   }
   return { usuario };
 }
 
 /* ==========================================================================
    REGISTRAR
+   --------------------------------------------------------------------------
+   Las reglas y el alta viven en registro.ts: son las mismas para el
+   formulario, la importación desde Excel y la confirmación de un ingreso
+   programado (074). Aquí solo se autoriza y se muestra el primer problema,
+   que es el que el formulario marca en rojo.
    ========================================================================== */
 export async function registrarIngreso(d: DatosIngreso): Promise<Resultado> {
   const permiso = await autorizar();
   if (permiso.error) return { ok: false, mensaje: permiso.error };
 
-  const problema = validar(d);
-  if (problema) return { ok: false, ...problema };
-
   const supabase = await crearClienteServidor();
-  const codigo = d.codigo_pallet.trim().toUpperCase();
+  const ctx = await cargarContexto(supabase, [normalizarCodigo(d.codigo_pallet)], [Number(d.sku_presentacion_id)], hoyEnLima());
+  const problemas = revisarIngreso(d, ctx);
+  if (problemas.length) return { ok: false, mensaje: problemas[0].mensaje, campo: problemas[0].campo };
 
-  /* ---- 1. El código no puede estar repetido ---- */
-  const { data: repetido } = await supabase
-    .from('lotes').select('id').eq('codigo_pallet', codigo).maybeSingle();
+  const r = await crearIngreso(supabase, permiso.usuario!.id as string, d);
+  if (!r.ok) return r;
 
-  if (repetido) {
-    return {
-      ok: false,
-      mensaje:
-        `Ya existe un pallet con el código ${codigo}. El código es la matrícula del producto: ` +
-        'dos iguales harían imposible saber cuál es cuál si hubiera un reclamo.',
-      campo: 'codigo_pallet',
-    };
-  }
-
-  /* ---- 2. La cámara tiene que ser de esa bodega ---- */
-  if (d.camara_id) {
-    const { data: camara } = await supabase
-      .from('camaras').select('almacen_id, nombre').eq('id', d.camara_id).maybeSingle();
-    if (Number(camara?.almacen_id) !== Number(d.almacen_id)) {
-      return { ok: false, mensaje: 'Esa cámara no pertenece a la bodega elegida.', campo: 'camara_id' };
-    }
-  }
-
-  /* ---- 3. Nace el lote ----
-     La campaña se deduce del año de producción: es como se agrupa la
-     temporada en los reportes, y pedirla a mano solo daría ocasión de
-     equivocarse. */
-  const campania = Number(d.fecha_produccion.slice(0, 4));
-
-  const { data: lote, error: errorLote } = await supabase
-    .from('lotes')
-    .insert({
-      codigo_pallet: codigo,
-      campania,
-      sku_presentacion_id: d.sku_presentacion_id,
-      fecha_produccion: d.fecha_produccion,
-      turno: d.turno,
-      proceso: d.proceso,
-      planta_id: d.planta_id,
-      linea_procesadora_id: d.linea_procesadora_id,
-      bultos_iniciales: d.bultos,
-      peso_neto_inicial_kg: d.peso_neto_kg,
-      //  Solo cuenta si el producto no tiene costo cargado: si lo tiene, la
-      //  base pone el que rige hoy y descarta este (057, lotes_costo_de_ingreso).
-      costo_unitario: d.costo_unitario,
-      observaciones: d.observaciones?.trim() || null,
-      creado_por: permiso.usuario!.id,
-    })
-    .select('id, costo_unitario, costo_origen')
-    .single();
-
-  if (errorLote || !lote) {
-    return { ok: false, mensaje: `No se pudo crear el lote: ${errorLote?.message}` };
-  }
-
-  /* ---- 4. El movimiento, que es lo que mueve el inventario ----
-     Si esto fallara, quedaría un lote fantasma: existiría en la tabla pero con
-     cero stock, sin Kardex y sin explicación. Se deshace el lote para no dejar
-     ese cadáver en la base. */
-  const { error: errorMov } = await supabase.from('movimientos').insert({
-    tipo: 'ingreso',
-    lote_id: lote.id,
-    almacen_id: d.almacen_id,
-    camara_id: d.camara_id,
-    bultos: d.bultos,
-    peso_neto_kg: d.peso_neto_kg,
-    //  El del LOTE, no el del formulario: el Kardex tiene que valorizar el
-    //  pallet con el mismo costo con el que quedó registrado.
-    costo_unitario: Number(lote.costo_unitario),
-    documento_tipo: 'ingreso',
-    documento_ref: `ING-${String(lote.id).padStart(6, '0')}`,
-    usuario_id: permiso.usuario!.id,
-    observaciones: d.observaciones?.trim() || null,
-    origen_ingreso: d.origen_ingreso,
-    proveedor: d.origen_ingreso === 'compras' ? d.proveedor?.trim() || null : null,
-  });
-
-  if (errorMov) {
-    await supabase.from('lotes').delete().eq('id', lote.id);
-    return { ok: false, mensaje: `No se pudo registrar el movimiento: ${errorMov.message}` };
-  }
-
-  await supabase.rpc('registrar_evento', {
-    p_entidad: 'lotes',
-    p_entidad_id: lote.id,
-    p_tipo: 'ingreso_registrado',
-    p_descripcion:
-      `Ingreso del pallet ${codigo}: ${d.bultos} bultos, ` +
-      `${d.peso_neto_kg.toLocaleString('es-PE', { maximumFractionDigits: 1 })} kg, ` +
-      `producidos el ${d.fecha_produccion}`,
-    p_severidad: 'info',
-    p_metadatos: { pallet: codigo, bultos: d.bultos, kg: d.peso_neto_kg, almacen_id: d.almacen_id },
-  }).then(() => undefined, () => undefined);
-
-  refrescar();
-
-  return {
-    ok: true,
-    id: lote.id as number,
-    mensaje:
-      `Pallet ${codigo} ingresado: ${d.bultos} bultos y ` +
-      `${d.peso_neto_kg.toLocaleString('es-PE', { maximumFractionDigits: 1 })} kg ya están disponibles para vender.`,
-  };
+  refrescarIngresos();
+  return { ok: true, id: r.id, mensaje: r.mensaje };
 }
 
 /* ==========================================================================

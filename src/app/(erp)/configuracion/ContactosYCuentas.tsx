@@ -23,6 +23,7 @@ import {
   crearCuenta, actualizarCuenta, cambiarEstadoCuenta,
   type DatosContacto, type DatosCuenta,
 } from './accionesContactos';
+import { accionSegura } from '@/lib/accionSegura';
 
 type Contacto = {
   id: number;
@@ -110,7 +111,7 @@ export function ContactosYCuentas({
   function ejecutar(accion: () => Promise<{ ok: boolean; mensaje: string }>, alTerminar?: () => void) {
     setMensaje(null);
     iniciar(async () => {
-      const r = await accion();
+      const r = await accionSegura(accion);
       setMensaje({ ok: r.ok, texto: r.mensaje });
       if (r.ok) {
         alTerminar?.();

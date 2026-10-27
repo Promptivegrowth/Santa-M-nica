@@ -23,6 +23,7 @@ import {
   guardarTransportista, guardarVehiculo, guardarConductor, cambiarActivo, eliminarDeFlota,
   type DatosTransportista, type DatosVehiculo, type DatosConductor, type TablaFlota,
 } from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 type Opcion = { id: number; nombre: string };
 
@@ -62,11 +63,11 @@ export function FormularioFlota({ edicion, transportistas }: { edicion: Edicion;
   function guardar() {
     setAviso(null);
     iniciar(async () => {
-      const r =
+      const r = await accionSegura(async () =>
         edicion.tipo === 'transportista' ? await guardarTransportista(edicion.id, d as unknown as DatosTransportista)
         : edicion.tipo === 'vehiculo' ? await guardarVehiculo(edicion.id, { ...(d as unknown as DatosVehiculo), capacidad_tm: d.capacidad_tm === null ? null : Number(d.capacidad_tm) })
-        : await guardarConductor(edicion.id, d as unknown as DatosConductor);
-      if (!r.ok) { setAviso({ texto: r.mensaje, campo: r.campo }); return; }
+        : await guardarConductor(edicion.id, d as unknown as DatosConductor));
+      if (!r.ok) { setAviso({ texto: r.mensaje, campo: 'campo' in r ? r.campo : undefined }); return; }
       router.push(`/logistica/flota?hecho=${encodeURIComponent(r.mensaje)}#${edicion.tipo === 'vehiculo' ? 'vehiculos' : edicion.tipo === 'conductor' ? 'conductores' : 'transportistas'}`);
       router.refresh();
     });
@@ -141,7 +142,7 @@ export function AccionesFlota({
   const [pendiente, iniciar] = useTransition();
 
   const hacer = (accion: () => Promise<{ ok: boolean; mensaje: string }>) => iniciar(async () => {
-    const r = await accion();
+    const r = await accionSegura(accion);
     setAviso({ ok: r.ok, texto: r.mensaje });
     setBorrando(false);
     if (r.ok) router.refresh();

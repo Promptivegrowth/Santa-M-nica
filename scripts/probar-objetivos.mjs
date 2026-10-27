@@ -43,7 +43,7 @@ const [{ valor: MODULO_ANTES }] = await consultar(`select valor from parametros 
 await consultar(`update parametros set valor = 'si' where clave = 'modulo_objetivos_activo'`);
 const cliente = async (email) => {
   const cli = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-  const { data, error } = await cli.auth.signInWithPassword({ email, password: 'SantaMonica2026' });
+  const { data, error } = await cli.auth.signInWithPassword({ email, password: (process.env.CLAVE_DEMO ?? '') });
   if (error) throw error;
   return { cli, id: data.user.id };
 };
@@ -222,7 +222,7 @@ try {
     const p = await ctx.newPage();
     await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
     await p.fill('input[type="email"]', 'operaciones@santamonica.pe');
-    await p.fill('input[type="password"]', 'SantaMonica2026');
+    await p.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
     await p.click('button[type="submit"]');
     await p.waitForURL(/\/panel/, { timeout: 30000 });
     ok(await p.locator('nav.barra a[href="/objetivos"]').count() === 1, 'Objetivos está en su menú');
@@ -288,7 +288,7 @@ try {
     const p = await ctx.newPage();
     await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
     await p.fill('input[type="email"]', 'comercial@santamonica.pe');
-    await p.fill('input[type="password"]', 'SantaMonica2026');
+    await p.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
     await p.click('button[type="submit"]');
     await p.waitForURL(/\/panel/, { timeout: 30000 });
     ok(await p.locator('nav.barra a[href="/objetivos"]').count() === 0, 'Comercial no tiene la entrada en el menú');

@@ -8,6 +8,14 @@
  *
  *  Nadie —ni siquiera Gerencia— puede modificar ni borrar esta tabla desde el
  *  sistema: no existe política de escritura para ella.
+ *
+ *  SIN NOMBRES TÉCNICOS (077)
+ *  El filtro y la columna «Tabla» decían «dictamenes_calidad» o
+ *  «pedido_lineas», y los campos «ruc_tax_id». Ahora salen con el diccionario
+ *  central (src/lib/etiquetas.ts). Y donde antes decía «Sistema» a secas, se
+ *  dice de dónde vino el cambio: la tarea automática de cada mañana o un
+ *  mantenimiento técnico (columna «origen», migración 077). Las filas viejas,
+ *  de antes de esa columna, siguen diciendo «Sistema».
  * ============================================================================
  */
 import { redirect } from 'next/navigation';
@@ -16,6 +24,14 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { num, fechaHora } from '@/lib/formato';
+import { TABLAS as NOMBRES_TABLA, etiquetaTabla, etiquetaCampo, CAMPOS_SIN_INTERES } from '@/lib/etiquetas';
+
+/** Quién hizo el cambio cuando no hubo una persona con sesión. */
+const NOMBRE_ORIGEN: Record<string, string> = {
+  tarea_programada: 'Tarea automática diaria',
+  servicio: 'Proceso del sistema',
+  mantenimiento: 'Mantenimiento técnico',
+};
 
 export const metadata: Metadata = { title: 'Auditoría' };
 export const dynamic = 'force-dynamic';
@@ -33,7 +49,7 @@ export default async function PaginaAuditoria(props: PageProps<'/trazabilidad/au
 
   let consulta = supabase
     .from('auditoria')
-    .select('id, tabla, registro_id, accion, campos_cambiados, ocurrido_en, usuario_id', { count: 'exact' });
+    .select('id, tabla, registro_id, accion, campos_cambiados, ocurrido_en, usuario_id, origen', { count: 'exact' });
   if (tabla) consulta = consulta.eq('tabla', tabla);
   if (accion) consulta = consulta.eq('accion', accion);
 
@@ -45,27 +61,28 @@ export default async function PaginaAuditoria(props: PageProps<'/trazabilidad/au
 
   const nombrePorId = Object.fromEntries((usuarios ?? []).map((u) => [u.id, u.nombre]));
 
-  const TABLAS = ['pedidos', 'pedido_lineas', 'reservas', 'traslados', 'lotes', 'clientes',
-                  'dictamenes_calidad', 'facturas', 'parametros', 'movimientos', 'precios'];
+  //  Todas las tablas vigiladas, por su nombre legible y en orden alfabético.
+  const TABLAS = Object.keys(NOMBRES_TABLA)
+    .sort((a, b) => etiquetaTabla(a).localeCompare(etiquetaTabla(b), 'es'));
 
   return (
     <>
       <CabeceraPagina
         titulo="Auditoría del sistema"
-        descripcion="Registro técnico de cada cambio. Lo escriben disparadores de la base de datos, no la aplicación, y nadie lo puede alterar."
+        descripcion="Cada cambio de datos del sistema: qué se cambió, cuándo y quién. Se anota solo, al guardar, y nadie lo puede alterar."
       />
 
       <RejillaKpi>
         <Kpi etiqueta="Registros de auditoría" valor={num(count ?? 0)} tono="marca" href="#eventos" />
-        <Kpi etiqueta="Tablas vigiladas" valor={num(TABLAS.length + 8)} nota="Todas las críticas" href="#eventos" />
-        <Kpi etiqueta="Modificable" valor="No" tono="ok" nota="Sin política de escritura" href="#eventos" />
+        <Kpi etiqueta="Tipos de registro vigilados" valor={num(TABLAS.length)} nota="Todos los críticos" href="#eventos" />
+        <Kpi etiqueta="Modificable" valor="No" tono="ok" nota="Nadie puede editarla ni borrarla" href="#eventos" />
       </RejillaKpi>
 
       <Panel id="eventos" titulo={`${num(count ?? 0)} eventos registrados`}>
         <Filtros
           campos={[
-            { tipo: 'select', clave: 'tabla', etiqueta: 'Tabla',
-              opciones: TABLAS.map((t) => ({ valor: t, texto: t })) },
+            { tipo: 'select', clave: 'tabla', etiqueta: 'Qué se cambió',
+              opciones: TABLAS.map((t) => ({ valor: t, texto: etiquetaTabla(t) })) },
             { tipo: 'select', clave: 'accion', etiqueta: 'Acción',
               opciones: [
                 { valor: 'INSERT', texto: 'Creación' },
@@ -82,7 +99,7 @@ export default async function PaginaAuditoria(props: PageProps<'/trazabilidad/au
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
               <table className="datos">
                 <thead>
-                  <tr><th className="num">Momento</th><th>Acción</th><th>Tabla</th><th>Registro</th><th>Campos modificados</th><th>Usuario</th></tr>
+                  <tr><th className="num">Momento</th><th>Acción</th><th>Qué se cambió</th><th>Registro</th><th>Campos modificados</th><th>Usuario</th></tr>
                 </thead>
                 <tbody>
                   {(filas ?? []).map((a) => (
@@ -94,15 +111,19 @@ export default async function PaginaAuditoria(props: PageProps<'/trazabilidad/au
                           tono={a.accion === 'INSERT' ? 'ok' : a.accion === 'UPDATE' ? 'info' : 'critico'}
                         />
                       </td>
-                      <td className="mono">{a.tabla as string}</td>
+                      <td data-celda="tabla">{etiquetaTabla(a.tabla as string)}</td>
                       <td className="mono">#{a.registro_id as string}</td>
                       <td style={{ fontSize: '.74rem', color: 'var(--tinta-3)', maxWidth: '26rem' }}>
                         {Array.isArray(a.campos_cambiados) && a.campos_cambiados.length
-                          ? (a.campos_cambiados as string[]).join(', ')
+                          ? (a.campos_cambiados as string[])
+                              .filter((c) => !CAMPOS_SIN_INTERES.has(c) || (a.campos_cambiados as string[]).length === 1)
+                              .map(etiquetaCampo).join(', ')
                           : '—'}
                       </td>
                       <td style={{ fontSize: '.78rem' }}>
-                        {a.usuario_id ? (nombrePorId[a.usuario_id as string] ?? 'Usuario') : 'Sistema'}
+                        {a.usuario_id
+                          ? (nombrePorId[a.usuario_id as string] ?? 'Usuario')
+                          : (NOMBRE_ORIGEN[String(a.origen ?? '')] ?? 'Sistema')}
                       </td>
                     </tr>
                   ))}
@@ -115,9 +136,11 @@ export default async function PaginaAuditoria(props: PageProps<'/trazabilidad/au
       </Panel>
 
       <p className="pie-explicativo">
-        Los registros marcados como <strong>Sistema</strong> corresponden a operaciones ejecutadas
-        por procesos internos (por ejemplo, el sembrado inicial de datos o la expiración automática
-        de reservas), que no tienen una sesión de usuario asociada.
+        Todo lo que hace una persona queda con su nombre. Lo que no tiene persona detrás dice de
+        dónde vino: <strong>Tarea automática diaria</strong> son los procesos de cada mañana (soltar
+        reservas vencidas, actualizar el estado de las facturas, revisar las alertas) y{' '}
+        <strong>Mantenimiento técnico</strong> son cargas y correcciones hechas por soporte. Los
+        registros anteriores a esta distinción dicen <strong>Sistema</strong>.
       </p>
     </>
   );

@@ -27,6 +27,9 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { PUEDEN_GESTIONAR_CREDITO } from '@/lib/permisosFinanzas';
+import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
+import type { Rol } from '@/lib/navegacion';
 
 export type Resultado =
   | { ok: true; id: number; mensaje: string }
@@ -159,9 +162,36 @@ async function autorizar(permitidos: string[]) {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { error: 'Su sesión caducó. Vuelva a entrar.' };
   if (!permitidos.includes(usuario.rol)) {
-    return { error: `Su rol (${usuario.rol}) no puede modificar el maestro de clientes.` };
+    return {
+      error: `${nombreRol(usuario.rol)} no puede ${permitidos === PUEDEN_BORRAR ? 'borrar clientes' : 'modificar el maestro de clientes'}: ` +
+        `lo hacen ${listaDeRoles(permitidos as Rol[])}.`,
+    };
   }
   return { usuario };
+}
+
+/**
+ * BLOQUEO Y LÍNEA DE CRÉDITO (076): son de Gerencia y Operaciones, que llevan
+ * el control financiero. Comercial edita el resto de la ficha. Si quien guarda
+ * no los gestiona, esos campos NO se envían (se quedan como estaban), y si
+ * intentó cambiarlos se le dice. La base lo exige también
+ * (clientes_proteger_credito).
+ */
+const gestionaCredito = (rol: string) => PUEDEN_GESTIONAR_CREDITO.includes(rol as Rol);
+const MENSAJE_CREDITO =
+  `El bloqueo y la línea de crédito los cambian ${listaDeRoles(PUEDEN_GESTIONAR_CREDITO)}: ` +
+  'es control financiero. Pídaselo a ellos; el resto de la ficha sí lo puede guardar.';
+
+/** El rechazo de la base, sin lo técnico. */
+function motivoDeLaBase(mensaje: string | undefined, que: string): string {
+  const m = String(mensaje ?? '').replace(/^ERROR:\s*/i, '').trim();
+  if (/row-level security|permission denied|violates.*policy/i.test(m)) {
+    return `No tiene permiso para ${que}: lo hacen ${listaDeRoles(PUEDEN_EDITAR as Rol[])}.`;
+  }
+  if (!m || /violates|constraint|column|relation|syntax|null value/i.test(m)) {
+    return `No se pudo ${que}. Revise los datos y vuelva a intentarlo; si se repite, avise a Sistemas.`;
+  }
+  return m;
 }
 
 /* ==========================================================================
@@ -173,6 +203,11 @@ export async function crearCliente(d: DatosCliente): Promise<Resultado> {
 
   const problema = validar(d);
   if (problema) return { ok: false, ...problema };
+
+  //  Un cliente nuevo de Comercial nace sin línea y sin bloqueo: los fijan Gerencia u Operaciones.
+  if (!gestionaCredito(permiso.usuario!.rol) && (Number(d.linea_credito) !== 0 || d.bloqueado)) {
+    return { ok: false, mensaje: MENSAJE_CREDITO, campo: d.bloqueado ? 'bloqueado' : 'linea_credito' };
+  }
 
   const supabase = await crearClienteServidor();
   const { data, error } = await supabase
@@ -187,7 +222,7 @@ export async function crearCliente(d: DatosCliente): Promise<Resultado> {
     if (error.code === '23505') {
       return { ok: false, mensaje: `Ya existe un cliente con el código ${d.codigo.trim()}.`, campo: 'codigo' };
     }
-    return { ok: false, mensaje: `No se pudo crear el cliente: ${error.message}` };
+    return { ok: false, mensaje: motivoDeLaBase(error.message, 'crear el cliente') };
   }
 
   await supabase.rpc('registrar_evento', {
@@ -222,19 +257,32 @@ export async function actualizarCliente(id: number, d: DatosCliente): Promise<Re
    */
   const { data: antes } = await supabase
     .from('clientes')
-    .select('razon_social, ruc_tax_id, linea_credito, dias_credito, bloqueado, pais')
+    .select('razon_social, ruc_tax_id, linea_credito, dias_credito, bloqueado, motivo_bloqueo, pais')
     .eq('id', id)
     .maybeSingle();
 
   if (!antes) return { ok: false, mensaje: 'Ese cliente ya no existe.' };
 
-  const { error } = await supabase.from('clientes').update(limpiar(d)).eq('id', id);
+  const cambios_ = limpiar(d) as Partial<ReturnType<typeof limpiar>>;
+  if (!gestionaCredito(permiso.usuario!.rol)) {
+    const tocaCredito = Number(antes.linea_credito ?? 0) !== Number(d.linea_credito)
+      || Boolean(antes.bloqueado) !== Boolean(d.bloqueado);
+    if (tocaCredito) return { ok: false, mensaje: MENSAJE_CREDITO, campo: 'linea_credito' };
+    //  No se envían: quedan exactamente como estaban.
+    delete cambios_.linea_credito;
+    delete cambios_.bloqueado;
+    delete cambios_.motivo_bloqueo;
+    //  Lo que sigue en la bitácora compara con lo de antes.
+    d = { ...d, linea_credito: Number(antes.linea_credito ?? 0), bloqueado: Boolean(antes.bloqueado) };
+  }
+
+  const { error } = await supabase.from('clientes').update(cambios_).eq('id', id);
 
   if (error) {
     if (error.code === '23505') {
       return { ok: false, mensaje: `Ya existe otro cliente con el código ${d.codigo.trim()}.`, campo: 'codigo' };
     }
-    return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+    return { ok: false, mensaje: motivoDeLaBase(error.message, 'guardar el cliente') };
   }
 
   const cambios: string[] = [];

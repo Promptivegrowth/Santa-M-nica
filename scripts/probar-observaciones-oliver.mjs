@@ -48,7 +48,7 @@ async function limpiar() {
 
 const cliente = async (email) => {
   const cli = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false } });
-  const { data, error } = await cli.auth.signInWithPassword({ email, password: 'SantaMonica2026' });
+  const { data, error } = await cli.auth.signInWithPassword({ email, password: (process.env.CLAVE_DEMO ?? '') });
   if (error) throw error;
   return { cli, id: data.user.id };
 };
@@ -57,7 +57,7 @@ async function entrar(correo) {
   const p = await (await nav.newContext({ viewport: { width: 1600, height: 1100 } })).newPage();
   await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await p.fill('input[type="email"]', correo);
-  await p.fill('input[type="password"]', 'SantaMonica2026');
+  await p.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
   await p.click('button[type="submit"]');
   await p.waitForURL(/\/panel/, { timeout: 30000 });
   return p;

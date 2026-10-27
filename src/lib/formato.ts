@@ -10,6 +10,8 @@
  * ============================================================================
  */
 
+import { etiquetaClave } from './etiquetas';
+
 const LOCALE = 'es-PE';
 
 /** Toneladas con un decimal: 1.234,5 */
@@ -167,11 +169,16 @@ export function diasDesdeHoy(valor: string | Date | null | undefined): number {
   return Math.round((d.getTime() - Date.now()) / 86400000);
 }
 
-/** Convierte 'en_transito' → 'En tránsito' para mostrar enums en pantalla. */
+/**
+ * Convierte 'en_transito' → 'En tránsito' para mostrar enums en pantalla.
+ *
+ * Antes solo cambiaba los guiones bajos por espacios, y en pantalla salía
+ * «Pendiente validacion» o «En preparacion». Ahora consulta el diccionario
+ * central (src/lib/etiquetas.ts), con tildes; lo que no esté allí se
+ * convierte igual a texto legible.
+ */
 export function etiquetaEstado(valor: string | null | undefined): string {
-  if (!valor) return '—';
-  const texto = valor.replace(/_/g, ' ');
-  return texto.charAt(0).toUpperCase() + texto.slice(1);
+  return etiquetaClave(valor);
 }
 
 /** Une clases CSS ignorando las vacías. */

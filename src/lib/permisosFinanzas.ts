@@ -40,3 +40,28 @@ export const TONO_ESTADO_FACTURA: Record<string, 'ok' | 'atencion' | 'critico' |
   emitida: 'info',
   anulada: 'neutro',
 };
+
+/**
+ * Bloquean o desbloquean un cliente y cambian su línea de crédito (076).
+ * Es control financiero, no comercial: Comercial vende, pero no decide
+ * cuánto se le fía al cliente ni lo destraba. La base lo exige también
+ * (disparador clientes_proteger_credito).
+ */
+export const PUEDEN_GESTIONAR_CREDITO: Rol[] = ['gerencia', 'operaciones'];
+
+/**
+ * Los ciclos del pedido desde los que se emite el comprobante (076). Un
+ * pedido en borrador o «pendiente de validación» todavía no lo confirmó
+ * Gerencia u Operaciones; uno cancelado no se factura. La base lo exige
+ * también (disparador facturas_exigir_pedido_confirmado).
+ */
+export const CICLOS_FACTURABLES = ['confirmado', 'despachado', 'cerrado'] as const;
+
+/** Por qué no se puede emitir desde un pedido en este ciclo, o null si se puede. */
+export function motivoNoFacturarCiclo(ciclo: string | null | undefined): string | null {
+  const c = String(ciclo ?? '');
+  if ((CICLOS_FACTURABLES as readonly string[]).includes(c)) return null;
+  if (c === 'cancelado') return 'El pedido está cancelado: no se le emite comprobante.';
+  return 'Primero Gerencia u Operaciones debe confirmar el pedido: ' +
+    (c === 'borrador' ? 'todavía es un borrador.' : 'está pendiente de validación.');
+}

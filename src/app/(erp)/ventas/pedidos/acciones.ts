@@ -28,6 +28,11 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { revisarTipoCambio } from '@/lib/moneda';
 import { hoyEnLima } from '@/lib/fechas';
 import { puedeVender, type Rol } from '@/lib/navegacion';
+import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
+import { obtenerTipoCambioSunat } from '@/lib/tipoCambioSunat';
+
+/** Quienes registran pedidos (puedeVender). */
+const VENDEN: Rol[] = ['gerencia', 'operaciones', 'comercial', 'comex'];
 
 export type LineaPedido = {
   sku_presentacion_id: number;
@@ -79,7 +84,7 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
   if (!puedeVender(usuario.rol as Rol)) {
     return {
       ok: false,
-      mensaje: 'Su rol no puede registrar pedidos. Esta acción corresponde a Comercial, Comex, Operaciones o Gerencia.',
+      mensaje: `${nombreRol(usuario.rol)} no registra pedidos: lo hacen ${listaDeRoles(VENDEN)}.`,
     };
   }
 
@@ -96,9 +101,12 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
    * mezclaban monedas. La base lo rechaza igual, pero su mensaje no le sirve a
    * un comercial.
    */
-  const problemaTc = revisarTipoCambio(datos.tipo_cambio);
+  let problemaTc = revisarTipoCambio(datos.tipo_cambio);
   if (problemaTc) {
-    return { ok: false, mensaje: problemaTc, campo: 'tipo_cambio' };
+    //  Con el valor REAL de SUNAT del día en el mensaje (076), si se consigue.
+    const sunat = await obtenerTipoCambioSunat(await crearClienteServidor(), hoyEnLima()).catch(() => null);
+    if (sunat?.ok) problemaTc = revisarTipoCambio(datos.tipo_cambio, { valor: sunat.tc.valor, publicado_el: sunat.tc.publicado_el });
+    return { ok: false, mensaje: problemaTc ?? 'Revise el tipo de cambio.', campo: 'tipo_cambio' };
   }
   //  Solo dos orígenes posibles; lo que no sea SUNAT se guarda como escrito a mano.
   const fuenteTc: 'sunat' | 'manual' = datos.tipo_cambio_fuente === 'sunat' ? 'sunat' : 'manual';
@@ -217,7 +225,7 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
     return {
       ok: false,
       mensaje: /policy/i.test(errCab?.message ?? '')
-        ? 'Su rol no tiene permiso para crear pedidos.'
+        ? `${nombreRol(usuario.rol)} no tiene permiso para crear pedidos: lo hacen ${listaDeRoles(VENDEN)}.`
         : `No se pudo guardar el pedido: ${errCab?.message}`,
     };
   }

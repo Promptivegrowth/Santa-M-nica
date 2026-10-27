@@ -25,6 +25,7 @@ import { fecha, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/form
 import { aDolares } from '@/lib/moneda';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
+import { PUEDEN_CONSOLIDAR, mensajeNoPuede, rolPuede } from '@/lib/permisosLogistica';
 import { NuevoPacking } from './NuevoPacking';
 import { ObservacionesEmbarque } from './ObservacionesEmbarque';
 import { CicloEmbarque } from './CicloEmbarque';
@@ -187,7 +188,7 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
     //  Qué productos y cuánto sale (octubre, punto 13).
     supabase
       .from('embarque_lineas')
-      .select('id, cantidad_kg, pedido_linea_id, sku_presentacion_id, sale:sku_presentaciones(skus(codigo), presentaciones(descripcion)), pedido_lineas(pedido_id, cantidad_tm, sku_presentacion_id, sku_presentaciones(skus(codigo, corte, especies(nombre)), presentaciones(descripcion)), pedidos(numero_proforma))')
+      .select('id, cantidad_kg, kg_no_despachado, pedido_linea_id, sku_presentacion_id, sale:sku_presentaciones(skus(codigo), presentaciones(descripcion)), pedido_lineas(pedido_id, cantidad_tm, sku_presentacion_id, sku_presentaciones(skus(codigo, corte, especies(nombre)), presentaciones(descripcion)), pedidos(numero_proforma))')
       .eq('embarque_id', embId)
       .order('id'),
     //  Los catálogos del formulario de edición, solo para quien puede editar.
@@ -431,7 +432,12 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
               almacenId={Number(e.almacen_id)}
               bodega={campo(e.almacenes, 'nombre')}
               noPuede={cerradoPara ? `${cerradoPara} Ya no se le agregan pedidos.` : null}
-              puedeTrasladar={['gerencia', 'operaciones', 'almacen'].includes(usuario?.rol ?? '')}
+              /* El traslado lo arman Gerencia, Operaciones o Almacén (regla de
+                 almacenes/traslados/acciones.ts); los demás ven el botón apagado
+                 y por qué, en vez de un error al pulsarlo. */
+              noPuedeTrasladar={rolPuede(usuario?.rol, PUEDEN_CONSOLIDAR)
+                ? null
+                : mensajeNoPuede(usuario?.rol, 'armar traslados de consolidación', PUEDEN_CONSOLIDAR) + ' Pídales que lo armen.'}
             />
           </div>
         )}
@@ -559,7 +565,16 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
                         {equivalente && <> <Etiqueta texto="Equivalente" tono="atencion" /></>}
                       </td>
                       <td className="num">{num(Number(pl?.cantidad_tm ?? 0), 3)} TM</td>
-                      <td className="num"><strong>{tm(Number(x.cantidad_kg), 3)} TM</strong></td>
+                      <td className="num">
+                        <strong>{tm(Number(x.cantidad_kg), 3)} TM</strong>
+                        {/* Lo que estaba en el contenedor y no salió (075): muestreo, merma, no entró. */}
+                        {Number(x.kg_no_despachado ?? 0) > 0.0005 && (
+                          <small style={{ display: 'block', color: 'var(--atencion)' }} data-no-salio={Number(x.kg_no_despachado).toFixed(3)}>
+                            No salieron {tm(Number(x.kg_no_despachado), 3)} TM
+                            {estado === 'despachado' ? ': vuelven a «por programar»' : ': pueden ir en otro contenedor'}
+                          </small>
+                        )}
+                      </td>
                       <td className="num">{tm(Number(s?.programado_kg ?? 0), 3)} TM</td>
                       <td className="num" data-pendiente={Number(s?.por_programar_kg ?? 0).toFixed(3)}
                           style={{ color: Number(s?.por_programar_kg ?? 0) > 0.5 ? 'var(--atencion)' : 'var(--ok)' }}>

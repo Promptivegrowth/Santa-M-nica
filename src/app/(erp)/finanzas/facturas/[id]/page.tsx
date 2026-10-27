@@ -25,7 +25,8 @@ import { fecha, fechaHora, num, dinero, etiquetaEstado } from '@/lib/formato';
 import { uno, campo } from '@/lib/relaciones';
 import { hoyEnLima } from '@/lib/fechas';
 import { PUEDEN_COBRAR, PUEDEN_DESCARGAR_DOCUMENTOS, TONO_ESTADO_FACTURA } from '@/lib/permisosFinanzas';
-import type { Rol } from '@/lib/navegacion';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
+import { DocumentosApagados } from '@/app/(erp)/ventas/DocumentosApagados';
 import { RegistrarCobro, BotonAnular, AnularCobro } from './AccionesComprobante';
 
 export const dynamic = 'force-dynamic';
@@ -106,16 +107,7 @@ export default async function FichaFactura(props: PageProps<'/finanzas/facturas/
           />
         ) : (
           /* Se ven, apagados y con el porqué: el documento lleva precios. */
-          <>
-            <button type="button" className="btn btn-secundario" disabled
-                    title="Su rol ve el comprobante en pantalla, pero no descarga documentos con precios.">
-              <Icono nombre="descargar" tamano={15} />PDF
-            </button>
-            <button type="button" className="btn btn-secundario" disabled
-                    title="Su rol ve el comprobante en pantalla, pero no descarga documentos con precios.">
-              <Icono nombre="descargar" tamano={15} />Excel
-            </button>
-          </>
+          <DocumentosApagados rol={usuario?.rol} />
         )}
         {/* Un anulado ya no tiene nada que anular: el botón no aparece. */}
         {!anuladaCab && (
@@ -130,6 +122,7 @@ export default async function FichaFactura(props: PageProps<'/finanzas/facturas/
           estado={estadoCab}
           dias={Number(calc?.dias_vencida ?? 0)}
           puedeCobrar={puedeCobrar}
+          veCartera={rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, '/finanzas/cobrar')}
         />
       </Suspense>
     </>
@@ -152,7 +145,7 @@ function CargandoCuerpo() {
 
 /** El detalle: líneas, cobros y los lotes que respaldan el comprobante. */
 async function CuerpoFactura({
-  facId, f, estado, dias, puedeCobrar,
+  facId, f, estado, dias, puedeCobrar, veCartera = true,
 }: {
   facId: number;
   f: Record<string, unknown>;
@@ -161,6 +154,8 @@ async function CuerpoFactura({
   /** Días desde el vencimiento, contados en Lima (positivo = vencida). */
   dias: number;
   puedeCobrar: boolean;
+  /** ¿Entra a Cuentas por cobrar? Comercio Exterior no: el acceso no se le muestra (076). */
+  veCartera?: boolean;
 }) {
   const supabase = await crearClienteServidor();
 
@@ -261,10 +256,12 @@ async function CuerpoFactura({
               <span><strong>{String(pedido.numero_proforma)}</strong><br /><small>Pedido de origen</small></span>
             </Link>
           ) : null}
-          <Link href="/finanzas/cobrar" className="ficha-enlace">
-            <Icono nombre="cobrar" tamano={15} />
-            <span><strong>Cuentas por cobrar</strong><br /><small>La cartera completa, por antigüedad</small></span>
-          </Link>
+          {veCartera && (
+            <Link href="/finanzas/cobrar" className="ficha-enlace">
+              <Icono nombre="cobrar" tamano={15} />
+              <span><strong>Cuentas por cobrar</strong><br /><small>La cartera completa, por antigüedad</small></span>
+            </Link>
+          )}
         </div>
       </Panel>
 

@@ -28,6 +28,13 @@ import { num, tm, fechaHora, etiquetaEstado } from '@/lib/formato';
 export const metadata: Metadata = { title: 'Calidad' };
 export const dynamic = 'force-dynamic';
 
+/** El nombre del motivo tipificado, venga como objeto o como lista. */
+function nombreMotivo(m: unknown): string | null {
+  const x = Array.isArray(m) ? m[0] : m;
+  const n = (x as { nombre?: string } | null)?.nombre;
+  return n && n.trim() ? n : null;
+}
+
 const TONO: Record<string, 'ok' | 'atencion' | 'critico' | 'neutro'> = {
   liberado: 'ok', observado: 'atencion', inmovilizado: 'critico', espera_resultados: 'neutro',
 };
@@ -39,7 +46,7 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
 
   let consulta = supabase
     .from('dictamenes_calidad')
-    .select('id, tipo, estado, motivo_texto, sustento_url, emitido_en, liberado_en, vigente, lotes(id, codigo_pallet, fecha_produccion), usuarios!dictamenes_calidad_emitido_por_fkey(nombre)')
+    .select('id, tipo, estado, motivo_texto, sustento_url, emitido_en, liberado_en, vigente, motivos(nombre), lotes(id, codigo_pallet, fecha_produccion), usuarios!dictamenes_calidad_emitido_por_fkey(nombre)')
     .eq('vigente', true)
     .order('emitido_en', { ascending: false })
     .limit(150);
@@ -47,7 +54,7 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
 
   const [{ data: filas }, { data: todos }, { data: bloqueadoTm }, { data: retenido }] = await Promise.all([
     consulta,
-    supabase.from('dictamenes_calidad').select('estado, motivo_texto').eq('vigente', true),
+    supabase.from('dictamenes_calidad').select('estado, motivo_texto, motivos(nombre)').eq('vigente', true),
     supabase.from('v_resumen_inventario').select('bloqueado_kg').single(),
     //  Las tarjetas en TONELADAS (Oliver: «la base es toneladas»), por la
     //  condición más fuerte de cada pallet. Contar dictámenes no decía cuánto
@@ -59,11 +66,20 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
     .reduce((s, r) => s + Number(r.fisico_kg), 0);
   const pallets = (c: string) => (retenido ?? []).filter((r) => r.condicion === c).length;
 
-  // Motivos más frecuentes de observación
+  /*
+   * Motivos más frecuentes de observación.
+   *
+   * Se agrupa por el motivo TIPIFICADO, que es para lo que existe el maestro:
+   * antes solo se leía el texto escrito, y un dictamen con solo el motivo de
+   * la lista no contaba (y en la tabla salía «—»). Si no hay tipificado, cuenta
+   * el texto.
+   */
   const porMotivo = new Map<string, number>();
   for (const d of todos ?? []) {
-    if (d.estado === 'liberado' || !d.motivo_texto) continue;
-    porMotivo.set(d.motivo_texto as string, (porMotivo.get(d.motivo_texto as string) ?? 0) + 1);
+    if (d.estado === 'liberado') continue;
+    const clave = nombreMotivo(d.motivos) ?? ((d.motivo_texto as string | null)?.trim() || null);
+    if (!clave) continue;
+    porMotivo.set(clave, (porMotivo.get(clave) ?? 0) + 1);
   }
   const motivos = [...porMotivo.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
     .map(([etiqueta, valor]) => ({ etiqueta, valor }));
@@ -122,11 +138,28 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
                         ) : '—'}
                       </td>
                       <td>{etiquetaEstado(d.tipo as string)}</td>
-                      <td style={{ fontSize: '.8rem' }}>{(d.motivo_texto as string) ?? '—'}</td>
+                      <td style={{ fontSize: '.8rem' }} data-celda="motivo">
+                        {(() => {
+                          //  El tipificado arriba y lo escrito debajo, si hay los dos.
+                          const tip = nombreMotivo(d.motivos);
+                          const txt = (d.motivo_texto as string | null)?.trim() || null;
+                          if (!tip && !txt) return '—';
+                          return (
+                            <>
+                              {tip && <strong style={{ fontWeight: 600 }}>{tip}</strong>}
+                              {tip && txt && <br />}
+                              {txt && <span style={{ color: 'var(--tinta-2)' }}>{txt}</span>}
+                            </>
+                          );
+                        })()}
+                      </td>
                       <td>
-                        {d.sustento_url
-                          ? <Etiqueta texto="PDF adjunto" tono="ok" />
-                          : <Etiqueta texto="Sin sustento" tono="atencion" />}
+                        {d.sustento_url ? (
+                          <a href={String(d.sustento_url)} target="_blank" rel="noreferrer" className="enlace-dato"
+                             title="Abrir el informe que sustenta el dictamen">
+                            <Etiqueta texto="Ver sustento" tono="ok" />
+                          </a>
+                        ) : <Etiqueta texto="Sin sustento" tono="atencion" />}
                       </td>
                       <td style={{ fontSize: '.78rem', color: 'var(--tinta-3)' }}>{usr?.nombre ?? '—'}</td>
                       <td className="num" style={{ fontSize: '.72rem' }}>{fechaHora(d.emitido_en as string)}</td>

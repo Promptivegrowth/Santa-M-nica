@@ -53,7 +53,7 @@ async function sesion(correo) {
   p.setDefaultTimeout(60000);
   await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await p.fill('input[type="email"]', correo);
-  await p.fill('input[type="password"]', process.env.CLAVE_DEMO ?? 'SantaMonica2026');
+  await p.fill('input[type="password"]', process.env.CLAVE_DEMO ?? '');
   await p.click('button[type="submit"]');
   await p.waitForURL(/\/panel/, { timeout: 60000 });
   return p;

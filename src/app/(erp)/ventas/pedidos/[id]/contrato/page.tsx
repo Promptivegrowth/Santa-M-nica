@@ -21,6 +21,8 @@ import { fechaHora } from '@/lib/formato';
 import { puedeVender, type Rol } from '@/lib/navegacion';
 import { uno } from '@/lib/relaciones';
 import { EditorContrato } from './EditorContrato';
+import { puedeDescargarDocumentos, motivoSinDescarga } from '../../../DocumentosApagados';
+import { listaDeRoles } from '@/lib/permisosVentas';
 
 export const metadata: Metadata = { title: 'Contrato' };
 export const dynamic = 'force-dynamic';
@@ -45,6 +47,23 @@ export default async function PaginaContrato(props: PageProps<'/ventas/pedidos/[
   const puede = puedeVender((usuario?.rol ?? 'consulta') as Rol);
   const cot = uno<Record<string, unknown>>(ped.cotizaciones);
 
+  /*
+   * El contrato lleva precios (076): quien no descarga la proforma tampoco lo
+   * abre. Antes Consulta llegaba aquí, leía «pulse Generar» y no tenía ese
+   * botón. El acceso desde el pedido ya se le muestra apagado.
+   */
+  if (!puedeDescargarDocumentos(usuario?.rol)) {
+    return (
+      <>
+        <CabeceraPagina
+          titulo={`Contrato · ${ped.numero_proforma}`}
+          volver={{ href: `/ventas/pedidos/${pedidoId}`, texto: `Volver a ${ped.numero_proforma}` }}
+        />
+        <Vacio titulo="El contrato no está disponible para su rol" mensaje={motivoSinDescarga(usuario?.rol)} />
+      </>
+    );
+  }
+
   return (
     <>
       <CabeceraPagina
@@ -55,7 +74,12 @@ export default async function PaginaContrato(props: PageProps<'/ventas/pedidos/[
 
       <Panel titulo={`Contratos generados · ${(generados ?? []).length}`} className="mb-espacio">
         {(generados ?? []).length === 0 ? (
-          <Vacio titulo="Ninguno todavía" mensaje="Revise los datos de abajo y pulse «Generar»." />
+          <Vacio
+            titulo="Ninguno todavía"
+            mensaje={puede
+              ? 'Revise los datos de abajo y pulse «Generar».'
+              : `Todavía no se generó ningún contrato. Lo generan ${listaDeRoles(['gerencia', 'operaciones', 'comercial', 'comex'])}.`}
+          />
         ) : (
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
             <table className="datos" data-cuadro="contratos">

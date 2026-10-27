@@ -283,8 +283,9 @@ export default async function PaginaRentabilidad(props: PageProps<'/finanzas/ren
             <span>
               <strong>Margen bruto = venta − costo</strong>, sobre lo que salió en el mes: los kilos
               despachados por el precio de su pedido, menos esos kilos por el costo con el que
-              ingresó cada pallet. El costo lo fija Gerencia en{' '}
-              <Link href="/finanzas/costos">Costos de producción</Link> y cada pallet conserva el
+              ingresó cada pallet. El costo lo cargan, en{' '}
+              <Link href="/finanzas/costos">Costos de producción</Link>, las personas con el permiso
+              «Carga costos» (Configuración › Usuarios), y cada pallet conserva el
               que regía el día en que entró. Un pallet sin costo cargado no tiene margen: se deja
               fuera del margen y de su porcentaje, y se avisa aparte.
             </span>

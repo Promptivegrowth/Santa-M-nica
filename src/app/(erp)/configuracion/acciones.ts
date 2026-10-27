@@ -46,6 +46,20 @@ export async function guardarParametro(
     return { ok: false, mensaje: `El parámetro "${clave}" no existe.` };
   }
 
+  /*
+   * Quién lo cambia. La pantalla ya apagaba el campo, pero la acción no lo
+   * comprobaba: Operaciones podía cambiar por aquí un parámetro de Gerencia.
+   * Los de Gerencia, solo Gerencia; el resto, Gerencia y Operaciones.
+   */
+  if (usuario.rol !== 'gerencia' && (usuario.rol !== 'operaciones' || parametro.editable_por === 'gerencia')) {
+    return {
+      ok: false,
+      mensaje: parametro.editable_por === 'gerencia'
+        ? `${parametro.etiqueta} lo cambia solo Gerencia. Pídaselo a Gerencia.`
+        : `${parametro.etiqueta} lo cambian Gerencia y Operaciones. Pídaselo a uno de ellos.`,
+    };
+  }
+
   const limpio = valor.trim();
 
   /*
@@ -111,15 +125,34 @@ export async function guardarParametro(
         mensaje: 'Su rol no tiene permiso para cambiar este parámetro. Solicítelo a Gerencia u Operaciones.',
       };
     }
-    return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+    return { ok: false, mensaje: 'No se pudo guardar el parámetro. Vuelva a intentarlo; si se repite, avise a soporte.' };
+  }
+
+  /*
+   * Si el parámetro es el umbral de una regla de alertas (077: la condición lo
+   * nombra en «parametro»), la regla se vuelve a evaluar ahora mismo: cambiar
+   * el margen mínimo de 8 a 10 % tiene que abrir las alertas de los pedidos
+   * entre 8 y 10 % hoy, no mañana.
+   */
+  let deReglas = '';
+  const { data: reglas } = await supabase
+    .from('reglas').select('id, nombre, activa').eq('condicion->>parametro', clave);
+  for (const r of reglas ?? []) {
+    const { data: pasada } = await supabase.rpc('reglas_evaluar', { p_regla_id: r.id });
+    const propia = ((pasada ?? []) as { regla_id: number; abiertas: number }[])
+      .find((x) => Number(x.regla_id) === Number(r.id));
+    deReglas += r.activa
+      ? ` La regla «${r.nombre}» ya usa el valor nuevo${propia ? `: ${propia.abiertas} alerta${propia.abiertas === 1 ? '' : 's'} abierta${propia.abiertas === 1 ? '' : 's'}` : ''}.`
+      : ` La regla «${r.nombre}» usará este valor cuando se encienda.`;
   }
 
   // Las pantallas que dependen del parámetro deben recalcularse
   revalidatePath('/configuracion');
   revalidatePath('/almacenes/anticuamiento');
   revalidatePath('/panel');
+  if (deReglas) revalidatePath('/alertas');
 
-  return { ok: true, mensaje: `${parametro.etiqueta} actualizado correctamente.` };
+  return { ok: true, mensaje: `${parametro.etiqueta} actualizado correctamente.${deReglas}` };
 }
 
 /**

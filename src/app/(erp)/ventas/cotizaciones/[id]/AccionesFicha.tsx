@@ -20,6 +20,7 @@ import {
   convertirEnPedido, eliminarCotizacion, cambiarEstadoCotizacion, aprobarCotizacion,
 } from '../acciones';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 
 export function AccionesFicha({
   cotizacionId,
@@ -30,6 +31,8 @@ export function AccionesFicha({
   requiereAprobacion,
   puedeAprobar,
   puedeRechazar = true,
+  bloqueoAprobar = null,
+  bloqueoEliminar = null,
 }: {
   cotizacionId: number;
   numero: string;
@@ -43,6 +46,10 @@ export function AccionesFicha({
   puedeAprobar: boolean;
   /** Gerencia, Operaciones o Comercial: marcar que el cliente dijo que no. */
   puedeRechazar?: boolean;
+  /** Por qué no se puede aprobar aunque se tenga la facultad (p. ej. la validez venció), o null. */
+  bloqueoAprobar?: string | null;
+  /** Por qué esta persona no puede eliminarla (motivoNoEliminarCotizacion), o null. */
+  bloqueoEliminar?: string | null;
 }) {
   const router = useRouter();
   /* Las dos acciones que no se deshacen piden confirmación en el sitio. */
@@ -65,7 +72,7 @@ export function AccionesFicha({
   function accion(fn: () => Promise<{ ok: boolean; mensaje?: string; id?: number }>, alPedido = false) {
     setError(null);
     iniciar(async () => {
-      const r = await fn();
+      const r = await accionSegura(fn);
       if (r.ok) {
         if (alPedido && r.id) router.push(`/ventas/pedidos/${r.id}`);
         else router.refresh();
@@ -85,7 +92,7 @@ export function AccionesFicha({
   function borrar() {
     setError(null);
     iniciar(async () => {
-      const r = await eliminarCotizacion(cotizacionId);
+      const r = await accionSegura(() => eliminarCotizacion(cotizacionId));
       if (r.ok) router.push('/ventas/cotizaciones?borrada=' + encodeURIComponent(numero));
       else { setError(r.mensaje); setConfirmando(null); }
     });
@@ -98,10 +105,11 @@ export function AccionesFicha({
         <button
           type="button"
           className="btn btn-primario"
-          disabled={pendiente || !puedeAprobar}
-          title={puedeAprobar
-            ? 'Autoriza el precio para que la oferta pueda salir al cliente'
-            : 'Usted no tiene la facultad «Aprueba cotizaciones». Aprueban solo las personas que la tienen marcada en Configuración › Usuarios'}
+          disabled={pendiente || !puedeAprobar || !!bloqueoAprobar}
+          data-accion="aprobar"
+          title={!puedeAprobar
+            ? 'Usted no tiene la facultad «Aprueba cotizaciones». Aprueban solo las personas que la tienen marcada en Configuración › Usuarios'
+            : bloqueoAprobar ?? 'Autoriza el precio para que la oferta pueda salir al cliente'}
           onClick={() => accion(() => aprobarCotizacion(cotizacionId))}
         >
           <Icono nombre="guardar" tamano={15} />
@@ -227,9 +235,10 @@ export function AccionesFicha({
         <button
           type="button"
           className="btn btn-peligro-borde"
-          disabled={yaConvertida || pendiente}
+          disabled={yaConvertida || pendiente || !!bloqueoEliminar}
+          data-accion="eliminar"
           onClick={() => setConfirmando('eliminar')}
-          title={yaConvertida ? 'No se puede eliminar: ya generó un pedido' : `Eliminar ${numero}`}
+          title={bloqueoEliminar ?? (yaConvertida ? 'No se puede eliminar: ya generó un pedido' : `Eliminar ${numero}`)}
         >
           <Icono nombre="papelera" tamano={15} />
           Eliminar

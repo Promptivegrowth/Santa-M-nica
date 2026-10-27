@@ -26,6 +26,7 @@
  */
 import { useRef, useState, useTransition } from 'react';
 import { guardarParametro } from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 /**
  * Tope de tamaño del archivo original. Una firma recortada y en blanco y negro
@@ -82,7 +83,7 @@ export function SubirFirma({
         return;
       }
       iniciar(async () => {
-        const r = await guardarParametro(clave, dato);
+        const r = await accionSegura(() => guardarParametro(clave, dato));
         if (r.ok) setFirma(dato);
         avisar(r.ok, r.ok ? 'Firma guardada. Las próximas proformas saldrán con ella.' : r.mensaje);
       });
@@ -92,7 +93,7 @@ export function SubirFirma({
 
   function quitar() {
     iniciar(async () => {
-      const r = await guardarParametro(clave, '');
+      const r = await accionSegura(() => guardarParametro(clave, ''));
       if (r.ok) setFirma('');
       avisar(r.ok, r.ok ? 'Firma quitada. La proforma saldrá con la raya para firmar a mano.' : r.mensaje);
     });

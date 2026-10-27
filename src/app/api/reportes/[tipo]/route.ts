@@ -15,6 +15,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { generarReporte, FORMATO, type ColumnaExcel } from '@/lib/excel';
 import { generarPdfReporte, type ColumnaPdf } from '@/lib/pdfReporte';
 import { veCostos, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
+import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 
 /** Definición de cada reporte disponible. */
 type DefinicionReporte = {
@@ -27,6 +28,13 @@ type DefinicionReporte = {
   totalizar?: string[];
   /** Solo para roles que pueden ver costos. */
   requiereCostos?: boolean;
+  /**
+   * Columnas con importes que solo baja quien ve precios (veCostos). El resto
+   * se lleva el reporte sin ellas (076): Almacén, Calidad, Comercio Exterior y
+   * Consulta ya no las ven en la pantalla, y el archivo no puede enseñar más
+   * que la pantalla.
+   */
+  columnasConPrecios?: string[];
   /**
    * El reporte es la misma información que una pantalla: lo descarga quien
    * puede abrir esa pantalla, ni más ni menos. Así el menú, la pantalla y el
@@ -307,6 +315,7 @@ const REPORTES: Record<string, DefinicionReporte> = {
       { titulo: 'Valor', clave: 'valor', ancho: 16, formato: FORMATO.dolares },
     ],
     totalizar: ['fisico_kg', 'valor'],
+    columnasConPrecios: ['valor'],
     mayorQue: { columna: 'fisico_kg', valor: 0 },
     filtrable: {
       fecha: 'fecha_produccion',
@@ -385,6 +394,7 @@ const REPORTES: Record<string, DefinicionReporte> = {
       { titulo: 'Ciclo', clave: 'ciclo', ancho: 16 },
     ],
     totalizar: ['tm_pedidas', 'tm_reservadas', 'tm_faltantes', 'venta_usd'],
+    columnasConPrecios: ['venta_usd'],
   },
 
   cuentas_cobrar: {
@@ -397,6 +407,15 @@ const REPORTES: Record<string, DefinicionReporte> = {
     ruta: '/finanzas/cobrar',
     // Lo mismo que la pantalla: solo los documentos con saldo.
     mayorQue: { columna: 'saldo', valor: 0.01 },
+    /* Desde la ficha del cliente se llega filtrado (?cliente=ID, 076): el archivo sale igual. */
+    filtrable: {
+      exactos: {
+        cliente: {
+          columna: 'cliente_id', etiqueta: 'Cliente', numerico: true,
+          catalogo: { tabla: 'clientes', columna: 'razon_social' },
+        },
+      },
+    },
     columnas: [
       { titulo: 'Documento', clave: 'numero', ancho: 16 },
       { titulo: 'Cliente', clave: 'cliente', ancho: 34 },
@@ -513,16 +532,22 @@ export async function GET(
   }
   if (def.requiereCostos && !veCostos(usuario.rol as Rol)) {
     return NextResponse.json(
-      { error: 'Su rol no tiene permiso para exportar reportes con información de costos.' },
+      { error: `${nombreRol(usuario.rol)} no exporta reportes con costos: los bajan ${listaDeRoles(['gerencia', 'operaciones', 'comercial'])}.` },
       { status: 403 }
     );
   }
   if (def.ruta && !rolPuedeVerRuta(usuario.rol as Rol, def.ruta)) {
     return NextResponse.json(
-      { error: `Su rol no tiene acceso a la pantalla de ${def.titulo}, así que tampoco a su reporte.` },
+      { error: `${nombreRol(usuario.rol)} no tiene acceso a la pantalla de ${def.titulo}, así que tampoco a su reporte.` },
       { status: 403 }
     );
   }
+
+  /* ---- Sin importes para quien no ve precios (076) ---- */
+  const sinPrecios = !veCostos(usuario.rol as Rol) && (def.columnasConPrecios ?? []).length > 0;
+  const fuera = new Set(sinPrecios ? def.columnasConPrecios : []);
+  const columnas = def.columnas.filter((c) => !fuera.has(c.clave));
+  const totalizar = def.totalizar?.filter((c) => !fuera.has(c));
 
   /* ---- Consulta con la sesión del usuario: las políticas RLS también aplican ---- */
   const supabase = await crearClienteServidor();
@@ -648,9 +673,9 @@ export async function GET(
     const pdf = await generarPdfReporte({
       titulo: def.titulo,
       subtitulo: def.subtitulo,
-      columnas: aColumnasPdf(def.columnas),
+      columnas: aColumnasPdf(columnas),
       filas,
-      totalizar: def.totalizar,
+      totalizar,
       filtros: filtrosUsados,
       usuario: usuario.nombre,
       generadoEn: new Date(),
@@ -671,11 +696,11 @@ export async function GET(
     titulo: def.titulo,
     subtitulo: def.subtitulo,
     hoja: def.titulo.slice(0, 30),
-    columnas: def.columnas,
+    columnas,
     filas,
     filtros: filtrosUsados,
     usuario: usuario.nombre,
-    totalizar: def.totalizar,
+    totalizar,
   });
 
   return new NextResponse(new Uint8Array(buffer), {

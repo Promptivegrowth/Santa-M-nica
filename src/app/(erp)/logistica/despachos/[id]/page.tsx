@@ -12,6 +12,10 @@
  *
  *  Y de paso deja a la vista lo que el despacho consolida: el contenedor, el
  *  embarque, el transporte y, pallet por pallet, qué salió para qué proforma.
+ *
+ *  CARGADO / DESPACHADO (075). Si al despachar salió distinto de lo cargado
+ *  —un muestreo, sacos dañados, lo que no entró—, la tabla lo dice pallet
+ *  por pallet con el motivo y qué pasó con la diferencia.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -21,9 +25,10 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Panel, RejillaKpi, Kpi, Vacio } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
 import { Icono } from '@/components/estructura/Icono';
-import { cargarDespachos } from '@/lib/despachosDatos';
+import { cargarDespachos, MOTIVO_DIFERENCIA, DESTINO_DIFERENCIA } from '@/lib/despachosDatos';
 import { fechaHora, fecha, num, tm, etiquetaEstado } from '@/lib/formato';
 import { uno } from '@/lib/relaciones';
+import { PUEDEN_DESPACHAR } from '@/lib/permisosLogistica';
 import { ArchivosDespacho, type ArchivoVisible } from './ArchivosDespacho';
 
 export const dynamic = 'force-dynamic';
@@ -35,7 +40,7 @@ export async function generateMetadata(props: PageProps<'/logistica/despachos/[i
   return { title: data?.numero ?? 'Despacho' };
 }
 
-const PUEDEN = ['gerencia', 'operaciones', 'almacen', 'comex'];
+const PUEDEN: string[] = PUEDEN_DESPACHAR;
 
 export default async function FichaDespacho(props: PageProps<'/logistica/despachos/[id]'>) {
   const { id } = await props.params;
@@ -78,6 +83,9 @@ export default async function FichaDespacho(props: PageProps<'/logistica/despach
 
   const totalKg = d.items.reduce((t, i) => t + i.kg, 0);
   const totalBultos = d.items.reduce((t, i) => t + i.bultos, 0);
+  const cargadoKg = d.items.reduce((t, i) => t + i.kg_cargados, 0);
+  const cargadoBultos = d.items.reduce((t, i) => t + i.bultos_cargados, 0);
+  const conDiferencia = d.items.filter((i) => i.motivo);
 
   return (
     <>
@@ -92,9 +100,23 @@ export default async function FichaDespacho(props: PageProps<'/logistica/despach
         </a>
       </CabeceraPagina>
 
+      {conDiferencia.length > 0 && (
+        <div className="ficha-aviso ficha-aviso-atencion" data-aviso="salio-distinto">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>Salió distinto de lo cargado en {conDiferencia.length} pallet{conDiferencia.length === 1 ? '' : 's'}.</strong>{' '}
+            Se cargaron {num(cargadoBultos)} bultos ({tm(cargadoKg, 3)} TM) y salieron {num(totalBultos)} ({tm(totalKg, 3)} TM).
+            El cliente recibe lo que salió; el pedido queda con la diferencia pendiente.
+          </span>
+        </div>
+      )}
+
       <RejillaKpi>
-        <Kpi etiqueta="Toneladas" valor={tm(totalKg, 3)} sufijo="TM" tono="marca" href="#items" />
-        <Kpi etiqueta="Bultos" valor={num(totalBultos)} href="#items" />
+        <Kpi etiqueta="Toneladas despachadas" valor={tm(totalKg, 3)} sufijo="TM" tono="marca" href="#items"
+             nota={conDiferencia.length ? `De ${tm(cargadoKg, 3)} TM cargadas` : undefined} />
+        <Kpi etiqueta="Bultos" valor={num(totalBultos)} href="#items"
+             nota={conDiferencia.length ? `De ${num(cargadoBultos)} cargados` : undefined}
+             tono={conDiferencia.length ? 'atencion' : undefined} />
         <Kpi etiqueta="Pallets" valor={num(d.items.length)} href="#items" />
         <Kpi etiqueta="Guía final" valor={guias.length ? 'Adjunta' : 'Falta'} tono={guias.length ? 'ok' : 'atencion'} href="#guia" />
         <Kpi etiqueta="Fotos de la carga" valor={num(fotos.length)} tono={fotos.length ? 'ok' : 'atencion'} href="#fotos" />
@@ -152,21 +174,51 @@ export default async function FichaDespacho(props: PageProps<'/logistica/despach
         ) : (
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
             <table className="datos" data-cuadro="items-despacho">
-              <thead><tr><th>Pallet</th><th>SKU</th><th>Producto</th><th>Proforma</th><th className="num">Bultos</th><th className="num">Peso</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Pallet</th><th>SKU</th><th>Producto</th><th>Proforma</th>
+                  {conDiferencia.length > 0 && <th className="num">Cargado</th>}
+                  <th className="num">{conDiferencia.length > 0 ? 'Despachado' : 'Bultos'}</th><th className="num">Peso</th>
+                  {conDiferencia.length > 0 && <th>Diferencia y motivo</th>}
+                </tr>
+              </thead>
               <tbody>
                 {d.items.map((i) => (
-                  <tr key={i.id}>
+                  <tr key={i.id} data-lote={i.lote_id} data-diferencia={i.motivo ? 'si' : 'no'}>
                     <td className="mono"><Link href={`/almacenes/lotes/${i.lote_id}`} className="enlace-ficha">{i.pallet}</Link></td>
                     <td className="mono">{i.sku}</td>
                     <td style={{ fontSize: '.78rem' }}>{i.producto}</td>
                     <td className="mono">{i.pedido_id ? <Link href={`/ventas/pedidos/${i.pedido_id}`} className="enlace-ficha">{i.proforma}</Link> : '—'}</td>
-                    <td className="num">{num(i.bultos)}</td>
+                    {conDiferencia.length > 0 && (
+                      <td className="num" style={{ fontSize: '.78rem' }}>{num(i.bultos_cargados)} b · {tm(i.kg_cargados, 3)} TM</td>
+                    )}
+                    <td className="num">{num(i.bultos)}{conDiferencia.length > 0 ? ' b' : ''}</td>
                     <td className="num">{tm(i.kg, 3)} TM</td>
+                    {conDiferencia.length > 0 && (
+                      <td style={{ fontSize: '.76rem' }}>
+                        {i.motivo ? (
+                          <>
+                            <b style={{ color: 'var(--atencion)' }}>
+                              −{num(i.bultos_cargados - i.bultos)} b · −{num(i.kg_cargados - i.kg, 1)} kg
+                            </b>{' '}
+                            {MOTIVO_DIFERENCIA[i.motivo] ?? i.motivo}{i.detalle ? `: ${i.detalle}` : ''}
+                            <br /><small style={{ color: 'var(--tinta-3)' }}>{DESTINO_DIFERENCIA[i.motivo] ?? ''}</small>
+                          </>
+                        ) : 'Salió todo'}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr style={{ fontWeight: 600 }}><td colSpan={4}>Total</td><td className="num">{num(totalBultos)}</td><td className="num">{tm(totalKg, 3)} TM</td></tr>
+                <tr style={{ fontWeight: 600 }}>
+                  <td colSpan={4}>Total</td>
+                  {conDiferencia.length > 0 && <td className="num">{num(cargadoBultos)} b · {tm(cargadoKg, 3)} TM</td>}
+                  <td className="num">{num(totalBultos)}{conDiferencia.length > 0 ? ' b' : ''}</td><td className="num">{tm(totalKg, 3)} TM</td>
+                  {conDiferencia.length > 0 && (
+                    <td style={{ color: 'var(--atencion)' }}>−{num(cargadoBultos - totalBultos)} b · −{tm(cargadoKg - totalKg, 3)} TM</td>
+                  )}
+                </tr>
               </tfoot>
             </table>
           </div>

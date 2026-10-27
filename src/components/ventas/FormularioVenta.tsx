@@ -42,6 +42,7 @@ import { detalleProductos, type DetalleProducto } from '@/app/(erp)/ventas/produ
 import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, tm } from '@/lib/formato';
 import { revisarTipoCambio, TIPO_CAMBIO_MINIMO, TIPO_CAMBIO_MAXIMO } from '@/lib/moneda';
+import { accionSegura } from '@/lib/accionSegura';
 import type { ContactoDocumento } from '@/lib/contactoDocumento';
 import type { TipoCambioSunat } from '@/lib/tipoCambioSunat';
 import {
@@ -642,7 +643,8 @@ export function FormularioVenta({
     const lineasLimpias = lineas.map(({ clave: _c, disponible_kg: _d, consultando: _q, descuento_autorizado_pct: _a, ...l }) => l);
 
     iniciar(async () => {
-      const r = esEdicion
+      //  076: un corte de red vuelve como mensaje en el formulario, sin perder lo escrito.
+      const r = await accionSegura(async () => esEdicion
         ? await actualizarCotizacion(edicion.id, {
             cliente_id: Number(clienteId),
             vendedor_id: vendedorId ? Number(vendedorId) : null,
@@ -697,7 +699,7 @@ export function FormularioVenta({
             cuentas: cuentasElegidas,
             lineas: lineasLimpias,
             ...condiciones,
-          });
+          }));
 
       if (r.ok) {
         setMensaje({ ok: true, texto: r.mensaje });
@@ -859,7 +861,10 @@ export function FormularioVenta({
               onChange={(e) => { setTipoCambio(Number(e.target.value)); setTcFuente('manual'); }}
             />
             {revisarTipoCambio(tipoCambio) ? (
-              <span className="form-aviso-campo">{revisarTipoCambio(tipoCambio)}</span>
+              //  076: con el valor de SUNAT del día, si ya se consultó (antes decía «ronda 3,75» fijo).
+              <span className="form-aviso-campo">{revisarTipoCambio(tipoCambio, tcSunat
+                ? { valor: tcSunat.clase === 'compra' ? tcSunat.compra : tcSunat.venta, publicado_el: tcSunat.publicado_el }
+                : null)}</span>
             ) : tcConsulta?.estado === 'consultando' ? (
               <small data-tc="consultando">Consultando SUNAT…</small>
             ) : tcFuente === 'sunat' && tcSunat ? (

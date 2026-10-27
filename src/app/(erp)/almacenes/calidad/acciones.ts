@@ -15,23 +15,32 @@
  *    espera_resultados    se mandó muestra al laboratorio; tampoco sale.
  *
  *  Los tres últimos bloquean, y eso lo decide la base de datos con la función
- *  `lote_bloqueado`, no esta pantalla. Aquí solo se registra el dictamen.
+ *  `lote_bloqueado`, no esta pantalla. La excepción es el motivo «Solo mercado
+ *  nacional»: no bloquea, solo limita a quién se vende (migración 061).
  *
  *  UN DICTAMEN NO SE EDITA: SE REEMPLAZA
  *  Cuando se emite uno nuevo del mismo tipo, el anterior deja de estar vigente
  *  pero se conserva. Así queda la historia entera: cuándo se observó, quién lo
  *  observó, con qué sustento, y cuándo y quién lo liberó. Editar el anterior
  *  borraría justo lo que hace falta si mañana llega un reclamo sanitario.
+ *
+ *  TODO EN UNA SOLA TRANSACCIÓN (077)
+ *  Antes esta acción daba de baja el anterior y luego insertaba el nuevo, en
+ *  dos llamadas. Si el nuevo fallaba —«Solo mercado nacional» sobre un pallet
+ *  apartado para exportación, por ejemplo—, el anterior ya no estaba vigente
+ *  y un pallet bloqueado quedaba libre sin que nadie lo liberara. Ahora lo
+ *  hace la función dictamen_registrar() de la base: o todo, o nada.
  * ============================================================================
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { NOMBRE_ROL, type Rol } from '@/lib/navegacion';
 
 export type Resultado =
   | { ok: true; id: number; mensaje: string }
   | { ok: false; mensaje: string; campo?: string };
 
-/** Calidad y operaciones dictaminan; gerencia por si acaso. */
+/** Calidad y Operaciones dictaminan; Gerencia también. La base lo vuelve a exigir. */
 const PUEDEN_DICTAMINAR = ['gerencia', 'operaciones', 'calidad'];
 
 export type TipoDictamen = 'calidad' | 'microbiologia' | 'camara' | 'producto_terminado';
@@ -50,6 +59,14 @@ export type DatosDictamen = {
 /** Los que impiden que el lote salga de cámara. */
 const BLOQUEAN: EstadoDictamen[] = ['observado', 'inmovilizado', 'espera_resultados'];
 
+const NOMBRE_TIPO: Record<TipoDictamen, string> = {
+  calidad: 'calidad', microbiologia: 'microbiología', camara: 'cámara', producto_terminado: 'producto terminado',
+};
+const NOMBRE_ESTADO: Record<EstadoDictamen, string> = {
+  liberado: 'liberado', observado: 'observado', inmovilizado: 'inmovilizado',
+  espera_resultados: 'en espera de resultados',
+};
+
 function refrescar(loteId: number) {
   revalidatePath('/almacenes/calidad');
   revalidatePath(`/almacenes/lotes/${loteId}`);
@@ -60,11 +77,29 @@ function refrescar(loteId: number) {
   revalidatePath('/panel');
 }
 
+/**
+ * Un error de la base, dicho para el usuario. Los mensajes que redactan las
+ * funciones y disparadores ya vienen en castellano; lo que no (un permiso,
+ * una regla técnica) se traduce aquí y nunca llega crudo.
+ */
+function traducirError(error: { code?: string; message?: string }): string {
+  const m = error.message ?? '';
+  if (error.code === '42501' || /row-level security|permission denied/i.test(m)) {
+    return 'Su rol no puede emitir dictámenes de calidad: lo hacen Calidad, Operaciones y Gerencia.';
+  }
+  //  Los mensajes propios (raise exception) empiezan en mayúscula y en castellano.
+  if (/^[A-ZÁÉÍÓÚÑ«]/.test(m) && !/violates|constraint|column|relation|function/i.test(m)) return m;
+  return 'No se pudo registrar el dictamen. Vuelva a intentarlo; si se repite, avise a soporte.';
+}
+
 export async function registrarDictamen(d: DatosDictamen): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
   if (!PUEDEN_DICTAMINAR.includes(usuario.rol)) {
-    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede emitir dictámenes de calidad.` };
+    return {
+      ok: false,
+      mensaje: `${NOMBRE_ROL[usuario.rol as Rol] ?? 'Su rol'} no puede emitir dictámenes de calidad: lo hacen Calidad, Operaciones y Gerencia.`,
+    };
   }
 
   if (!d.lote_id) return { ok: false, mensaje: 'Elija el lote.', campo: 'lote_id' };
@@ -72,7 +107,8 @@ export async function registrarDictamen(d: DatosDictamen): Promise<Resultado> {
   /*
    * Bloquear un lote sin decir por qué es lo peor que puede pasar aquí: dentro
    * de un mes nadie sabrá si se puede liberar. Por eso el motivo es
-   * obligatorio cuando el dictamen bloquea, y opcional cuando libera.
+   * obligatorio cuando el dictamen bloquea, y opcional cuando libera. (La
+   * base lo vuelve a comprobar.)
    */
   if (BLOQUEAN.includes(d.estado) && !d.motivo_id && !d.motivo_texto?.trim()) {
     return {
@@ -83,102 +119,56 @@ export async function registrarDictamen(d: DatosDictamen): Promise<Resultado> {
   }
 
   const supabase = await crearClienteServidor();
+  const { data, error } = await supabase.rpc('dictamen_registrar', {
+    p_lote_id: d.lote_id,
+    p_tipo: d.tipo,
+    p_estado: d.estado,
+    p_motivo_id: d.motivo_id,
+    p_motivo_texto: d.motivo_texto?.trim() || null,
+    p_sustento_url: d.sustento_url?.trim() || null,
+    p_observaciones: d.observaciones?.trim() || null,
+  });
 
-  const { data: lote } = await supabase
-    .from('lotes').select('codigo_pallet').eq('id', d.lote_id).maybeSingle();
-  if (!lote) return { ok: false, mensaje: 'Ese lote ya no existe.' };
-
-  /* ---- Si el nuevo dictamen libera, se comprueba qué había antes ---- */
-  const { data: previo } = await supabase
-    .from('dictamenes_calidad')
-    .select('id, estado')
-    .eq('lote_id', d.lote_id)
-    .eq('tipo', d.tipo)
-    .eq('vigente', true)
-    .maybeSingle();
-
-  /* ---- El anterior del mismo tipo deja de estar vigente, pero se conserva ---- */
-  if (previo) {
-    await supabase
-      .from('dictamenes_calidad')
-      .update({
-        vigente: false,
-        // Si el nuevo libera, se marca en el viejo quién y cuándo lo levantó.
-        ...(d.estado === 'liberado'
-          ? { liberado_por: usuario.id, liberado_en: new Date().toISOString() }
-          : {}),
-      })
-      .eq('id', previo.id);
+  if (error || !data) {
+    return { ok: false, mensaje: traducirError(error ?? {}) };
   }
 
-  const { data: creado, error } = await supabase
-    .from('dictamenes_calidad')
-    .insert({
-      lote_id: d.lote_id,
-      tipo: d.tipo,
-      estado: d.estado,
-      motivo_id: d.motivo_id,
-      motivo_texto: d.motivo_texto?.trim() || null,
-      sustento_url: d.sustento_url?.trim() || null,
-      observaciones: d.observaciones?.trim() || null,
-      emitido_por: usuario.id,
-      vigente: true,
-      ...(d.estado === 'liberado'
-        ? { liberado_por: usuario.id, liberado_en: new Date().toISOString() }
-        : {}),
-    })
-    .select('id')
-    .single();
-
-  if (error || !creado) {
-    return { ok: false, mensaje: `No se pudo registrar el dictamen: ${error?.message}` };
-  }
-
-  const bloquea = BLOQUEAN.includes(d.estado);
-
-  await supabase.rpc('registrar_evento', {
-    p_entidad: 'lotes',
-    p_entidad_id: d.lote_id,
-    p_tipo: bloquea ? 'lote_bloqueado' : 'lote_liberado',
-    p_descripcion:
-      `Dictamen de ${d.tipo.replace('_', ' ')} para ${lote.codigo_pallet}: ${d.estado.replace('_', ' ')}` +
-      (d.motivo_texto?.trim() ? ` · ${d.motivo_texto.trim()}` : ''),
-    p_severidad: d.estado === 'inmovilizado' ? 'critica' : bloquea ? 'advertencia' : 'info',
-    p_metadatos: { pallet: lote.codigo_pallet, tipo: d.tipo, estado: d.estado },
-  }).then(() => undefined, () => undefined);
-
-  /* ---- ¿Sigue bloqueado por otro dictamen? Conviene decirlo ---- */
-  const { data: sigueBloqueado } = await supabase
-    .rpc('lote_bloqueado', { p_lote_id: d.lote_id });
+  const r = data as {
+    id: number; pallet: string; bloquea: boolean; condiciona: boolean;
+    sigue_bloqueado: boolean; solo_nacional: boolean;
+  };
 
   refrescar(d.lote_id);
 
-  //  ¿El motivo solo condiciona la venta (mercado nacional)? Entonces no bloquea.
-  const { data: motivo } = d.motivo_id
-    ? await supabase.from('motivos').select('condiciona_venta').eq('id', d.motivo_id).maybeSingle()
-    : { data: null };
-  const soloNacional = bloquea && motivo?.condiciona_venta === true && !sigueBloqueado;
-
+  const pallet = r.pallet;
   let mensaje: string;
-  if (soloNacional) {
+  if (r.condiciona && !r.sigue_bloqueado) {
     mensaje =
-      `Pallet ${lote.codigo_pallet} marcado «Solo mercado nacional». Sigue disponible, pero solo se puede ` +
+      `Pallet ${pallet} marcado «Solo mercado nacional». Sigue disponible, pero solo se puede ` +
       'reservar y cargar para pedidos de mercado nacional.';
-  } else if (bloquea) {
+  } else if (r.condiciona) {
     mensaje =
-      `Pallet ${lote.codigo_pallet} ${d.estado === 'inmovilizado' ? 'inmovilizado' : d.estado === 'observado' ? 'observado' : 'en espera de resultados'}. ` +
+      `Pallet ${pallet} marcado «Solo mercado nacional», pero SIGUE bloqueado por otro dictamen ` +
+      'abierto: hasta liberarlo no se puede reservar, trasladar ni despachar.';
+  } else if (r.bloquea) {
+    mensaje =
+      `Pallet ${pallet} ${NOMBRE_ESTADO[d.estado]}. ` +
       'Deja de estar disponible: no se puede reservar, trasladar ni despachar.';
-  } else if (sigueBloqueado) {
+  } else if (r.sigue_bloqueado) {
     mensaje =
-      `Dictamen de ${d.tipo.replace('_', ' ')} liberado, pero el pallet ${lote.codigo_pallet} ` +
+      `Dictamen de ${NOMBRE_TIPO[d.tipo]} liberado, pero el pallet ${pallet} ` +
       'SIGUE bloqueado por otro dictamen abierto. Revise los demás para que vuelva a estar disponible.';
+  } else if (r.solo_nacional) {
+    mensaje =
+      `Dictamen de ${NOMBRE_TIPO[d.tipo]} liberado. El pallet ${pallet} está disponible, pero sigue ` +
+      '«Solo mercado nacional» por otro dictamen.';
   } else {
     mensaje =
-      `Pallet ${lote.codigo_pallet} liberado. Ya no tiene ningún dictamen abierto: vuelve a estar ` +
+      `Pallet ${pallet} liberado. Ya no tiene ningún dictamen abierto: vuelve a estar ` +
       'disponible para vender.';
   }
 
-  return { ok: true, id: creado.id as number, mensaje };
+  return { ok: true, id: Number(r.id), mensaje };
 }
 
 /* ==========================================================================
@@ -186,20 +176,28 @@ export async function registrarDictamen(d: DatosDictamen): Promise<Resultado> {
    ========================================================================== */
 
 /** Los motivos tipificados de observación, del maestro. */
-export async function motivosCalidad(): Promise<{ id: number; nombre: string }[]> {
+export async function motivosCalidad(): Promise<{ id: number; nombre: string; condiciona_venta: boolean }[]> {
   const supabase = await crearClienteServidor();
   const { data } = await supabase
-    .from('motivos').select('id, nombre, ambito').eq('activo', true).order('nombre');
+    .from('motivos').select('id, nombre, ambito, condiciona_venta').eq('activo', true).order('nombre');
 
   /*
    * El maestro de motivos sirve a varias cosas —ingreso, salida, ajuste,
    * bloqueo—; los de calidad son los del ámbito «bloqueo». Si ese ámbito
    * estuviera vacío se ofrecen todos: es preferible una lista larga a un
    * desplegable en blanco que impida registrar el dictamen.
+   *
+   * Se pasa también si el motivo solo condiciona la venta («Solo mercado
+   * nacional»): el formulario avisa ANTES de guardar que ese pallet no sale
+   * del inventario vendible, solo queda limitado a pedidos nacionales.
    */
   const deBloqueo = (data ?? []).filter((m) => String(m.ambito ?? '') === 'bloqueo');
   const lista = deBloqueo.length > 0 ? deBloqueo : (data ?? []);
-  return lista.map((m) => ({ id: m.id as number, nombre: m.nombre as string }));
+  return lista.map((m) => ({
+    id: m.id as number,
+    nombre: m.nombre as string,
+    condiciona_venta: m.condiciona_venta === true,
+  }));
 }
 
 /** Qué dictámenes tiene ahora mismo un lote. */
@@ -215,10 +213,13 @@ export async function dictamenesDelLote(loteId: number): Promise<{
 
   return (data ?? []).map((x) => {
     const m = Array.isArray(x.motivos) ? x.motivos[0] : x.motivos;
+    //  El tipificado y el texto, los dos si hay los dos.
+    const partes = [m?.nombre as string | undefined, (x.motivo_texto as string | null) ?? undefined]
+      .filter((p): p is string => !!p && p.trim() !== '');
     return {
       tipo: x.tipo as string,
       estado: x.estado as string,
-      motivo: (x.motivo_texto as string) ?? (m?.nombre as string) ?? null,
+      motivo: partes.length ? partes.join(' · ') : null,
       emitido_en: String(x.emitido_en),
     };
   });

@@ -29,7 +29,8 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
-import { PUEDEN_FACTURAR, PUEDEN_COBRAR, MEDIOS_DE_PAGO, MOTIVO_MINIMO } from '@/lib/permisosFinanzas';
+import { PUEDEN_FACTURAR, PUEDEN_COBRAR, MEDIOS_DE_PAGO, MOTIVO_MINIMO, motivoNoFacturarCiclo } from '@/lib/permisosFinanzas';
+import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 import type { Rol } from '@/lib/navegacion';
 
 export type Resultado =
@@ -49,8 +50,24 @@ const puedeCobrar = (rol: string) => PUEDEN_COBRAR.includes(rol as Rol);
  * usuario; aquí solo se quita lo que añade PostgREST cuando lo hay.
  */
 function motivoDeLaBase(mensaje: string | undefined): string {
-  return (mensaje ?? 'Error desconocido.').replace(/^ERROR:\s*/i, '').trim();
+  const m = (mensaje ?? '').replace(/^ERROR:\s*/i, '').trim();
+  /*
+   * Lo técnico de PostgreSQL no llega a la pantalla (076): «new row violates
+   * row-level security policy…» o un nombre de restricción no le dicen nada
+   * a quien factura.
+   */
+  if (/row-level security|permission denied|violates.*policy/i.test(m)) {
+    return `No tiene permiso para esta operación. Emiten comprobantes ${listaDeRoles(PUEDEN_FACTURAR)}; ` +
+      `cobran y anulan ${listaDeRoles(PUEDEN_COBRAR)}.`;
+  }
+  if (!m || /violates|constraint|column|relation|syntax|null value|duplicate key/i.test(m)) {
+    return 'La base rechazó la operación. Recargue la pantalla y vuelva a intentarlo; si se repite, avise a Sistemas.';
+  }
+  return m;
 }
+
+/** «2026-11-26» → «26/11/2026». */
+const dma = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
 
 /** El IGV vigente. Sale de los parámetros para no quedar escrito en el código. */
 async function porcentajeIgv(): Promise<number> {
@@ -98,7 +115,7 @@ export async function previaFactura(pedidoId: number): Promise<Previa | null> {
 
   const { data: pedido } = await supabase
     .from('pedidos')
-    .select('id, numero_proforma, moneda, tipo_cambio, dias_credito, situacion, clientes(razon_social, pais, ruc_tax_id, dias_credito)')
+    .select('id, numero_proforma, ciclo, moneda, tipo_cambio, dias_credito, situacion, clientes(razon_social, pais, ruc_tax_id, dias_credito)')
     .eq('id', pedidoId)
     .maybeSingle();
 
@@ -125,6 +142,9 @@ export async function previaFactura(pedidoId: number): Promise<Previa | null> {
   if (yaFacturado) {
     impedimentos.push(`Este pedido ya tiene el comprobante ${yaFacturado.numero} emitido.`);
   }
+  /* Solo de un pedido confirmado (076). La base lo exige también. */
+  const sinConfirmar = motivoNoFacturarCiclo(pedido.ciclo as string);
+  if (sinConfirmar) impedimentos.push(sinConfirmar);
   if (!lineas?.length) impedimentos.push('El pedido no tiene líneas de producto.');
 
   // Facturar antes de despachar es legal, pero conviene saberlo.
@@ -190,13 +210,16 @@ export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
   if (!puedeFacturar(usuario.rol)) {
-    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede emitir comprobantes.` };
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no emite comprobantes: lo hacen ${listaDeRoles(PUEDEN_FACTURAR)}.` };
   }
 
   const previa = await previaFactura(pedidoId);
   if (!previa) return { ok: false, mensaje: 'Ese pedido ya no existe.' };
   if (!previa.puede) {
-    return { ok: false, mensaje: 'No se puede emitir el comprobante.', detalles: previa.impedimentos };
+    //  Con un solo impedimento, el mensaje ES el impedimento: «Primero Gerencia u Operaciones…».
+    return previa.impedimentos.length === 1
+      ? { ok: false, mensaje: previa.impedimentos[0] }
+      : { ok: false, mensaje: 'No se puede emitir el comprobante.', detalles: previa.impedimentos };
   }
 
   const supabase = await crearClienteServidor();
@@ -209,7 +232,7 @@ export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
   const serie = previa.tipo === 'factura' ? 'F001' : 'B001';
   const { data: correlativo, error: errNum } = await supabase
     .rpc('siguiente_correlativo', { p_serie: serie, p_anio: anio });
-  if (errNum) return { ok: false, mensaje: `No se pudo reservar el número: ${errNum.message}` };
+  if (errNum) return { ok: false, mensaje: `No se pudo reservar el número: ${motivoDeLaBase(errNum.message)}` };
 
   const numero = `${serie}-${String(correlativo).padStart(6, '0')}`;
 
@@ -250,7 +273,7 @@ export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
     .single();
 
   if (error || !factura) {
-    return { ok: false, mensaje: `No se pudo emitir: ${error?.message}` };
+    return { ok: false, mensaje: `No se pudo emitir: ${motivoDeLaBase(error?.message)}` };
   }
 
   /* ---- Las líneas, copiadas del pedido ---- */
@@ -276,7 +299,7 @@ export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
   if (errLin) {
     // Una factura sin líneas no cuadra con nada: se deshace entera.
     await supabase.from('facturas').delete().eq('id', factura.id);
-    return { ok: false, mensaje: `No se pudieron copiar las líneas: ${errLin.message}` };
+    return { ok: false, mensaje: `No se pudieron copiar las líneas: ${motivoDeLaBase(errLin.message)}` };
   }
 
   await supabase.from('pedidos').update({ situacion: 'facturado' }).eq('id', pedidoId);
@@ -302,7 +325,7 @@ export async function emitirComprobante(pedidoId: number): Promise<Resultado> {
       `${previa.titulo} ${numero} emitida por ${previa.moneda} ` +
       `${previa.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}` +
       (previa.igv > 0 ? ` (IGV ${previa.igvPct} % incluido)` : ' (exportación, sin IGV)') +
-      `. Vence el ${previa.vencimiento}.`,
+      `. Vence el ${dma(previa.vencimiento)}.`,
   };
 }
 
@@ -318,7 +341,7 @@ export async function anularComprobante(facturaId: number, motivo: string): Prom
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
   if (!puedeCobrar(usuario.rol)) {
-    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede anular comprobantes: lo hacen Gerencia u Operaciones.` };
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no anula comprobantes: lo hacen ${listaDeRoles(PUEDEN_COBRAR)}.` };
   }
   const texto = (motivo ?? '').trim();
   if (texto.length < MOTIVO_MINIMO) {
@@ -357,7 +380,7 @@ export async function anularCobranza(cobranzaId: number, motivo: string): Promis
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
   if (!puedeCobrar(usuario.rol)) {
-    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede anular cobros: lo hacen Gerencia u Operaciones.` };
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no anula cobros: lo hacen ${listaDeRoles(PUEDEN_COBRAR)}.` };
   }
   const texto = (motivo ?? '').trim();
   if (texto.length < MOTIVO_MINIMO) {
@@ -404,7 +427,7 @@ export async function registrarCobranza(d: DatosCobranza): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
   if (!puedeCobrar(usuario.rol)) {
-    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede registrar cobros: lo hacen Gerencia u Operaciones.` };
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no registra cobros: lo hacen ${listaDeRoles(PUEDEN_COBRAR)}.` };
   }
   if (!Number.isFinite(d.monto) || !(d.monto > 0)) {
     return { ok: false, mensaje: 'Escriba el monto cobrado: tiene que ser mayor que cero.' };

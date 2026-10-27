@@ -24,6 +24,7 @@ import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 import { aDolares } from '@/lib/moneda';
 import { puedeVender, veCostos, type Rol } from '@/lib/navegacion';
 import { campo } from '@/lib/relaciones';
+import { motivoNoEliminarCotizacion } from '@/lib/permisosVentas';
 
 export const metadata: Metadata = { title: 'Cotizaciones' };
 export const dynamic = 'force-dynamic';
@@ -298,6 +299,7 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
                             yaConvertida={yaConvertidas.has(c.id as number)}
                             sinAprobar={requiereAprobacion && !c.aprobada_en}
                             puedeOperar={puedeCrear}
+                            bloqueoEliminar={motivoNoEliminarCotizacion(rol, c.estado as string, c.numero as string, yaConvertidas.has(c.id as number))}
                           />
                         </td>
                       </tr>

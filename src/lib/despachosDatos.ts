@@ -10,6 +10,10 @@
  *  «Mantener la trazabilidad Cotización → Proforma → Disponibilidad →
  *  Embarque → Despacho»: cada ítem lleva su proforma y su pedido, y el
  *  despacho su embarque. De ahí hacia atrás ya está todo enlazado.
+ *
+ *  LO CARGADO Y LO DESPACHADO (075). Cada ítem dice lo que SALIÓ (bultos,
+ *  kg) y, si al despachar salió otra cosa que lo cargado —un muestreo, sacos
+ *  dañados, lo que no entró—, lo cargado y el motivo de la diferencia.
  * ============================================================================
  */
 import type { crearClienteServidor } from '@/lib/supabase/servidor';
@@ -25,8 +29,15 @@ export type ItemDespacho = {
   pallet: string;
   sku: string;
   producto: string;
+  /** Lo que SALIÓ. */
   bultos: number;
   kg: number;
+  /** Lo que se cargó: igual a lo que salió salvo que haya diferencia. */
+  bultos_cargados: number;
+  kg_cargados: number;
+  /** muestreo · merma · no_entro · otro, o nulo si salió todo. */
+  motivo: string | null;
+  detalle: string | null;
   pedido_id: number | null;
   proforma: string | null;
   cliente: string | null;
@@ -85,7 +96,7 @@ export async function cargarDespachos(supabase: Cliente, opciones: { ids?: numbe
   const lineas = idsPacking.length
     ? await traerTodo<Record<string, unknown>>((desde, hasta) =>
         supabase.from('packing_lineas')
-          .select('id, packing_list_id, lote_id, bultos, peso_neto_kg, lotes(codigo_pallet, sku_presentaciones(skus(codigo, corte, especies(nombre)), presentaciones(descripcion))), pedido_lineas(pedido_id, pedidos(numero_proforma, clientes(razon_social)))')
+          .select('id, packing_list_id, lote_id, bultos, peso_neto_kg, bultos_cargados, kg_cargados, motivo_diferencia, detalle_diferencia, lotes(codigo_pallet, sku_presentaciones(skus(codigo, corte, especies(nombre)), presentaciones(descripcion))), pedido_lineas(pedido_id, pedidos(numero_proforma, clientes(razon_social)))')
           .in('packing_list_id', idsPacking)
           .order('id')
           .range(desde, hasta))
@@ -106,6 +117,10 @@ export async function cargarDespachos(supabase: Cliente, opciones: { ids?: numbe
       producto: `${uno(sku?.especies)?.nombre ?? ''} ${sku?.corte ?? ''} · ${uno(sp?.presentaciones)?.descripcion ?? ''}`.trim(),
       bultos: Number(l.bultos ?? 0),
       kg: Number(l.peso_neto_kg ?? 0),
+      bultos_cargados: l.bultos_cargados === null || l.bultos_cargados === undefined ? Number(l.bultos ?? 0) : Number(l.bultos_cargados),
+      kg_cargados: l.kg_cargados === null || l.kg_cargados === undefined ? Number(l.peso_neto_kg ?? 0) : Number(l.kg_cargados),
+      motivo: (l.motivo_diferencia as string) ?? null,
+      detalle: (l.detalle_diferencia as string) ?? null,
       pedido_id: pl?.pedido_id ? Number(pl.pedido_id) : null,
       proforma: (ped?.numero_proforma as string) ?? null,
       cliente: (uno(ped?.clientes)?.razon_social as string) ?? null,
@@ -154,6 +169,22 @@ export async function cargarDespachos(supabase: Cliente, opciones: { ids?: numbe
     };
   });
 }
+
+/** Cómo se lee el motivo de una diferencia al despachar. */
+export const MOTIVO_DIFERENCIA: Record<string, string> = {
+  muestreo: 'Muestreo',
+  merma: 'Sacos dañados / merma',
+  no_entro: 'No entró en el contenedor',
+  otro: 'Otro',
+};
+
+/** Qué pasó con la diferencia según su motivo. */
+export const DESTINO_DIFERENCIA: Record<string, string> = {
+  muestreo: 'salió del stock como muestra',
+  merma: 'salió del stock como merma',
+  no_entro: 'volvió a cámara, apartado para su pedido',
+  otro: 'volvió a cámara, apartado para su pedido',
+};
 
 /** Lee «1,2,3» de la dirección y devuelve números válidos. */
 export function idsDeTexto(texto: string | null | undefined): number[] {

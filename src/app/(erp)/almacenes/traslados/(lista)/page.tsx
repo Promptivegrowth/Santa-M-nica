@@ -76,6 +76,13 @@ export default async function PaginaTraslados(props: PageProps<'/almacenes/trasl
         descripcion="Cada traslado recorre tres firmas: autorización, salida y aceptación en destino. Entre la salida y la aceptación el producto viaja y no se puede vender."
       >
         {puedeCrear && (
+          <Link href="/almacenes/traslados/importar" className="btn btn-secundario" data-accion="importar-traslados"
+                title="Crear muchos traslados de una vez desde una plantilla de Excel">
+            <Icono nombre="descargar" tamano={15} />
+            Importar desde Excel
+          </Link>
+        )}
+        {puedeCrear && (
           <Link href="/almacenes/traslados/nuevo" className="btn btn-primario" data-accion="nuevo-traslado">
             <Icono nombre="mas" tamano={15} />
             Nuevo traslado

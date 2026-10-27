@@ -21,7 +21,7 @@ import { ejecutarSQL } from './db.mjs';
 
 const URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const CLAVE = 'SantaMonica2026';
+const CLAVE = (process.env.CLAVE_DEMO ?? '');
 
 /* --------------------------------------------------------------------------
    Motor de pruebas mínimo

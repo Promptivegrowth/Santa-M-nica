@@ -24,6 +24,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { convertirEnPedido, eliminarCotizacion } from './acciones';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 
 export function AccionesFila({
   cotizacionId,
@@ -32,6 +33,7 @@ export function AccionesFila({
   yaConvertida,
   sinAprobar = false,
   puedeOperar,
+  bloqueoEliminar = null,
 }: {
   cotizacionId: number;
   numero: string;
@@ -45,6 +47,12 @@ export function AccionesFila({
    * a ellos se les muestra únicamente el botón de ver.
    */
   puedeOperar: boolean;
+  /**
+   * Por qué esta persona no puede eliminarla, o null (motivoNoEliminarCotizacion,
+   * la misma regla que aplica el servidor). Antes la papelera salía encendida
+   * para Comercial en una vencida y el servidor la rechazaba (076).
+   */
+  bloqueoEliminar?: string | null;
 }) {
   const router = useRouter();
   const [confirmando, setConfirmando] = useState<'convertir' | 'eliminar' | null>(null);
@@ -53,12 +61,12 @@ export function AccionesFila({
 
   const editable = puedeOperar && !yaConvertida && ['borrador', 'aprobada', 'enviada'].includes(estado);
   const convertible = puedeOperar && !yaConvertida && !sinAprobar && !['rechazada', 'vencida'].includes(estado);
-  const borrable = puedeOperar && !yaConvertida;
+  const borrable = puedeOperar && !yaConvertida && !bloqueoEliminar;
 
   function convertir() {
     setError(null);
     iniciar(async () => {
-      const r = await convertirEnPedido(cotizacionId);
+      const r = await accionSegura(() => convertirEnPedido(cotizacionId));
       if (r.ok) router.push(`/ventas/pedidos/${r.id}`);
       else { setError(r.mensaje); setConfirmando(null); }
     });
@@ -67,7 +75,7 @@ export function AccionesFila({
   function eliminar() {
     setError(null);
     iniciar(async () => {
-      const r = await eliminarCotizacion(cotizacionId);
+      const r = await accionSegura(() => eliminarCotizacion(cotizacionId));
       if (r.ok) { setConfirmando(null); router.refresh(); }
       else { setError(r.mensaje); setConfirmando(null); }
     });
@@ -166,10 +174,11 @@ export function AccionesFila({
           className="accion-btn accion-btn-peligro"
           onClick={() => setConfirmando('eliminar')}
           disabled={!borrable}
+          data-accion="eliminar"
           title={
             borrable
               ? `Eliminar ${numero}`
-              : 'No se puede eliminar: ya generó un pedido'
+              : bloqueoEliminar ?? 'No se puede eliminar: ya generó un pedido'
           }
           aria-label={`Eliminar ${numero}`}
         >

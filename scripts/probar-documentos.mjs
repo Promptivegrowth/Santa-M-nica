@@ -54,7 +54,7 @@ async function cookieDe(rol) {
   );
   const { data, error } = await cli.auth.signInWithPassword({
     email: `${rol}@santamonica.pe`,
-    password: 'SantaMonica2026',
+    password: (process.env.CLAVE_DEMO ?? ''),
   });
   if (error) throw new Error(`${rol}: ${error.message}`);
   return `sb-${REF}-auth-token=base64-${Buffer.from(JSON.stringify(data.session)).toString('base64')}`;

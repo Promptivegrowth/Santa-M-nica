@@ -32,7 +32,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ejecutarSQL } from './db.mjs';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
-const CLAVE = process.env.CLAVE_DEMO ?? 'SantaMonica2026';
+const CLAVE = process.env.CLAVE_DEMO ?? '';
 const CAPTURAS = process.env.CAPTURAS ?? 'capturas/finanzas-070';
 mkdirSync(CAPTURAS, { recursive: true });
 

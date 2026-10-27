@@ -20,6 +20,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 
 type Resultado = { ok: true; mensaje: string } | { ok: false; mensaje: string };
 
@@ -59,7 +60,7 @@ export function AccionesMaestro({
   function alternar() {
     setAviso(null);
     iniciar(async () => {
-      const r = await cambiarEstado(id, !activo);
+      const r = await accionSegura(() => cambiarEstado(id, !activo));
       setAviso({ tipo: r.ok ? 'ok' : 'mal', texto: r.mensaje });
       if (r.ok) router.refresh();
     });
@@ -68,7 +69,7 @@ export function AccionesMaestro({
   function borrar() {
     setAviso(null);
     iniciar(async () => {
-      const r = await eliminar(id);
+      const r = await accionSegura(() => eliminar(id));
       if (r.ok) { router.push(volverA); router.refresh(); return; }
       // El servidor explica por qué no se puede: casi siempre, documentos.
       setAviso({ tipo: 'mal', texto: r.mensaje });

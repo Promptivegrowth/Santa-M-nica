@@ -21,6 +21,7 @@ import { GraficoBarras } from '@/components/graficos/Graficos';
 import { num, fecha, dinero } from '@/lib/formato';
 import { Paginacion } from '@/components/ui/Filtros';
 import { traerTodo } from '@/lib/traerTodo';
+import { Icono } from '@/components/estructura/Icono';
 
 export const metadata: Metadata = { title: 'Cuentas por cobrar' };
 export const dynamic = 'force-dynamic';
@@ -37,13 +38,23 @@ const POR_PAGINA = 50;
 export default async function PaginaCobrar(props: PageProps<'/finanzas/cobrar'>) {
   const q = await props.searchParams;
   const pagina = Math.max(1, Number(q.pagina ?? 1));
+  /*
+   * ?cliente=ID: llega desde «Ver cuentas por cobrar» de la ficha del cliente
+   * (076). Antes la dirección lo traía y la pantalla lo ignoraba: se veía la
+   * cartera entera. Ahora se filtra y se dice, con un enlace para quitarlo.
+   */
+  const clienteId = Number(q.cliente ?? 0) > 0 ? Number(q.cliente) : null;
   const supabase = await crearClienteServidor();
-  const [filas, usuario] = await Promise.all([
-    traerTodo((desde, hasta) =>
-      supabase.from('v_cuentas_cobrar').select('*').gt('saldo', 0.01)
-        .order('dias_vencida', { ascending: false }).order('id').range(desde, hasta)
-    ),
+  const [filas, usuario, { data: clienteFiltro }] = await Promise.all([
+    traerTodo((desde, hasta) => {
+      let c = supabase.from('v_cuentas_cobrar').select('*').gt('saldo', 0.01);
+      if (clienteId) c = c.eq('cliente_id', clienteId);
+      return c.order('dias_vencida', { ascending: false }).order('id').range(desde, hasta);
+    }),
     obtenerUsuarioActual(),
+    clienteId
+      ? supabase.from('clientes').select('id, razon_social').eq('id', clienteId).maybeSingle()
+      : Promise.resolve({ data: null as { id: number; razon_social: string } | null }),
   ]);
   // Quien cobra tiene, en cada fila, el atajo al formulario de cobro de la ficha.
   const puedeCobrar = PUEDEN_COBRAR.includes((usuario?.rol ?? 'consulta') as Rol);
@@ -79,6 +90,19 @@ export default async function PaginaCobrar(props: PageProps<'/finanzas/cobrar'>)
         </Suspense>
       </CabeceraPagina>
 
+      {clienteId && (
+        <div className="ficha-aviso ficha-aviso-info" role="status" data-filtro="cliente">
+          <Icono nombre="filtro" tamano={17} />
+          <span>
+            Solo los documentos de{' '}
+            <strong>{clienteFiltro ? String(clienteFiltro.razon_social) : `el cliente ${clienteId}`}</strong>
+            {lista.length === 0 ? ': no tiene saldos pendientes.' : '.'}{' '}
+            <Link href="/finanzas/cobrar">Ver toda la cartera</Link>
+            {clienteFiltro ? <> · <Link href={`/ventas/clientes/${clienteId}`}>Volver a la ficha del cliente</Link></> : null}
+          </span>
+        </div>
+      )}
+
       <RejillaKpi>
         <Kpi etiqueta="Saldo total pendiente" valor={dinero(total, 'USD', 0)} tono="marca" nota={`${num(lista.length)} documentos`} href="#documentos" />
         <Kpi etiqueta="Saldo vencido" valor={dinero(vencido, 'USD', 0)} tono={vencido > 0 ? 'critico' : 'ok'}
@@ -102,7 +126,7 @@ export default async function PaginaCobrar(props: PageProps<'/finanzas/cobrar'>)
         </Panel>
       )}
 
-      <Panel id="documentos" titulo={`${lista.length} documentos con saldo`}>
+      <Panel id="documentos" titulo={`${lista.length} documento${lista.length === 1 ? "" : "s"} con saldo`}>
         {lista.length === 0 ? (
           <Vacio titulo="Nada por cobrar" mensaje="Todos los documentos están cobrados." />
         ) : (

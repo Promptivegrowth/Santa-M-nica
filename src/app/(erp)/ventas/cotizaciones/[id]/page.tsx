@@ -25,7 +25,8 @@ import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, dinero, pct, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
-import { ROLES_RECHAZAN_COTIZACION } from '@/lib/permisosVentas';
+import { ROLES_RECHAZAN_COTIZACION, motivoNoEliminarCotizacion, validezVencida, mensajeValidezVencida } from '@/lib/permisosVentas';
+import { DocumentosApagados, puedeDescargarDocumentos } from '../../DocumentosApagados';
 import { uno, campo } from '@/lib/relaciones';
 import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
 import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
@@ -131,6 +132,8 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
   const aprobada = Boolean(cot.aprobada_en);
   // Facultad de la PERSONA, no del cargo: la marca el maestro de usuarios.
   const puedeAprobar = usuario?.aprueba_cotizaciones === true;
+  /* 076: una oferta con la validez vencida no se aprueba: hay que actualizarla antes. */
+  const vencidaLaValidez = validezVencida(cot.vence_el as string | null, hoyEnLima());
 
   return (
     <>
@@ -140,7 +143,9 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
         volver={{ href: '/ventas/cotizaciones', texto: 'Volver a cotizaciones' }}
       >
         <Etiqueta texto={etiquetaEstado(estado)} tono={TONO[estado] ?? 'neutro'} />
-        <BotonesDocumento tipo="cotizacion" id={cotId} numero={cot.numero as string} />
+        {puedeDescargarDocumentos(usuario?.rol)
+          ? <BotonesDocumento tipo="cotizacion" id={cotId} numero={cot.numero as string} />
+          : <DocumentosApagados rol={usuario?.rol} />}
         {puedeOperar && (
           <AccionesFicha
             cotizacionId={cotId}
@@ -151,6 +156,8 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
             requiereAprobacion={requiereAprobacion}
             puedeAprobar={puedeAprobar}
             puedeRechazar={ROLES_RECHAZAN_COTIZACION.includes((usuario?.rol ?? 'consulta') as Rol)}
+            bloqueoAprobar={vencidaLaValidez ? mensajeValidezVencida(String(cot.vence_el)) : null}
+            bloqueoEliminar={motivoNoEliminarCotizacion(usuario?.rol, estado, cot.numero as string, !!pedido)}
           />
         )}
       </CabeceraPagina>
@@ -178,9 +185,11 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
           <span>
             <strong>Esperando aprobación.</strong> Esta oferta no puede salir al cliente hasta que
             una persona autorizada a aprobar cotizaciones revise el precio.{' '}
-            {puedeAprobar
-              ? 'Usted tiene esa facultad: use el botón «Aprobar» de arriba.'
-              : 'Avise a quien aprueba cotizaciones para que la revise.'}
+            {vencidaLaValidez
+              ? <strong data-aviso="validez-vencida">{mensajeValidezVencida(String(cot.vence_el))}</strong>
+              : puedeAprobar
+                ? 'Usted tiene esa facultad: use el botón «Aprobar» de arriba.'
+                : 'Avise a quien aprueba cotizaciones para que la revise.'}
           </span>
         </div>
       )}
@@ -349,7 +358,7 @@ async function CuerpoCotizacion({
             oferta ya está aprobada: un contrato sobre un precio que nadie
             autorizó no sirve.
           */}
-          {aprobadaAlgunaVez && (
+          {aprobadaAlgunaVez && puedeDescargarDocumentos(usuario?.rol) && (
             <Link href={`/ventas/cotizaciones/${cotId}/contrato`} className="ficha-enlace" data-enlace="contrato">
               <Icono nombre="cotizacion" tamano={15} />
               <span>

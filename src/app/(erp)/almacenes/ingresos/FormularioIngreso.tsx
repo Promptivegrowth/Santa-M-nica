@@ -26,10 +26,9 @@
 import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
-import {
-  registrarIngreso, camarasDeAlmacen, costoVigente,
-  type DatosIngreso,
-} from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
+import { registrarIngreso, camarasDeAlmacen, costoVigente } from './acciones';
+import { bodegaAdmite, NOMBRE_ORIGEN, type BodegaIngreso, type DatosIngreso } from './tipos';
 
 export type OpcionProducto = {
   id: number;
@@ -50,7 +49,8 @@ export function FormularioIngreso({
   hoy,
 }: {
   productos: OpcionProducto[];
-  almacenes: { id: number; nombre: string }[];
+  /** Con lo que admite cada una (074): el desplegable se filtra por el origen. */
+  almacenes: BodegaIngreso[];
   plantas: { id: number; nombre: string }[];
   lineas: { id: number; nombre: string }[];
   codigoPropuesto: string;
@@ -62,7 +62,7 @@ export function FormularioIngreso({
   const [d, setD] = useState<DatosIngreso>({
     codigo_pallet: codigoPropuesto,
     sku_presentacion_id: 0,
-    almacen_id: almacenes[0]?.id ?? 0,
+    almacen_id: almacenes.find((a) => bodegaAdmite(a, ''))?.id ?? 0,
     camara_id: null,
     fecha_produccion: hoy,
     turno: 'dia',
@@ -105,12 +105,27 @@ export function FormularioIngreso({
   }, [d.almacen_id]);
 
   const camarasVisibles = camarasDe === d.almacen_id ? camaras : [];
+  const bodegasVisibles = almacenes.filter((a) => bodegaAdmite(a, d.origen_ingreso));
 
   function campo<K extends keyof DatosIngreso>(k: K, v: DatosIngreso[K]) {
     setD((previo) => {
       const siguiente = { ...previo, [k]: v };
       // Cambiar de bodega invalida la cámara: pertenecía a la anterior.
       if (k === 'almacen_id') siguiente.camara_id = null;
+      /*
+       * Cada origen entra solo por ciertas bodegas (074): la producción por
+       * las cámaras de Santa Mónica, Freeko y Hayduk; las compras por Elamar y
+       * Perufrost. Si la bodega puesta no recibe el origen elegido, se pasa a
+       * la primera que sí, en vez de dejar una combinación que el servidor
+       * va a rechazar.
+       */
+      if (k === 'origen_ingreso') {
+        const actual = almacenes.find((a) => a.id === siguiente.almacen_id);
+        if (!actual || !bodegaAdmite(actual, siguiente.origen_ingreso)) {
+          siguiente.almacen_id = almacenes.find((a) => bodegaAdmite(a, siguiente.origen_ingreso))?.id ?? 0;
+          siguiente.camara_id = null;
+        }
+      }
       return siguiente;
     });
     setProblema(null);
@@ -154,8 +169,9 @@ export function FormularioIngreso({
     setProblema(null);
 
     iniciar(async () => {
-      const r = await registrarIngreso(d);
-      if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: r.campo }); return; }
+      //  Un corte de red vuelve como un resultado más: lo escrito no se pierde.
+      const r = await accionSegura(() => registrarIngreso(d));
+      if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: 'campo' in r ? r.campo : undefined }); return; }
 
       /*
        * Se queda en la misma pantalla, con lo que se repite ya puesto. Solo se
@@ -387,9 +403,16 @@ export function FormularioIngreso({
           <label className="form-campo">
             <span>Bodega <b className="req">*</b></span>
             <select className="campo" value={d.almacen_id || ''} data-error={error('almacen_id')}
-                    onChange={(e) => campo('almacen_id', Number(e.target.value))} required>
-              {almacenes.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                    onChange={(e) => campo('almacen_id', Number(e.target.value))} required
+                    name="almacen_id">
+              {bodegasVisibles.length === 0 && <option value="">Ninguna bodega recibe este origen</option>}
+              {bodegasVisibles.map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
             </select>
+            <small data-pista="bodegas-origen">
+              {d.origen_ingreso
+                ? `Solo las bodegas que reciben ${NOMBRE_ORIGEN[d.origen_ingreso]}. Lo define Gerencia u Operaciones en Configuración › Maestros › Almacenes.`
+                : 'Elija el origen: cada origen entra solo por ciertas bodegas.'}
+            </small>
           </label>
 
           <label className="form-campo">

@@ -17,11 +17,32 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import { previaFactura, emitirComprobante, type Previa } from '@/app/(erp)/finanzas/facturas/acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 const cifra = (n: number) =>
   n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function BotonFacturar({ pedidoId, puede }: { pedidoId: number; puede: boolean }) {
+/** «2026-11-26» → «26/11/2026», como en el resto del sistema. */
+const dma = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
+
+/*
+ * La vista previa y los mensajes ocupan una fila propia AL FINAL de la
+ * botonera de la cabecera (order alto + ancho completo). Antes salían entre
+ * «Emitir comprobante» y Confirmar / Cancelar pedido, y empujaban esos dos
+ * botones a un costado, debajo de la factura.
+ */
+const AL_FINAL: React.CSSProperties = { order: 99, flexBasis: '100%' };
+
+export function BotonFacturar({
+  pedidoId,
+  puede,
+  bloqueo = null,
+}: {
+  pedidoId: number;
+  puede: boolean;
+  /** Por qué no se puede emitir todavía (p. ej. el pedido sin confirmar), o null. */
+  bloqueo?: string | null;
+}) {
   const router = useRouter();
   const [cargando, iniciarCarga] = useTransition();
   const [emitiendo, iniciarEmision] = useTransition();
@@ -31,14 +52,18 @@ export function BotonFacturar({ pedidoId, puede }: { pedidoId: number; puede: bo
 
   function abrir() {
     setResultado(null);
-    iniciarCarga(async () => setPrevia(await previaFactura(pedidoId)));
+    iniciarCarga(async () => {
+      const r = await accionSegura(() => previaFactura(pedidoId));
+      if (r && 'sinConexion' in r) { setResultado({ tipo: 'mal', texto: r.mensaje }); return; }
+      setPrevia(r);
+    });
   }
 
   function emitir() {
     setResultado(null);
     iniciarEmision(async () => {
-      const r = await emitirComprobante(pedidoId);
-      if (!r.ok) { setResultado({ tipo: 'mal', texto: r.mensaje, detalles: r.detalles }); return; }
+      const r = await accionSegura(() => emitirComprobante(pedidoId));
+      if (!r.ok) { setResultado({ tipo: 'mal', texto: r.mensaje, detalles: 'detalles' in r ? r.detalles : undefined }); return; }
       setResultado({ tipo: 'ok', texto: r.mensaje });
       setPrevia(null);
       router.refresh();
@@ -51,13 +76,16 @@ export function BotonFacturar({ pedidoId, puede }: { pedidoId: number; puede: bo
     <>
       <button type="button" className="btn btn-primario"
               onClick={previa ? () => setPrevia(null) : abrir}
-              disabled={cargando || emitiendo}>
+              disabled={cargando || emitiendo || !!bloqueo}
+              title={bloqueo ?? undefined}
+              data-accion="emitir-comprobante">
         <Icono nombre="facturas" tamano={15} />
         {cargando ? 'Preparando…' : previa ? 'Cancelar' : 'Emitir comprobante'}
       </button>
 
       {resultado && (
         <div className={`ficha-aviso ${resultado.tipo === 'ok' ? 'ficha-aviso-info' : 'ficha-aviso-critico'} documento-mensaje`}
+             style={AL_FINAL}
              role={resultado.tipo === 'ok' ? 'status' : 'alert'}>
           <Icono nombre="alerta" tamano={17} />
           <span>
@@ -72,7 +100,7 @@ export function BotonFacturar({ pedidoId, puede }: { pedidoId: number; puede: bo
       )}
 
       {previa && (
-        <div className="facturar documento-mensaje">
+        <div className="facturar documento-mensaje" style={AL_FINAL}>
           <div className="facturar-cab">
             <div>
               <strong>{previa.titulo}</strong>
@@ -147,7 +175,7 @@ export function BotonFacturar({ pedidoId, puede }: { pedidoId: number; puede: bo
             </table>
           </div>
 
-          <p className="facturar-vence">Vence el {previa.vencimiento}.</p>
+          <p className="facturar-vence">Vence el {dma(previa.vencimiento)}.</p>
 
           {previa.puede && (
             <div className="acciones-fila">

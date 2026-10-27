@@ -20,11 +20,38 @@ import { revisarTipoCambio } from '@/lib/moneda';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 import { columnasContacto, type ContactoDocumento } from '@/lib/contactoDocumento';
 import { puedeVender, type Rol } from '@/lib/navegacion';
-import { puedeCotizar, ROLES_RECHAZAN_COTIZACION } from '@/lib/permisosVentas';
+import {
+  puedeCotizar, ROLES_RECHAZAN_COTIZACION, motivoNoEliminarCotizacion, validezVencida,
+  mensajeValidezVencida, nombreRol, listaDeRoles,
+} from '@/lib/permisosVentas';
 import { obtenerTipoCambioSunat, type TipoCambioSunat } from '@/lib/tipoCambioSunat';
 import {
   plazoReferencia, diasDePlazos, textoCondicionPago, type FormaPago, type Prioridad,
 } from '@/lib/condicionesVenta';
+
+/** Quienes cotizan: Gerencia, Operaciones y Comercial (Comex registra pedidos directos). */
+const COTIZAN: Rol[] = ['gerencia', 'operaciones', 'comercial'];
+/** Quienes venden: además, Comercio Exterior (convertir, abonos). */
+const VENDEN: Rol[] = ['gerencia', 'operaciones', 'comercial', 'comex'];
+
+/**
+ * El tipo de cambio, revisado con el valor REAL de SUNAT del día en el
+ * mensaje (076). Solo se consulta SUNAT si el valor escrito está mal: lo
+ * normal es que esté bien y no haga falta. obtenerTipoCambioSunat mira
+ * primero lo ya guardado del mes, así que casi nunca sale a internet.
+ */
+async function problemaTipoCambio(valor: number): Promise<string | null> {
+  if (!revisarTipoCambio(valor)) return null;
+  let referencia: { valor: number; publicado_el: string } | null = null;
+  try {
+    const supabase = await crearClienteServidor();
+    const r = await obtenerTipoCambioSunat(supabase, hoyEnLima());
+    if (r.ok) referencia = { valor: r.tc.valor, publicado_el: r.tc.publicado_el };
+  } catch {
+    //  Sin SUNAT, el mensaje lo dice sin cifra: no se inventa ninguna.
+  }
+  return revisarTipoCambio(valor, referencia);
+}
 
 export type LineaCotizacion = {
   sku_presentacion_id: number;
@@ -275,7 +302,7 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
   if (!puedeCotizar(usuario.rol)) {
     return {
       ok: false,
-      mensaje: 'Su rol no puede crear cotizaciones. Esta acción corresponde a Comercial, Operaciones o Gerencia.',
+      mensaje: `${nombreRol(usuario.rol)} no crea cotizaciones: lo hacen ${listaDeRoles(COTIZAN)}.`,
     };
   }
 
@@ -292,7 +319,7 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
    * mezclaban monedas. La base lo rechaza igual, pero su mensaje no le sirve a
    * un comercial.
    */
-  const problemaTc = revisarTipoCambio(datos.tipo_cambio);
+  const problemaTc = await problemaTipoCambio(datos.tipo_cambio);
   if (problemaTc) {
     return { ok: false, mensaje: problemaTc, campo: 'tipo_cambio' };
   }
@@ -358,7 +385,7 @@ export async function crearCotizacion(datos: DatosCotizacion): Promise<Resultado
     return {
       ok: false,
       mensaje: /policy/i.test(errCab?.message ?? '')
-        ? 'Su rol no tiene permiso para crear cotizaciones.'
+        ? `${nombreRol(usuario.rol)} no tiene permiso para crear cotizaciones: lo hacen ${listaDeRoles(COTIZAN)}.`
         : `No se pudo guardar la cotización: ${errCab?.message}`,
     };
   }
@@ -450,12 +477,20 @@ export async function aprobarCotizacion(id: number): Promise<Resultado> {
   const supabase = await crearClienteServidor();
   const { data: cot } = await supabase
     .from('cotizaciones')
-    .select('numero, estado, aprobada_en, cotizacion_lineas(id)')
+    .select('numero, estado, aprobada_en, vence_el, cotizacion_lineas(id)')
     .eq('id', id).maybeSingle();
 
   if (!cot) return { ok: false, mensaje: 'Esa cotización ya no existe.' };
   if (cot.estado !== 'borrador') {
     return { ok: false, mensaje: `${cot.numero} ya pasó de borrador: está ${cot.estado}.` };
+  }
+  /*
+   * 076: una oferta vencida no se aprueba. El precio que se firmaría ya no
+   * está en vigor; Comercial la actualiza (amplía la validez o la rehace) y
+   * entonces se aprueba. El botón también se apaga con este mismo texto.
+   */
+  if (validezVencida(cot.vence_el as string | null, hoyEnLima())) {
+    return { ok: false, mensaje: mensajeValidezVencida(String(cot.vence_el)) };
   }
   // Aprobar una oferta vacía no significa nada.
   if (!(cot.cotizacion_lineas ?? []).length) {
@@ -511,7 +546,7 @@ export async function cambiarEstadoCotizacion(
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
 
   if (!puedeCotizar(usuario.rol)) {
-    return { ok: false, mensaje: 'Su rol no puede cambiar el estado de una cotización.' };
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no cambia el estado de una cotización: lo hacen ${listaDeRoles(COTIZAN)}.` };
   }
   if (estado === 'rechazada' && !ROLES_RECHAZAN_COTIZACION.includes(usuario.rol as Rol)) {
     return { ok: false, mensaje: 'Marcar una cotización como rechazada corresponde a Gerencia, Operaciones o Comercial.' };
@@ -598,7 +633,7 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
 
   if (!puedeVender(usuario.rol as Rol)) {
-    return { ok: false, mensaje: 'Su rol no puede convertir cotizaciones en pedidos.' };
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no convierte cotizaciones en pedidos: lo hacen ${listaDeRoles(VENDEN)}.` };
   }
 
   const supabase = await crearClienteServidor();
@@ -835,10 +870,6 @@ export async function eliminarCotizacion(id: number): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
 
-  if (!puedeVender(usuario.rol as Rol)) {
-    return { ok: false, mensaje: 'Su rol no puede eliminar cotizaciones.' };
-  }
-
   const supabase = await crearClienteServidor();
 
   const { data: cot } = await supabase
@@ -855,14 +886,15 @@ export async function eliminarCotizacion(id: number): Promise<Resultado> {
     };
   }
 
-  // Una cotización ya enviada al cliente es un documento con historia:
-  // solo gerencia u operaciones pueden borrarla.
-  if (cot.estado !== 'borrador' && !['gerencia', 'operaciones'].includes(usuario.rol)) {
-    return {
-      ok: false,
-      mensaje: `La cotización ${cot.numero} ya fue enviada al cliente. Solo Gerencia u Operaciones pueden eliminarla; usted puede marcarla como rechazada.`,
-    };
-  }
+  /*
+   * Lo que ya no es borrador es un documento con historia: solo Gerencia u
+   * Operaciones lo borran. La regla y el mensaje salen del mismo sitio que la
+   * papelera (motivoNoEliminarCotizacion, 076), y el mensaje dice la causa
+   * REAL: antes decía «ya fue enviada al cliente» de una vencida que nunca
+   * salió.
+   */
+  const noSePuede = motivoNoEliminarCotizacion(usuario.rol, String(cot.estado), String(cot.numero), false);
+  if (noSePuede) return { ok: false, mensaje: noSePuede };
 
   // Las líneas se van solas por la cascada definida en la base de datos
   const { error } = await supabase.from('cotizaciones').delete().eq('id', id);
@@ -870,7 +902,7 @@ export async function eliminarCotizacion(id: number): Promise<Resultado> {
     return {
       ok: false,
       mensaje: /policy/i.test(error.message)
-        ? 'Su rol no tiene permiso para eliminar esta cotización.'
+        ? `${nombreRol(usuario.rol)} no tiene permiso para eliminar esta cotización.`
         : `No se pudo eliminar: ${error.message}`,
     };
   }
@@ -959,7 +991,7 @@ export async function actualizarCotizacion(
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
   if (!puedeCotizar(usuario.rol)) {
-    return { ok: false, mensaje: 'Su rol no puede modificar cotizaciones.' };
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no modifica cotizaciones: lo hacen ${listaDeRoles(COTIZAN)}.` };
   }
 
   const supabase = await crearClienteServidor();
@@ -998,7 +1030,7 @@ export async function actualizarCotizacion(
   if (datos.validez_dias < 1 || datos.validez_dias > 365) {
     return { ok: false, mensaje: 'La validez debe estar entre 1 y 365 días.', campo: 'validez' };
   }
-  const problemaTc = revisarTipoCambio(datos.tipo_cambio);
+  const problemaTc = await problemaTipoCambio(datos.tipo_cambio);
   if (problemaTc) return { ok: false, mensaje: problemaTc, campo: 'tipo_cambio' };
   const problemaLineas = revisarLineas(datos.lineas);
   if (problemaLineas) return problemaLineas;
@@ -1155,7 +1187,7 @@ export async function registrarAbono(
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
   if (!puedeVender(usuario.rol as Rol)) {
-    return { ok: false, mensaje: 'Su rol no puede registrar abonos.' };
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no registra abonos: lo hacen ${listaDeRoles(VENDEN)}.` };
   }
   if (monto !== null && !(Number(monto) >= 0)) {
     return { ok: false, mensaje: 'El monto abonado no puede ser negativo.' };

@@ -9,12 +9,29 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { generarPdfContrato } from '@/lib/pdfContrato';
 import { generarDocxContrato } from '@/lib/docxContrato';
 import type { DatosContrato } from '@/lib/contratoVenta';
+import { PUEDEN_DESCARGAR_DOCUMENTOS } from '@/lib/permisosFinanzas';
+import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
+import type { Rol } from '@/lib/navegacion';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest, ctx: RouteContext<'/api/contratos/[id]'>) {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return NextResponse.json({ error: 'Inicie sesión.' }, { status: 401 });
+  /*
+   * El contrato lleva precios: lo bajan los mismos que bajan la proforma
+   * (076). Antes esta ruta no miraba el rol y cualquiera con el enlace se
+   * llevaba el PDF.
+   */
+  if (!PUEDEN_DESCARGAR_DOCUMENTOS.includes(usuario.rol as Rol)) {
+    return NextResponse.json(
+      {
+        error: `${nombreRol(usuario.rol)} no descarga contratos (llevan precios): ` +
+          `lo hacen ${listaDeRoles(PUEDEN_DESCARGAR_DOCUMENTOS)}.`,
+      },
+      { status: 403 }
+    );
+  }
 
   const { id } = await ctx.params;
   const supabase = await crearClienteServidor();

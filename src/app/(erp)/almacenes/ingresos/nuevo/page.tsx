@@ -15,12 +15,13 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Panel } from '@/components/ui/Pagina';
 import { FormularioIngreso, type OpcionProducto } from '../FormularioIngreso';
 import { siguienteCodigoPallet } from '../acciones';
+import { PUEDEN_INGRESAR } from '../tipos';
 import { uno, campo } from '@/lib/relaciones';
 
 export const metadata: Metadata = { title: 'Nuevo ingreso' };
 export const dynamic = 'force-dynamic';
 
-const PUEDEN = ['gerencia', 'operaciones', 'almacen'];
+const PUEDEN: readonly string[] = PUEDEN_INGRESAR;
 
 export default async function PaginaNuevoIngreso() {
   const usuario = await obtenerUsuarioActual();
@@ -35,7 +36,7 @@ export default async function PaginaNuevoIngreso() {
         .select('id, activo, skus(codigo, corte, activo, especies(nombre)), presentaciones(descripcion, peso_bulto_kg)')
         .eq('activo', true)
         .limit(1000),
-      supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+      supabase.from('almacenes').select('id, nombre, recibe_produccion, recibe_compras').eq('activo', true).order('nombre'),
       supabase.from('plantas').select('id, nombre').eq('activo', true).order('nombre'),
       supabase.from('lineas_procesadoras').select('id, nombre').eq('activo', true).order('nombre'),
     ]);
@@ -69,7 +70,10 @@ export default async function PaginaNuevoIngreso() {
       <Panel>
         <FormularioIngreso
           productos={productos}
-          almacenes={(almacenes ?? []).map((a) => ({ id: a.id as number, nombre: a.nombre as string }))}
+          almacenes={(almacenes ?? []).map((a) => ({
+            id: a.id as number, nombre: a.nombre as string,
+            recibe_produccion: Boolean(a.recibe_produccion), recibe_compras: Boolean(a.recibe_compras),
+          }))}
           plantas={(plantas ?? []).map((x) => ({ id: x.id as number, nombre: x.nombre as string }))}
           lineas={(lineas ?? []).map((x) => ({ id: x.id as number, nombre: x.nombre as string }))}
           codigoPropuesto={codigo}

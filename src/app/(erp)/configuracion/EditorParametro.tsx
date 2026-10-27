@@ -16,6 +16,7 @@
  */
 import { useState, useTransition } from 'react';
 import { guardarParametro } from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 export function EditorParametro({
   clave,
@@ -37,11 +38,13 @@ export function EditorParametro({
   function guardar() {
     if (valor.trim() === valorInicial.trim()) return; // nada cambió
     iniciar(async () => {
-      const r = await guardarParametro(clave, valor);
+      //  Un corte de red vuelve como aviso y deja escrito el valor para reintentar.
+      const r = await accionSegura(() => guardarParametro(clave, valor));
       setEstado(r);
       if (r.ok) {
-        setTimeout(() => setEstado(null), 3500);
-      } else {
+        //  Si tocó una regla, el mensaje es más largo: se deja más tiempo.
+        setTimeout(() => setEstado(null), r.mensaje.length > 80 ? 8000 : 3500);
+      } else if (!('sinConexion' in r)) {
         setValor(valorInicial); // se revierte para no dejar un valor falso en pantalla
       }
     });

@@ -26,7 +26,7 @@ async function cookieDe(rol) {
   const cli = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     { auth: { persistSession: false } });
   const { data, error } = await cli.auth.signInWithPassword({
-    email: `${rol}@santamonica.pe`, password: 'SantaMonica2026' });
+    email: `${rol}@santamonica.pe`, password: (process.env.CLAVE_DEMO ?? '') });
   if (error) throw new Error(error.message);
   return `sb-${REF}-auth-token=base64-${Buffer.from(JSON.stringify(data.session)).toString('base64')}`;
 }

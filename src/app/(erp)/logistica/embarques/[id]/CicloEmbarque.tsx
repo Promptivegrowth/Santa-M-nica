@@ -16,6 +16,7 @@
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { accionSegura } from '@/lib/accionSegura';
 import { confirmarEmbarque, cancelarEmbarque } from '../acciones';
 
 export function CicloEmbarque({
@@ -50,7 +51,7 @@ export function CicloEmbarque({
 
   const hacer = (accion: () => Promise<{ ok: boolean; mensaje: string }>) => iniciar(async () => {
     setAviso(null);
-    const r = await accion();
+    const r = await accionSegura(accion);
     setAviso({ ok: r.ok, texto: r.mensaje });
     if (r.ok) { setCancelando(false); setMotivo(''); router.refresh(); }
   });

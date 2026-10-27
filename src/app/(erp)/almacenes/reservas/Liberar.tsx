@@ -16,6 +16,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { liberarReserva, expirarReservasVencidas } from './acciones';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 
 /** Motivos frecuentes, para no obligar a escribir lo mismo cada vez. */
 const SUGERENCIAS = [
@@ -29,12 +30,17 @@ const SUGERENCIAS = [
 export function BotonLiberar({
   reservaId,
   etiqueta,
-  puedeLiberar,
+  bloqueo,
 }: {
   reservaId: number;
   /** Lo que se está soltando, para que la confirmación sea concreta. */
   etiqueta: string;
-  puedeLiberar: boolean;
+  /**
+   * null si esta persona puede liberar ESTA reserva; si no, el porqué
+   * (motivoNoLiberar): una reserva ajena solo la sueltan Gerencia u
+   * Operaciones. El botón se ve apagado y lo dice al pasar el ratón.
+   */
+  bloqueo: string | null;
 }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
@@ -42,10 +48,11 @@ export function BotonLiberar({
   const [error, setError] = useState<string | null>(null);
   const [pendiente, iniciar] = useTransition();
 
-  if (!puedeLiberar) {
+  if (bloqueo) {
     return (
-      <button type="button" className="accion-btn" disabled title="Su rol no puede liberar reservas">
-        <Icono nombre="ingresos" tamano={14} />
+      <button type="button" className="accion-btn" disabled title={bloqueo} aria-label={bloqueo}
+              data-accion="liberar" data-bloqueo="si">
+        <Icono nombre="liberar" tamano={14} />
       </button>
     );
   }
@@ -53,7 +60,8 @@ export function BotonLiberar({
   function confirmar() {
     setError(null);
     iniciar(async () => {
-      const r = await liberarReserva(reservaId, motivo);
+      //  Un corte de red vuelve como mensaje aquí mismo, sin perder el motivo escrito.
+      const r = await accionSegura(() => liberarReserva(reservaId, motivo));
       if (r.ok) {
         setAbierto(false);
         setMotivo('');
@@ -72,8 +80,9 @@ export function BotonLiberar({
         onClick={() => setAbierto(true)}
         title={`Liberar ${etiqueta}`}
         aria-label={`Liberar ${etiqueta}`}
+        data-accion="liberar"
       >
-        <Icono nombre="ingresos" tamano={14} />
+        <Icono nombre="liberar" tamano={14} />
       </button>
     );
   }
@@ -150,13 +159,13 @@ export function BotonExpirar({ vencidas, puede }: { vencidas: number; puede: boo
         className="btn btn-primario"
         disabled={!puede || pendiente || vencidas === 0}
         title={
-          !puede ? 'Solo gerencia u operaciones'
+          !puede ? 'Solo Gerencia u Operaciones liberan de una vez las reservas vencidas'
           : vencidas === 0 ? 'No hay reservas vencidas'
           : `Liberar las ${vencidas} reservas cuyo plazo ya expiró`
         }
         onClick={() =>
           iniciar(async () => {
-            const r = await expirarReservasVencidas();
+            const r = await accionSegura(() => expirarReservasVencidas());
             setAviso({ ok: r.ok, texto: r.mensaje });
             if (r.ok) router.refresh();
           })

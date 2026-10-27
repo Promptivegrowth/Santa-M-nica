@@ -88,6 +88,10 @@ export function enlaceEntidad(entidad: Entidad, id: number | string | null): str
     case 'dictamenes_calidad':
       return `/almacenes/calidad`;
 
+    //  074 · Una importación de ingresos desde Excel que espera validación.
+    case 'importacion':
+      return `/almacenes/ingresos/importar/${id}`;
+
     default:
       return null;
   }
@@ -108,6 +112,7 @@ export function nombreEntidad(entidad: Entidad): string {
     despacho: 'Despacho', despachos: 'Despacho',
     vehiculo: 'Vehículo', vehiculos: 'Vehículo',
     dictamenes_calidad: 'Dictamen de calidad',
+    importacion: 'Importación de Excel',
   };
   return nombres[entidad] ?? entidad;
 }

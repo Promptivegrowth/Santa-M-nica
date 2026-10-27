@@ -29,7 +29,7 @@ import { Historial } from '@/components/ui/Historial';
 import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
-import { veCostos, type Rol } from '@/lib/navegacion';
+import { veCostos, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
 import { FormularioDictamen } from '@/components/almacenes/Dictamen';
 import { motivosCalidad } from '@/app/(erp)/almacenes/calidad/acciones';
@@ -100,10 +100,13 @@ export default async function FichaLote(props: PageProps<'/almacenes/lotes/[id]'
           <Icono nombre="trazabilidad" tamano={15} />
           Trazabilidad completa
         </Link>
-        <Link href={`/trazabilidad/retiro?lote=${loteId}`} className="btn btn-peligro-borde">
-          <Icono nombre="retiro" tamano={15} />
-          Simular retiro
-        </Link>
+        {/* Solo para quien tiene la pantalla de Retiro sanitario (076): Consulta y Almacén, no. */}
+        {rolPuedeVerRuta((usuarioActual?.rol ?? 'consulta') as Rol, '/trazabilidad/retiro') && (
+          <Link href={`/trazabilidad/retiro?lote=${loteId}`} className="btn btn-peligro-borde">
+            <Icono nombre="retiro" tamano={15} />
+            Simular retiro
+          </Link>
+        )}
         {puedeAjustar && (
           <Link href={`/almacenes/ajustes/nuevo?lote=${loteId}`} className="btn btn-secundario" data-accion="ajustar-stock">
             <Icono nombre="ajustes" tamano={15} />
@@ -161,6 +164,8 @@ async function CuerpoLote({
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
+  /* Enlaces a pantallas que el rol no tiene: no se muestran (076). */
+  const ve = (ruta: string) => rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, ruta);
 
   // Se vuelven a desanidar aquí porque la ficha de identidad los necesita.
   const sp = uno<Record<string, unknown>>(lote.sku_presentaciones);
@@ -335,7 +340,7 @@ async function CuerpoLote({
             <div><dt>Campaña</dt><dd>{lote.campania as number}</dd></div>
             <div><dt>Producido el</dt><dd>{fecha(lote.fecha_produccion as string)} · juliano {lote.juliano as string}</dd></div>
             <div><dt>Planta</dt><dd>{campo(lote.plantas, 'nombre')}</dd></div>
-            <div><dt>Turno / proceso</dt><dd>{String(lote.turno)} · {String(lote.proceso)}</dd></div>
+            <div><dt>Turno / proceso</dt><dd>{etiquetaEstado(String(lote.turno))} · {etiquetaEstado(String(lote.proceso))}</dd></div>
             <div><dt>SKU</dt><dd className="mono">{campo(sku, 'codigo')}</dd></div>
             <div><dt>Presentación</dt><dd>{campo(sp?.presentaciones, 'descripcion')}</dd></div>
             <div><dt>Producción inicial</dt><dd>{num(Number(lote.bultos_iniciales))} bultos · {tm(Number(lote.peso_neto_inicial_kg))}</dd></div>
@@ -521,11 +526,12 @@ async function CuerpoLote({
                 {((traza ?? []) as Record<string, unknown>[]).map((t, i) => {
                   // Cada hecho de la traza sabe a qué registro pertenece: se
                   // convierte en un enlace para poder seguir tirando del hilo.
-                  const destino =
+                  const posible =
                     t.referencia_tipo === 'traslado' ? `/almacenes/traslados/${t.referencia_id}`
                     : t.referencia_tipo === 'pedido' ? `/ventas/pedidos/${t.referencia_id}`
                     : t.referencia_tipo === 'packing_list' ? `/logistica/packing/${t.referencia_id}`
                     : null;
+                  const destino = posible && ve(posible) ? posible : null;
                   return (
                     <tr key={i}>
                       <td className="num" style={{ fontSize: '.74rem' }}>{fechaHora(t.fecha as string)}</td>

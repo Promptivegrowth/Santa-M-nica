@@ -35,7 +35,7 @@ async function cookieDeSesion(rol) {
   const cli = createClient(URL, ANON, { auth: { persistSession: false } });
   const { data, error } = await cli.auth.signInWithPassword({
     email: `${rol}@santamonica.pe`,
-    password: 'SantaMonica2026',
+    password: (process.env.CLAVE_DEMO ?? ''),
   });
   if (error) throw new Error(`No se pudo iniciar sesión como ${rol}: ${error.message}`);
 

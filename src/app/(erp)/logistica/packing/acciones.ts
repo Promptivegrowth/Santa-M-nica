@@ -31,12 +31,13 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { PUEDEN_PACKING, mensajeNoPuede, mensajeDeBase } from '@/lib/permisosLogistica';
 
 export type Resultado =
   | { ok: true; mensaje: string }
   | { ok: false; mensaje: string; detalles?: string[] };
 
-const PUEDEN_EDITAR = ['gerencia', 'operaciones', 'almacen', 'comex'];
+const PUEDEN_EDITAR: string[] = PUEDEN_PACKING;
 
 function refrescar(packingId: number) {
   revalidatePath('/logistica/packing');
@@ -49,7 +50,7 @@ async function autorizar() {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { error: 'Su sesión caducó. Vuelva a entrar.' };
   if (!PUEDEN_EDITAR.includes(usuario.rol)) {
-    return { error: `Su rol (${usuario.rol}) no puede modificar packing lists.` };
+    return { error: mensajeNoPuede(usuario.rol, 'modificar packing lists', PUEDEN_EDITAR) };
   }
   return { usuario };
 }
@@ -178,7 +179,7 @@ export async function guardarPlano(packingId: number, celdas: CeldaPlano[]): Pro
      celda: el plano de un contenedor son unas decenas de filas, no miles. */
   const { error: errorBorrar } = await supabase
     .from('plano_estiba').delete().eq('packing_list_id', packingId);
-  if (errorBorrar) return { ok: false, mensaje: `No se pudo limpiar el plano: ${errorBorrar.message}` };
+  if (errorBorrar) return { ok: false, mensaje: mensajeDeBase(errorBorrar, 'No se pudo limpiar el plano') };
 
   if (utiles.length > 0) {
     const { error } = await supabase.from('plano_estiba').insert(
@@ -189,7 +190,7 @@ export async function guardarPlano(packingId: number, celdas: CeldaPlano[]): Pro
         sacos: c.sacos,
       }))
     );
-    if (error) return { ok: false, mensaje: `No se pudo guardar el plano: ${error.message}` };
+    if (error) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo guardar el plano') };
   }
 
   const filasUsadas = porFila.size;
@@ -221,7 +222,7 @@ export async function regenerarPlano(packingId: number): Promise<Resultado> {
   const supabase = await crearClienteServidor();
   const { data, error } = await supabase.rpc('generar_plano_estiba', { p_packing_list_id: packingId });
 
-  if (error) return { ok: false, mensaje: `No se pudo regenerar: ${error.message}` };
+  if (error) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo regenerar') };
 
   refrescar(packingId);
   return {
@@ -448,6 +449,19 @@ export async function agregarLoteAlPacking(
     .from('lotes').select('codigo_pallet').eq('id', loteId).maybeSingle();
 
   /*
+   * Un pallet bloqueado por Calidad no sube al contenedor (075): no podría
+   * salir. Lo apartado para el pedido se ofrece aunque esté bloqueado —la
+   * reserva sigue siendo del cliente—, así que el control va aquí.
+   */
+  const { data: bloqueo } = await supabase.rpc('lote_bloqueo_texto', { p_lote_id: loteId });
+  if (bloqueo) {
+    return {
+      ok: false,
+      mensaje: `El pallet ${lote?.codigo_pallet ?? loteId} está bloqueado por Calidad (${bloqueo}): no se carga hasta que Calidad lo libere.`,
+    };
+  }
+
+  /*
    * ¿Para qué proforma va este pallet? Si está apartado para un pedido de
    * este embarque, se guarda esa línea: es lo que después dice el despacho
    * (y el reporte de carga) pallet por pallet. Si es stock libre, va sin línea.
@@ -477,7 +491,7 @@ export async function agregarLoteAlPacking(
     if (error.code === '23505') {
       return { ok: false, mensaje: `El pallet ${lote?.codigo_pallet} ya está en este packing.` };
     }
-    return { ok: false, mensaje: `No se pudo agregar: ${error.message}` };
+    return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo agregar') };
   }
 
   refrescar(packingId);
@@ -504,7 +518,7 @@ export async function quitarLoteDelPacking(packingId: number, loteId: number): P
   const { error } = await supabase
     .from('packing_lineas').delete().eq('packing_list_id', packingId).eq('lote_id', loteId);
 
-  if (error) return { ok: false, mensaje: `No se pudo quitar: ${error.message}` };
+  if (error) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo quitar') };
 
   refrescar(packingId);
   return { ok: true, mensaje: 'Pallet quitado del packing y del plano.' };
@@ -581,7 +595,7 @@ export async function guardarDatosPacking(packingId: number, d: DatosPacking): P
     })
     .eq('id', packingId);
 
-  if (error) return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+  if (error) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo guardar') };
 
   refrescar(packingId);
   return { ok: true, mensaje: 'Datos del embarque guardados.' };

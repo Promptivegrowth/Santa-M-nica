@@ -11,6 +11,8 @@ import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel } from '@/components/ui/Pagina';
+import { PUEDEN_GESTIONAR_CREDITO } from '@/lib/permisosFinanzas';
+import type { Rol } from '@/lib/navegacion';
 import { FormularioCliente, type ClienteExistente } from '../../FormularioCliente';
 
 export const metadata: Metadata = { title: 'Editar cliente' };
@@ -67,6 +69,7 @@ export default async function PaginaEditarCliente(
       />
       <Panel>
         <FormularioCliente cliente={datos} paises={paises}
+          gestionaCredito={PUEDEN_GESTIONAR_CREDITO.includes((usuario?.rol ?? 'consulta') as Rol)}
           vendedores={(vendedores ?? []).map((v) => ({ id: v.id as number, nombre: v.nombre as string }))} />
       </Panel>
     </>

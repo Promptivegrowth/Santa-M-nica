@@ -28,7 +28,7 @@ import { chromium } from 'playwright';
 import { ejecutarSQL } from './db.mjs';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
-const CLAVE = process.env.CLAVE_DEMO ?? 'SantaMonica2026';
+const CLAVE = process.env.CLAVE_DEMO ?? '';
 const consultar = async (sql) => { const r = await ejecutarSQL(sql); return Array.isArray(r) ? r : []; };
 const intentar = async (sql) => { try { await ejecutarSQL(sql); return null; } catch (e) { return String(e.message); } };
 const SEC = (n, t) => `\n${'─'.repeat(3)} ${n} · ${t} ${'─'.repeat(3)}`;

@@ -20,6 +20,8 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
+import './despachar.css';
 import {
   lotesCargables, agregarLoteAlPacking, quitarLoteDelPacking,
   type LoteCargable,
@@ -28,14 +30,44 @@ import {
 const cifra = (n: number, d = 0) =>
   n.toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d });
 
+/** Cómo se lee el motivo de una diferencia al despachar (075). */
+const MOTIVO_TEXTO: Record<string, string> = {
+  muestreo: 'Muestreo',
+  merma: 'Sacos dañados / merma',
+  no_entro: 'No entró en el contenedor',
+  otro: 'Otro',
+};
+
+export type PalletCargado = {
+  lote_id: number;
+  pallet: string;
+  producto: string;
+  /** Lo que hay en el contenedor; ya despachado, lo que SALIÓ. */
+  bultos: number;
+  peso: number;
+  /** Lo que se cargó: distinto de lo de arriba solo si al despachar salió otra cosa. */
+  bultos_cargados: number;
+  peso_cargado: number;
+  motivo: string | null;
+  detalle: string | null;
+  /** Si Calidad lo bloqueó después de cargarlo, por qué. */
+  bloqueo: string | null;
+};
+
+/** Un fallo de red no rompe la pantalla: vuelve como un resultado más (accionSegura). */
+const conRed = <T,>(f: () => Promise<T>) => accionSegura(f);
+
 export function CargarLotes({
   packingId,
   cargados,
   puede,
+  despachado = false,
 }: {
   packingId: number;
-  cargados: { lote_id: number; pallet: string; producto: string; bultos: number; peso: number }[];
+  cargados: PalletCargado[];
   puede: boolean;
+  /** Ya salió: se enseña lo cargado contra lo que salió. */
+  despachado?: boolean;
 }) {
   const router = useRouter();
   const [cargando, iniciarCarga] = useTransition();
@@ -49,7 +81,9 @@ export function CargarLotes({
   function abrir() {
     setAviso(null);
     iniciarCarga(async () => {
-      setCandidatos(await lotesCargables(packingId));
+      const r = await conRed(() => lotesCargables(packingId));
+      if (!Array.isArray(r)) { setAviso({ tipo: 'mal', texto: r.mensaje }); return; }
+      setCandidatos(r);
       setElegido(null);
     });
   }
@@ -64,14 +98,15 @@ export function CargarLotes({
     if (!elegido) return;
     setAviso(null);
     iniciarGuardado(async () => {
-      const r = await agregarLoteAlPacking(
+      const r = await conRed(() => agregarLoteAlPacking(
         packingId, elegido.lote_id, bultos, bultos * elegido.kg_por_bulto
-      );
+      ));
       setAviso({ tipo: r.ok ? 'ok' : 'mal', texto: r.mensaje });
       if (r.ok) {
         setElegido(null);
         router.refresh();
-        setCandidatos(await lotesCargables(packingId));
+        const lista = await conRed(() => lotesCargables(packingId));
+        if (Array.isArray(lista)) setCandidatos(lista);
       }
     });
   }
@@ -79,9 +114,15 @@ export function CargarLotes({
   function quitar(loteId: number) {
     setAviso(null);
     iniciarGuardado(async () => {
-      const r = await quitarLoteDelPacking(packingId, loteId);
+      const r = await conRed(() => quitarLoteDelPacking(packingId, loteId));
       setAviso({ tipo: r.ok ? 'ok' : 'mal', texto: r.mensaje });
-      if (r.ok) { router.refresh(); if (candidatos) setCandidatos(await lotesCargables(packingId)); }
+      if (r.ok) {
+        router.refresh();
+        if (candidatos) {
+          const lista = await conRed(() => lotesCargables(packingId));
+          if (Array.isArray(lista)) setCandidatos(lista);
+        }
+      }
     });
   }
 
@@ -101,11 +142,12 @@ export function CargarLotes({
       let bien = 0;
       const fallos: string[] = [];
       for (const l of apartados) {
-        const r = await agregarLoteAlPacking(
+        const r = await conRed(() => agregarLoteAlPacking(
           packingId, l.lote_id, l.bultos_disponibles, l.kg_disponibles
-        );
+        ));
         if (r.ok) bien += 1;
         else fallos.push(`${l.codigo_pallet}: ${r.mensaje}`);
+        if ('sinConexion' in r) break;
       }
       setAviso({
         tipo: bien > 0 ? 'ok' : 'mal',
@@ -115,13 +157,16 @@ export function CargarLotes({
           : `No se pudo cargar ninguno. ${fallos.join(' · ')}`,
       });
       router.refresh();
-      setCandidatos(await lotesCargables(packingId));
+      const lista = await conRed(() => lotesCargables(packingId));
+      if (Array.isArray(lista)) setCandidatos(lista);
       setElegido(null);
     });
   }
 
   const totalBultos = cargados.reduce((s, l) => s + l.bultos, 0);
   const totalKg = cargados.reduce((s, l) => s + l.peso, 0);
+  /* Ya despachado y con alguna diferencia: se enseña cargado contra salido (075). */
+  const conDiferencias = despachado && cargados.some((l) => l.motivo);
 
   return (
     <div className="cargar">
@@ -129,6 +174,7 @@ export function CargarLotes({
         <span className="cargar-cifras">
           <b>{cargados.length}</b> pallet{cargados.length === 1 ? '' : 's'} ·{' '}
           <b>{cifra(totalBultos)}</b> bultos · <b>{cifra(totalKg / 1000, 2)}</b> TM
+          {despachado ? (conDiferencias ? ' despachados' : ' · salió todo lo cargado') : ''}
         </span>
         {puede && (
           <button type="button" className="btn btn-secundario btn-chico"
@@ -155,21 +201,55 @@ export function CargarLotes({
         </p>
       ) : (
         <div className="tabla-envoltorio">
-          <table className="datos">
+          <table className="datos" data-cuadro="pallets-cargados">
             <thead>
               <tr>
                 <th>Pallet</th><th>Producto</th>
-                <th className="num">Bultos</th><th className="num">Peso</th>
+                {conDiferencias ? (
+                  <>
+                    <th className="num">Cargado</th><th className="num">Despachado</th><th>Diferencia y motivo</th>
+                  </>
+                ) : (
+                  <><th className="num">Bultos</th><th className="num">Peso</th></>
+                )}
                 {puede && <th></th>}
               </tr>
             </thead>
             <tbody>
               {cargados.map((l) => (
-                <tr key={l.lote_id}>
-                  <td className="mono">{l.pallet}</td>
-                  <td style={{ fontSize: '.78rem' }}>{l.producto}</td>
-                  <td className="num mono">{cifra(l.bultos)}</td>
-                  <td className="num mono">{cifra(l.peso, 1)} kg</td>
+                <tr key={l.lote_id} data-lote={l.lote_id} data-bloqueado={l.bloqueo ? 'si' : 'no'}
+                    data-diferencia={l.motivo ? 'si' : 'no'}>
+                  <td className="mono">
+                    {l.pallet}
+                    {l.bloqueo && (
+                      <span className="marca-bloqueo" title={`Bloqueado por Calidad: ${l.bloqueo}. No puede salir.`}>
+                        Bloqueado por Calidad
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ fontSize: '.78rem' }}>
+                    {l.producto}
+                    {l.bloqueo && <span className="marca-diferencia" style={{ color: 'var(--critico)' }}>{l.bloqueo}: no puede salir.</span>}
+                  </td>
+                  {conDiferencias ? (
+                    <>
+                      <td className="num mono">{cifra(l.bultos_cargados)} b · {cifra(l.peso_cargado, 1)} kg</td>
+                      <td className="num mono">{cifra(l.bultos)} b · {cifra(l.peso, 1)} kg</td>
+                      <td style={{ fontSize: '.76rem' }}>
+                        {l.motivo ? (
+                          <>
+                            <b>−{cifra(l.bultos_cargados - l.bultos)} b · −{cifra(l.peso_cargado - l.peso, 1)} kg</b>{' '}
+                            {MOTIVO_TEXTO[l.motivo] ?? l.motivo}{l.detalle ? `: ${l.detalle}` : ''}
+                          </>
+                        ) : 'Salió todo'}
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="num mono">{cifra(l.bultos)}</td>
+                      <td className="num mono">{cifra(l.peso, 1)} kg</td>
+                    </>
+                  )}
                   {puede && (
                     <td>
                       <button type="button" className="btn btn-sutil btn-chico"

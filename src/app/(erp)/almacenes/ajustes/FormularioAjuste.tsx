@@ -25,6 +25,7 @@ import {
   registrarAjuste, posicionesDePallet,
   type TipoAjuste, type PosicionPallet,
 } from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 export type MotivoAjuste = {
   id: number;
@@ -90,7 +91,25 @@ export function FormularioAjuste({
     posicionesIniciales.length === 1 ? posicionesIniciales[0] : null
   );
 
-  const tiposPermitidos = TIPOS.filter((t) => t.roles.includes(rol));
+  /*
+   * Un tipo que el rol puede registrar, pero cuyos motivos piden TODOS
+   * autorización, en la práctica no lo puede registrar: el desplegable de
+   * motivos saldría entero apagado. Pasa hoy con la merma para Almacén (los
+   * cuatro motivos de merma piden autorización). La regla no se cambia aquí;
+   * lo que cambia es que la pantalla lo dice ANTES de llenar el formulario,
+   * con la opción apagada y su porqué, en vez de dejar elegirla y fallar al
+   * final.
+   */
+  const puedeAutorizarRol = AUTORIZAN.includes(rol);
+  const sinMotivoLibre = (t: TipoAjuste) =>
+    !motivos.some((m) => m.tipos.includes(t) && (!m.requiere_autorizacion || puedeAutorizarRol));
+  const disponible = (t: (typeof TIPOS)[number]) => t.roles.includes(rol) && !sinMotivoLibre(t.valor);
+  const porQueNoDisponible = (t: (typeof TIPOS)[number]) =>
+    !t.roles.includes(rol)
+      ? t.porQueNo
+      : `Hoy todos los motivos de ${t.titulo.toLowerCase()} requieren autorización: la registran Gerencia u Operaciones. Avíseles qué pasó y con qué pallet.`;
+  const tiposPermitidos = TIPOS.filter(disponible);
+  const bloqueadosPorMotivo = TIPOS.filter((t) => t.roles.includes(rol) && sinMotivoLibre(t.valor));
   const [tipo, setTipo] = useState<TipoAjuste>(tiposPermitidos[0]?.valor ?? 'salida_muestra');
   const [bultos, setBultos] = useState(0);
   const [peso, setPeso] = useState(0);
@@ -101,7 +120,7 @@ export function FormularioAjuste({
   const [hecho, setHecho] = useState<{ texto: string; loteId: number } | null>(null);
 
   const meta = TIPOS.find((t) => t.valor === tipo)!;
-  const puedeAutorizar = AUTORIZAN.includes(rol);
+  const puedeAutorizar = puedeAutorizarRol;
   const motivosDelTipo = motivos.filter((m) => m.tipos.includes(tipo));
 
   /* ---- Cómo queda el pallet ---- */
@@ -119,7 +138,8 @@ export function FormularioAjuste({
   function buscar() {
     setAviso(null);
     iniciarBusqueda(async () => {
-      const lista = await posicionesDePallet({ texto });
+      const lista = await accionSegura(() => posicionesDePallet({ texto }));
+      if (!Array.isArray(lista)) { setAviso({ tipo: 'mal', texto: lista.mensaje }); return; }
       setResultados(lista);
       if (lista.length === 1) setPos(lista[0]);
     });
@@ -137,7 +157,7 @@ export function FormularioAjuste({
     if (!pos) return;
     setAviso(null);
     iniciar(async () => {
-      const r = await registrarAjuste({
+      const r = await accionSegura(() => registrarAjuste({
         lote_id: pos.lote_id,
         almacen_id: pos.almacen_id,
         tipo,
@@ -146,16 +166,16 @@ export function FormularioAjuste({
         motivo_id: motivoId,
         detalle,
         tocar_reservas: tocarReservas,
-      });
+      }));
       if (!r.ok) {
-        setAviso({ tipo: r.confirmar ? 'confirmar' : 'mal', texto: r.mensaje });
+        setAviso({ tipo: 'confirmar' in r && r.confirmar ? 'confirmar' : 'mal', texto: r.mensaje });
         return;
       }
       setHecho({ texto: r.mensaje, loteId: r.lote_id });
       setBultos(0); setPeso(0); setDetalle(''); setMotivoId(0); setTocarReservas(false);
       /* Las cifras del pallet cambiaron: se vuelven a leer. */
-      const nuevas = await posicionesDePallet({ loteId: pos.lote_id });
-      setPos(nuevas.find((x) => x.almacen_id === pos.almacen_id) ?? null);
+      const nuevas = await accionSegura(() => posicionesDePallet({ loteId: pos.lote_id }));
+      if (Array.isArray(nuevas)) setPos(nuevas.find((x) => x.almacen_id === pos.almacen_id) ?? null);
       router.refresh();
     });
   }
@@ -163,7 +183,7 @@ export function FormularioAjuste({
   const listoParaGuardar =
     !!pos && peso > 0 && bultos >= 0 && motivoId > 0 && detalle.trim().length >= 10 &&
     !quedaNegativo && !kilosSinBultos && !bultosSinKilos && !restaSinStock &&
-    (!tocaReservas || (puedeAutorizar && tocarReservas)) && meta.roles.includes(rol);
+    (!tocaReservas || (puedeAutorizar && tocarReservas)) && disponible(meta);
 
   /* Por qué el botón está apagado, dicho al lado del botón. */
   const faltan = [
@@ -182,6 +202,19 @@ export function FormularioAjuste({
           <span>
             {hecho.texto}{' '}
             <Link href={`/almacenes/lotes/${hecho.loteId}`} className="enlace-ficha">Ver el pallet</Link>
+          </span>
+        </div>
+      )}
+
+      {bloqueadosPorMotivo.length > 0 && (
+        <div className="ficha-aviso ficha-aviso-atencion" data-aviso="autorizacion">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>
+              {bloqueadosPorMotivo.map((t) => t.titulo).join(' y ')}: toda{bloqueadosPorMotivo.length > 1 ? 's' : ''} necesita{bloqueadosPorMotivo.length > 1 ? 'n' : ''} autorización de Gerencia u Operaciones.
+            </strong>{' '}
+            Con su rol no se puede registrar desde aquí, y el sistema no guarda solicitudes: avise a Operaciones
+            qué pasó (pallet, kilos y motivo) para que lo registre. Las muestras sí las puede registrar usted.
           </span>
         </div>
       )}
@@ -264,18 +297,18 @@ export function FormularioAjuste({
         <legend>Qué pasó <b className="req">*</b></legend>
         <div className="origen-opciones" role="radiogroup" aria-label="Tipo de movimiento">
           {TIPOS.map((t) => {
-            const permitido = t.roles.includes(rol);
+            const permitido = disponible(t);
             return (
               <label key={t.valor} className="origen-opcion"
                      data-elegida={tipo === t.valor ? 'si' : 'no'}
                      data-apagada={permitido ? 'no' : 'si'}
-                     title={permitido ? undefined : t.porQueNo}>
+                     title={permitido ? undefined : porQueNoDisponible(t)}>
                 <input type="radio" name="tipo_ajuste" value={t.valor}
                        checked={tipo === t.valor} disabled={!permitido}
                        onChange={() => elegirTipo(t.valor)} />
                 <span>
                   <strong>{t.titulo} ({t.signo === 1 ? '+' : '−'})</strong>
-                  <small>{permitido ? t.ayuda : t.porQueNo}</small>
+                  <small>{permitido ? t.ayuda : porQueNoDisponible(t)}</small>
                 </span>
               </label>
             );

@@ -15,12 +15,16 @@
  *    está, el botón se apaga y dice cuál hay que bajar primero.
  *
  *  Todo se vuelve a comprobar en el servidor (y en la base, para quitar).
+ *
+ *  Un corte de red no rompe la pantalla (accionSegura): vuelve como un aviso
+ *  en el mismo cuadro y lo marcado sigue marcado.
  * ============================================================================
  */
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 import {
   agregarPedidosAEmbarque, lineasParaEmbarcar, pedidosParaAgregar, quitarPedidoDeEmbarque,
   type LineaEmbarcable, type PedidoEmbarcable,
@@ -38,15 +42,19 @@ export function AgregarPedidos({
   almacenId,
   bodega,
   noPuede,
-  puedeTrasladar,
+  noPuedeTrasladar,
 }: {
   embarqueId: number;
   almacenId: number;
   bodega: string;
   /** Si no se pueden agregar pedidos, por qué (despachado, cancelado). */
   noPuede: string | null;
-  /** Armar traslados lo hacen Gerencia, Operaciones y Almacén. */
-  puedeTrasladar: boolean;
+  /**
+   * Armar traslados lo hacen Gerencia, Operaciones y Almacén. A los demás el
+   * botón se les apaga y dice por qué (antes lo veían y el servidor les
+   * respondía con un error al pulsarlo).
+   */
+  noPuedeTrasladar: string | null;
 }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
@@ -64,7 +72,7 @@ export function AgregarPedidos({
   useEffect(() => {
     let vigente = true;
     const ids = idsElegidos ? idsElegidos.split(',').map(Number) : [];
-    lineasParaEmbarcar(ids).then((ls) => { if (vigente) setLineas(ls); });
+    accionSegura(() => lineasParaEmbarcar(ids)).then((ls) => { if (vigente && Array.isArray(ls)) setLineas(ls); });
     return () => { vigente = false; };
   }, [idsElegidos]);
 
@@ -83,7 +91,12 @@ export function AgregarPedidos({
     setAbierto(true);
     setAviso(null);
     setConsolidado(null);
-    if (candidatos === null) pedidosParaAgregar(embarqueId).then(setCandidatos);
+    if (candidatos === null) {
+      accionSegura(() => pedidosParaAgregar(embarqueId)).then((r) => {
+        if (Array.isArray(r)) setCandidatos(r);
+        else { setCandidatos([]); setAviso({ ok: false, texto: r.mensaje }); }
+      });
+    }
   }
 
   function alternar(id: number) {
@@ -99,13 +112,13 @@ export function AgregarPedidos({
   function agregar() {
     setAviso(null);
     iniciar(async () => {
-      const r = await agregarPedidosAEmbarque(
+      const r = await accionSegura(() => agregarPedidosAEmbarque(
         embarqueId,
         elegidos,
         visibles
           .map((l) => ({ pedido_linea_id: l.pedido_linea_id, sku_presentacion_id: l.sku_presentacion_id, cantidad_kg: Math.round(tmDe(l) * 1000 * 1000) / 1000 }))
           .filter((l) => l.cantidad_kg > 0)
-      );
+      ));
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (r.ok) {
         setAbierto(false); setElegidos([]); setCandidatos(null); setTocadas(new Set()); setCantidades({});
@@ -117,7 +130,7 @@ export function AgregarPedidos({
   function consolidar() {
     setConsolidado(null);
     iniciarConsolidacion(async () => {
-      const r = await consolidarEnBodega(elegidos, almacenId);
+      const r = await accionSegura(() => consolidarEnBodega(elegidos, almacenId));
       setConsolidado({ ok: r.ok, texto: r.mensaje, enlaces: r.ok ? r.traslados.map((t) => ({ id: t.id, numero: t.numero })) : undefined });
     });
   }
@@ -245,12 +258,14 @@ export function AgregarPedidos({
             <b>Quedan {cifra(kgFuera / 1000, 2)} TM apartadas en otra bodega.</b> El contenedor se carga en {bodega}:
             esos kilos no suben salvo que antes se trasladen.
           </p>
-          {puedeTrasladar && (
-            <button type="button" className="btn btn-secundario btn-chico" onClick={consolidar} disabled={consolidando}
-                    data-accion="consolidar-agregar">
-              <Icono nombre="traslados" tamano={14} />
-              {consolidando ? 'Armando…' : `Armar el traslado de ${cifra(kgFuera / 1000, 2)} TM`}
-            </button>
+          <button type="button" className="btn btn-secundario btn-chico" onClick={consolidar}
+                  disabled={consolidando || !!noPuedeTrasladar} title={noPuedeTrasladar ?? undefined}
+                  data-accion="consolidar-agregar">
+            <Icono nombre="traslados" tamano={14} />
+            {consolidando ? 'Armando…' : `Armar el traslado de ${cifra(kgFuera / 1000, 2)} TM`}
+          </button>
+          {noPuedeTrasladar && (
+            <p className="form-pista" data-motivo="consolidar" style={{ margin: '.35rem 0 0' }}>{noPuedeTrasladar}</p>
           )}
           {consolidado && (
             <div className={`ficha-aviso ${consolidado.ok ? 'ficha-aviso-info' : 'ficha-aviso-critico'}`} role={consolidado.ok ? 'status' : 'alert'}>
@@ -311,7 +326,7 @@ export function QuitarPedido({
     <span style={{ display: 'inline-flex', gap: '.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
       <button type="button" className="btn btn-peligro btn-chico" disabled={pendiente} data-accion="confirmar-quitar-pedido"
               onClick={() => iniciar(async () => {
-                const r = await quitarPedidoDeEmbarque(embarqueId, pedidoId);
+                const r = await accionSegura(() => quitarPedidoDeEmbarque(embarqueId, pedidoId));
                 if (!r.ok) { setError(r.mensaje); return; }
                 setSeguro(false);
                 router.refresh();

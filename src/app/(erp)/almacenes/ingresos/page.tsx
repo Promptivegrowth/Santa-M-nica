@@ -8,12 +8,13 @@
  */
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Etiqueta } from '@/components/ui/Pagina';
 import { Listado } from '@/components/ui/Listado';
 import { Icono } from '@/components/estructura/Icono';
 import { tm, num, fechaHora } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
+import { PUEDEN_INGRESAR, PUEDEN_VALIDAR_IMPORTACION } from './tipos';
 
 export const metadata: Metadata = { title: 'Ingresos' };
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,22 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
   const q = await props.searchParams;
   const usuario = await obtenerUsuarioActual();
   const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
-  const puedeRegistrar = ['gerencia', 'operaciones', 'almacen'].includes(usuario?.rol ?? '');
+  const puedeRegistrar = (PUEDEN_INGRESAR as readonly string[]).includes(usuario?.rol ?? '');
+
+  /* Lo que espera a alguien (074): ingresos programados por confirmar e
+     importaciones listas para validar. Se cuentan para decirlo en los botones. */
+  let programados = 0;
+  let porValidar = 0;
+  if (puedeRegistrar) {
+    const supabase = await crearClienteServidor();
+    const [a, b] = await Promise.all([
+      supabase.from('ingresos_programados').select('id', { count: 'exact', head: true }).eq('estado', 'programado'),
+      supabase.from('importaciones_excel').select('id', { count: 'exact', head: true }).eq('tipo', 'ingresos').eq('estado', 'lista'),
+    ]);
+    programados = a.count ?? 0;
+    porValidar = b.count ?? 0;
+  }
+  const valida = (PUEDEN_VALIDAR_IMPORTACION as readonly string[]).includes(usuario?.rol ?? '');
 
   return (
     <>
@@ -30,6 +46,19 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
         titulo="Ingresos a cámara"
         descripcion="Cada ingreso da de alta un lote y abre su Kardex. Es el punto de partida de toda la trazabilidad."
       >
+        {puedeRegistrar && (
+          <Link href="/almacenes/ingresos/programados" className="btn btn-secundario" data-accion="ingresos-programados">
+            <Icono nombre="reloj" tamano={15} />
+            Ingresos programados{programados ? ` · ${programados}` : ''}
+          </Link>
+        )}
+        {puedeRegistrar && (
+          <Link href="/almacenes/ingresos/importar" className="btn btn-secundario" data-accion="importar-ingresos"
+                title={valida && porValidar ? `${porValidar} importación(es) esperan su validación` : 'Cargar muchos pallets de una vez desde una plantilla de Excel'}>
+            <Icono nombre="descargar" tamano={15} />
+            Importar desde Excel{valida && porValidar ? ` · ${porValidar} por validar` : ''}
+          </Link>
+        )}
         {puedeRegistrar && (
           <Link href="/almacenes/ingresos/nuevo" className="btn btn-primario">
             <Icono nombre="mas" tamano={15} />

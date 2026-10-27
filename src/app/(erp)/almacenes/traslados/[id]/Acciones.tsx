@@ -27,6 +27,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 import {
   autorizarTraslado, despacharTraslado, aceptarTraslado, anularTraslado,
 } from '../acciones';
@@ -78,7 +79,8 @@ export function AccionesTraslado({
   function correr(accion: () => Promise<{ ok: boolean; mensaje: string }>) {
     setAviso(null);
     iniciar(async () => {
-      const r = await accion();
+      //  Un corte de red vuelve como mensaje, sin tumbar la ficha ni perder lo anotado.
+      const r = await accionSegura(accion);
       setAviso({ tipo: r.ok ? 'ok' : 'mal', texto: r.mensaje });
       if (r.ok) { setPanel(null); router.refresh(); }
     });

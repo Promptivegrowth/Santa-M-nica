@@ -45,7 +45,7 @@ const p = await ctx.newPage();
 const entrar = async (pagina, email) => {
   await pagina.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await pagina.fill('input[type="email"]', email);
-  await pagina.fill('input[type="password"]', 'SantaMonica2026');
+  await pagina.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
   await pagina.click('button[type="submit"]');
   await pagina.waitForURL(/\/panel/, { timeout: 30000 });
 };

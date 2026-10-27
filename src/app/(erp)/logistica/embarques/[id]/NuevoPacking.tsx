@@ -15,6 +15,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 import { crearPacking } from '../acciones';
 
 export function NuevoPacking({
@@ -41,7 +42,7 @@ export function NuevoPacking({
   function crear() {
     setAviso(null);
     iniciar(async () => {
-      const r = await crearPacking({
+      const r = await accionSegura(() => crearPacking({
         embarque_id: embarqueId,
         contenedor: contenedor || null,
         precinto: precinto || null,
@@ -50,7 +51,7 @@ export function NuevoPacking({
         supervisor_id: supervisor || null,
         turno,
         fecha_carga: null,
-      });
+      }));
       if (!r.ok) { setAviso({ tipo: 'mal', texto: r.mensaje }); return; }
       router.push(`/logistica/packing/${r.id}`);
       router.refresh();

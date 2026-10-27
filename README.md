@@ -51,8 +51,11 @@ npm run dev                # levantar en http://localhost:3000
 
 ## Usuarios de prueba
 
-Todos con la contraseña **`SantaMonica2026`**. En la pantalla de acceso hay un
-panel de **acceso rápido**: un clic entra con cada perfil.
+Todos comparten una contraseña que **no se escribe en el repositorio**: vive en
+`.env.local` como `CLAVE_DEMO`, y las pruebas automáticas la leen de ahí (las que
+no importan `scripts/db.mjs` se corren con `node --env-file=.env.local …`). El
+panel de acceso rápido de la pantalla de entrada se retiró al dar de alta las
+cuentas reales de Santa Mónica.
 
 | Rol | Correo | Qué puede hacer |
 |---|---|---|

@@ -65,7 +65,7 @@ async function entrar(correo) {
   const p = await ctx.newPage();
   await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await p.fill('input[type="email"]', correo);
-  await p.fill('input[type="password"]', 'SantaMonica2026');
+  await p.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
   await p.click('button[type="submit"]');
   await p.waitForURL(/\/panel/, { timeout: 25000 });
   return p;
@@ -227,7 +227,7 @@ try {
     const como = async (correo) => {
       const cli = createClient(url, anonKey, { auth: { persistSession: false } });
       if (correo) {
-        const { error } = await cli.auth.signInWithPassword({ email: correo, password: 'SantaMonica2026' });
+        const { error } = await cli.auth.signInWithPassword({ email: correo, password: (process.env.CLAVE_DEMO ?? '') });
         if (error) throw error;
       }
       return cli.rpc('costo_vigente_ingreso', { p_sku_presentacion_id: base.pres });

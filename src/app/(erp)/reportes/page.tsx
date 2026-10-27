@@ -18,7 +18,7 @@ import type { Metadata } from 'next';
 import { obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel } from '@/components/ui/Pagina';
 import { BotonesReporte } from '@/components/ui/BotonesReporte';
-import { veCostos, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
+import { veCostos, rolPuedeVerRuta, NOMBRE_ROL, type Rol } from '@/lib/navegacion';
 
 export const metadata: Metadata = { title: 'Reportes' };
 export const dynamic = 'force-dynamic';
@@ -27,6 +27,8 @@ type Reporte = {
   clave: string;
   titulo: string;
   descripcion: string;
+  /** Lo que dice para quien no ve precios: el archivo le sale sin la columna de importes (076). */
+  descripcionSinPrecios?: string;
   requiereCostos?: boolean;
   /** Lo baja quien puede abrir esta pantalla (la API comprueba lo mismo). */
   ruta?: string;
@@ -38,7 +40,7 @@ const GRUPOS: { grupo: string; reportes: Reporte[] }[] = [
     reportes: [
       { clave: 'existencias',   titulo: 'Existencias por lote',   descripcion: 'Todo el stock en cámara, lote por lote, con su antigüedad y disponibilidad.' },
       { clave: 'kardex',        titulo: 'Kardex valorizado',      descripcion: 'Todas las entradas y salidas en orden cronológico, con documento y responsable.' },
-      { clave: 'anticuamiento', titulo: 'Anticuamiento',          descripcion: 'Producto ordenado por tiempo en cámara, con su valor inmovilizado.' },
+      { clave: 'anticuamiento', titulo: 'Anticuamiento',          descripcion: 'Producto ordenado por tiempo en cámara, con su valor inmovilizado.', descripcionSinPrecios: 'Producto ordenado por tiempo en cámara, en kilos.' },
       { clave: 'ocupabilidad',  titulo: 'Ocupabilidad de bodegas',descripcion: 'Capacidad utilizada y disponible en cada almacén.' },
       { clave: 'despachos',     titulo: 'Productividad de despacho', descripcion: 'Tiempos reales de carga por contenedor frente al objetivo.' },
     ],
@@ -61,7 +63,7 @@ const GRUPOS: { grupo: string; reportes: Reporte[] }[] = [
     grupo: 'Comercial',
     reportes: [
       { clave: 'disponibilidad', titulo: 'Disponibilidad por producto', descripcion: 'Físico, bloqueado, reservado y disponible por SKU y bodega.' },
-      { clave: 'pedidos',        titulo: 'Pedidos y su avance',    descripcion: 'Estado de cumplimiento de cada proforma con su semáforo.' },
+      { clave: 'pedidos',        titulo: 'Pedidos y su avance',    descripcion: 'Estado de cumplimiento de cada proforma con su semáforo.', descripcionSinPrecios: 'Estado de cumplimiento de cada proforma con su semáforo, en toneladas (sin importes).' },
       { clave: 'necesidades',    titulo: 'Necesidades de producción', descripcion: 'Lo comprometido que no está cubierto con stock.' },
     ],
   },
@@ -77,7 +79,7 @@ export default async function PaginaReportes() {
     r.requiereCostos && !puedeVerCostos
       ? 'Trae costos y márgenes: solo Gerencia, Operaciones y Comercial.'
       : r.ruta && !rolPuedeVerRuta(rol, r.ruta)
-        ? 'Su rol no tiene acceso a la pantalla de este reporte.'
+        ? `${NOMBRE_ROL[rol]} no tiene acceso a la pantalla de este reporte.`
         : null;
 
   return (
@@ -97,7 +99,7 @@ export default async function PaginaReportes() {
                      data-reporte={r.clave}>
                   <div className="tarjeta-reporte-texto">
                     <strong>{r.titulo}</strong>
-                    <span>{r.descripcion}</span>
+                    <span>{!puedeVerCostos && r.descripcionSinPrecios ? r.descripcionSinPrecios : r.descripcion}</span>
                   </div>
                   {bloqueo ? (
                     <span className="pill pill-neutro" title={bloqueo}>Sin permiso</span>

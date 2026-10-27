@@ -17,6 +17,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
+import { accionSegura } from '@/lib/accionSegura';
 import {
   registrarDictamen,
   type TipoDictamen, type EstadoDictamen,
@@ -57,7 +58,8 @@ export function FormularioDictamen({
 }: {
   loteId: number;
   pallet: string;
-  motivos: { id: number; nombre: string }[];
+  /** condiciona_venta: el motivo no bloquea, solo limita a mercado nacional (061). */
+  motivos: { id: number; nombre: string; condiciona_venta?: boolean }[];
   puede: boolean;
   /** En la ficha del lote se abre con un botón; en Calidad va siempre visible. */
   compacto?: boolean;
@@ -76,19 +78,37 @@ export function FormularioDictamen({
 
   const meta = ESTADOS.find((e) => e.valor === estado)!;
 
+  /*
+   * «Solo mercado nacional» NO saca al pallet del inventario: lo deja libre,
+   * pero solo para pedidos nacionales (061). Con ese motivo el aviso de abajo
+   * no puede decir «sale del inventario vendible», que era lo que decía: hay
+   * que decir lo que de verdad pasa.
+   */
+  const motivoElegido = motivos.find((m) => m.id === motivoId);
+  const soloNacional = meta.bloquea && motivoElegido?.condiciona_venta === true;
+  const consecuencia = soloNacional
+    ? 'El pallet SIGUE disponible, pero solo para pedidos de mercado nacional: no se podrá reservar ni ' +
+      'cargar para exportación. Si está apartado para un pedido de exportación, libere antes esa reserva. ' +
+      '(Si otro dictamen abierto lo bloquea, sigue bloqueado.)'
+    : meta.consecuencia;
+  const tituloConsecuencia = soloNacional ? `${meta.texto} · Solo mercado nacional` : meta.texto;
+
   function enviar(evento: React.FormEvent) {
     evento.preventDefault();
     setAviso(null);
     iniciar(async () => {
-      const r = await registrarDictamen({
+      //  Un corte de red vuelve como un aviso más y no borra lo escrito.
+      const r = await accionSegura(() => registrarDictamen({
         lote_id: loteId,
         tipo,
         estado,
-        motivo_id: motivoId,
-        motivo_texto: motivoTexto || null,
+        //  Al liberar no se manda el motivo de bloqueo que haya quedado elegido
+        //  de antes (el campo ni se ve).
+        motivo_id: meta.bloquea ? motivoId : null,
+        motivo_texto: meta.bloquea ? (motivoTexto || null) : null,
         sustento_url: sustento || null,
         observaciones: observaciones || null,
-      });
+      }));
       setAviso({ tipo: r.ok ? 'ok' : 'mal', texto: r.mensaje });
       if (r.ok) {
         setMotivoTexto(''); setSustento(''); setObservaciones(''); setMotivoId(null);
@@ -172,13 +192,18 @@ export function FormularioDictamen({
               <small>Hace falta el tipificado o este. Sin motivo nadie sabrá después si se puede liberar.</small>
             </label>
 
-            <label className="form-campo">
-              <span>Sustento</span>
-              <input className="campo" value={sustento} onChange={(e) => setSustento(e.target.value)}
-                     placeholder="Enlace al informe de laboratorio" maxLength={300} />
-            </label>
           </>
         )}
+
+        {/* El sustento vale tanto para bloquear como para liberar: el informe
+            que levanta una observación es tan importante como el que la puso. */}
+        <label className="form-campo">
+          <span>Sustento</span>
+          <input className="campo" name="sustento" value={sustento} onChange={(e) => setSustento(e.target.value)}
+                 placeholder={meta.bloquea ? 'Enlace al informe de laboratorio' : 'Enlace al informe que libera el pallet'}
+                 maxLength={300} />
+          <small>Opcional. Pegue el enlace al PDF del informe (por ejemplo, en la carpeta compartida).</small>
+        </label>
 
         <label className="form-campo form-campo-ancho">
           <span>Observaciones</span>
@@ -189,9 +214,9 @@ export function FormularioDictamen({
       </div>
 
       {/* La consecuencia, en presente y antes de guardar. */}
-      <div className={`form-consecuencia ${meta.bloquea ? 'local' : 'export'}`}>
+      <div className={`form-consecuencia ${meta.bloquea && !soloNacional ? 'local' : 'export'}`} data-consecuencia={soloNacional ? 'nacional' : estado}>
         <Icono nombre="alerta" tamano={16} />
-        <span><b>{meta.texto}:</b> {meta.consecuencia}</span>
+        <span><b>{tituloConsecuencia}:</b> {consecuencia}</span>
       </div>
 
       <div className="form-acciones">

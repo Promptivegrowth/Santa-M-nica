@@ -1,0 +1,81 @@
+/* ===========================================================================
+   DESPACHAR CON LO QUE SALIÓ DE VERDAD (075)
+   ===========================================================================
+   El panel de «Despachar» crece con «Ajustar lo que salió»: una tabla por
+   pallet con lo cargado, lo que salió, la diferencia y su motivo. Por defecto
+   no se ve —sale todo lo cargado— y el panel conserva su ancho de siempre.
+   =========================================================================== */
+
+.despachar[data-ajustando="si"] { max-width: 72rem; }
+
+.despachar-sale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem .9rem;
+  padding: .65rem .9rem;
+  border-block-end: 1px solid var(--linea);
+  font-size: .82rem;
+  color: var(--tinta-2);
+}
+.despachar-sale strong { color: var(--tinta); }
+.despachar-sale[data-diferencia="si"] { background: var(--atencion-suave); }
+
+.despachar-ajustes {
+  border-block-end: 1px solid var(--linea);
+  overflow-x: auto;
+}
+.despachar-ajustes table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.despachar-ajustes th {
+  text-align: start;
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--tinta-3);
+  padding: .45rem .5rem;
+  border-block-end: 1px solid var(--linea);
+  white-space: nowrap;
+}
+.despachar-ajustes td {
+  padding: .4rem .5rem;
+  border-block-end: 1px solid var(--linea);
+  vertical-align: top;
+}
+.despachar-ajustes .num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.despachar-ajustes input.campo,
+.despachar-ajustes select.campo { padding: .25rem .4rem; font-size: .8rem; }
+.despachar-ajustes input.campo[type="number"] { width: 6.5rem; text-align: end; }
+.despachar-ajustes tr[data-diferencia="si"] { background: var(--atencion-suave); }
+.despachar-ajustes tr[data-error="si"] { background: var(--critico-suave); }
+.despachar-ajustes tr[data-bloqueado="si"] td:first-child { box-shadow: inset 3px 0 0 var(--critico); }
+.despachar-ajustes small { display: block; margin-block-start: .2rem; color: var(--tinta-3); line-height: 1.35; }
+.despachar-ajustes small[data-tono="critico"] { color: var(--critico); }
+.despachar-ajustes .despachar-dif { font-weight: 700; color: var(--atencion); }
+
+.despachar-ajustes-pie {
+  padding: .55rem .9rem .7rem;
+  font-size: .76rem;
+  line-height: 1.5;
+  color: var(--tinta-2);
+}
+
+/* La marca de un pallet bloqueado por Calidad en «Pallets cargados». */
+.marca-bloqueo {
+  display: inline-block;
+  margin-inline-start: .4rem;
+  padding: .05rem .4rem;
+  border-radius: 3px;
+  font-size: .66rem;
+  font-weight: 700;
+  color: var(--critico);
+  background: var(--critico-suave);
+  white-space: nowrap;
+}
+.marca-diferencia {
+  display: block;
+  font-size: .7rem;
+  color: var(--atencion);
+  margin-block-start: .1rem;
+}

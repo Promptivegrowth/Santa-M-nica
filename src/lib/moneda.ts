@@ -86,14 +86,25 @@ export function aSoles(
  * Se valida en el servidor y no solo en el formulario: la base lo rechazaría
  * igual, pero con un mensaje de PostgreSQL que no le dice nada a un comercial.
  */
-export function revisarTipoCambio(valor: number): string | null {
+export function revisarTipoCambio(
+  valor: number,
+  /**
+   * El valor de SUNAT del día, si se tiene (076). Antes el mensaje decía
+   * «hoy ronda 3,75» escrito a mano, y el dólar no se queda quieto.
+   */
+  referencia?: { valor: number; publicado_el?: string | null } | null
+): string | null {
   if (!Number.isFinite(valor) || valor <= 0) {
     return 'Indique el tipo de cambio.';
   }
   if (valor < TIPO_CAMBIO_MINIMO) {
+    const ref = referencia && Number(referencia.valor) >= TIPO_CAMBIO_MINIMO
+      ? `—SUNAT publicó ${Number(referencia.valor).toLocaleString('es-PE', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}` +
+        (referencia.publicado_el ? ` el ${String(referencia.publicado_el).slice(0, 10).split('-').reverse().join('/')}` : '') + '—'
+      : '—la que publica SUNAT—';
     return (
       `El tipo de cambio son SOLES POR DÓLAR, y ${valor} no puede serlo. ` +
-      'Escriba la cotización del día —hoy ronda 3,75— aunque el documento esté en dólares.'
+      `Escriba la cotización del día ${ref} aunque el documento esté en dólares.`
     );
   }
   if (valor > TIPO_CAMBIO_MAXIMO) {

@@ -13,6 +13,7 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { puedeVender, type Rol } from '@/lib/navegacion';
+import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 import { numeroContrato, fechaBilingue, revisarDatosContrato, type DatosContrato } from '@/lib/contratoVenta';
 import { hoyEnLima } from '@/lib/fechas';
 
@@ -41,7 +42,12 @@ function limpiar(d: DatosContrato): DatosContrato {
 export async function generarContrato(pedidoId: number, recibidos: DatosContrato): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
-  if (!puedeVender(usuario.rol as Rol)) return { ok: false, mensaje: 'Su rol no puede generar contratos.' };
+  if (!puedeVender(usuario.rol as Rol)) {
+    return {
+      ok: false,
+      mensaje: `${nombreRol(usuario.rol)} no genera contratos: lo hacen ${listaDeRoles(['gerencia', 'operaciones', 'comercial', 'comex'])}.`,
+    };
+  }
 
   const supabase = await crearClienteServidor();
   const { data: ped } = await supabase

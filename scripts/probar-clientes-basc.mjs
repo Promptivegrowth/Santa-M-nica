@@ -34,7 +34,7 @@ const p = await ctx.newPage();
 try {
   await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await p.fill('input[type="email"]', 'comex@santamonica.pe');
-  await p.fill('input[type="password"]', 'SantaMonica2026');
+  await p.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
   await p.click('button[type="submit"]');
   await p.waitForURL(/\/panel/, { timeout: 30000 });
 
@@ -79,7 +79,7 @@ try {
   const g = await ctxG.newPage();
   await g.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
   await g.fill('input[type="email"]', 'gerencia@santamonica.pe');
-  await g.fill('input[type="password"]', 'SantaMonica2026');
+  await g.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
   await g.click('button[type="submit"]');
   await g.waitForURL(/\/panel/, { timeout: 30000 });
   await g.goto(`${BASE}/ventas/cotizaciones/nueva`, { waitUntil: 'networkidle' });

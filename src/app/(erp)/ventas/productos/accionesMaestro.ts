@@ -27,6 +27,8 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
+import type { Rol } from '@/lib/navegacion';
 
 export type Resultado =
   | { ok: true; id: number; mensaje: string }
@@ -83,11 +85,28 @@ function validar(d: DatosProducto): { mensaje: string; campo: string } | null {
   return null;
 }
 
+/** El rechazo de la base, sin lo técnico (076). */
+function motivoDeLaBase(mensaje: string | undefined, que: string): string {
+  const m = String(mensaje ?? '').replace(/^ERROR:\s*/i, '').trim();
+  if (/row-level security|permission denied|violates.*policy/i.test(m)) {
+    return `No tiene permiso para ${que}: lo hacen ${listaDeRoles(PUEDEN_EDITAR as Rol[])}.`;
+  }
+  if (/duplicate key|unique/i.test(m)) return `No se pudo ${que}: ya existe un producto con ese código o esa combinación.`;
+  if (/foreign key/i.test(m)) return `No se pudo ${que}: hay documentos que lo usan.`;
+  if (!m || /violates|constraint|column|relation|syntax|null value/i.test(m)) {
+    return `No se pudo ${que}. Revise los datos y vuelva a intentarlo; si se repite, avise a Sistemas.`;
+  }
+  return m;
+}
+
 async function autorizar(permitidos: string[]) {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { error: 'Su sesión caducó. Vuelva a entrar.' };
   if (!permitidos.includes(usuario.rol)) {
-    return { error: `Su rol (${usuario.rol}) no puede modificar el maestro de productos.` };
+    return {
+      error: `${nombreRol(usuario.rol)} no puede ${permitidos === PUEDEN_BORRAR ? 'borrar productos' : 'modificar el maestro de productos'}: ` +
+        `lo hacen ${listaDeRoles(permitidos as Rol[])}.`,
+    };
   }
   return { usuario };
 }
@@ -141,7 +160,7 @@ export async function crearProducto(d: DatosProducto): Promise<Resultado> {
     if (error.code === '23505') {
       return { ok: false, mensaje: `Ya existe un producto con el código ${d.codigo.trim()}.`, campo: 'codigo' };
     }
-    return { ok: false, mensaje: `No se pudo crear el producto: ${error.message}` };
+    return { ok: false, mensaje: motivoDeLaBase(error.message, 'crear el producto') };
   }
 
   /*
@@ -156,7 +175,7 @@ export async function crearProducto(d: DatosProducto): Promise<Resultado> {
 
   if (errorPres) {
     await supabase.from('skus').delete().eq('id', data.id);
-    return { ok: false, mensaje: `No se pudieron enlazar las presentaciones: ${errorPres.message}`, campo: 'presentaciones' };
+    return { ok: false, mensaje: motivoDeLaBase(errorPres.message, 'enlazar las presentaciones'), campo: 'presentaciones' };
   }
 
   await supabase.rpc('registrar_evento', {
@@ -207,7 +226,7 @@ export async function actualizarProducto(id: number, d: DatosProducto): Promise<
     if (error.code === '23505') {
       return { ok: false, mensaje: `Ya existe otro producto con el código ${d.codigo.trim()}.`, campo: 'codigo' };
     }
-    return { ok: false, mensaje: `No se pudo guardar: ${error.message}` };
+    return { ok: false, mensaje: motivoDeLaBase(error.message, 'guardar el producto') };
   }
 
   /* ---- Presentaciones: se comparan las de antes con las de ahora ----
@@ -275,7 +294,7 @@ export async function cambiarEstadoProducto(id: number, activo: boolean): Promis
   if (!sku) return { ok: false, mensaje: 'Ese producto ya no existe.' };
 
   const { error } = await supabase.from('skus').update({ activo }).eq('id', id);
-  if (error) return { ok: false, mensaje: `No se pudo cambiar el estado: ${error.message}` };
+  if (error) return { ok: false, mensaje: motivoDeLaBase(error.message, 'cambiar el estado del producto') };
 
   await supabase.rpc('registrar_evento', {
     p_entidad: 'skus',
@@ -358,7 +377,7 @@ export async function eliminarProducto(id: number): Promise<Resultado> {
   await supabase.from('sku_presentaciones').delete().eq('sku_id', id);
 
   const { error } = await supabase.from('skus').delete().eq('id', id);
-  if (error) return { ok: false, mensaje: `No se pudo borrar: ${error.message}` };
+  if (error) return { ok: false, mensaje: motivoDeLaBase(error.message, 'borrar el producto') };
 
   await supabase.rpc('registrar_evento', {
     p_entidad: 'skus',

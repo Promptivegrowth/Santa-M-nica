@@ -12,6 +12,7 @@
  */
 import { useState, useTransition } from 'react';
 import { alternarAccesoObjetivos } from '../objetivos/acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 export function InterruptorObjetivos({ id, nombre, ve }: { id: string; nombre: string; ve: boolean }) {
   const [valor, setValor] = useState(ve);
@@ -22,7 +23,7 @@ export function InterruptorObjetivos({ id, nombre, ve }: { id: string; nombre: s
     setError(null);
     if (!valor && !window.confirm(`${nombre} podrá ver y cambiar Objetivos mensuales, incluidas sus metas. ¿Continuar?`)) return;
     iniciar(async () => {
-      const r = await alternarAccesoObjetivos(id, !valor);
+      const r = await accionSegura(() => alternarAccesoObjetivos(id, !valor));
       if (r.ok) setValor(!valor);
       else setError(r.mensaje);
     });

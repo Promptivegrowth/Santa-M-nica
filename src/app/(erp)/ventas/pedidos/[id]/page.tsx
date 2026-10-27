@@ -34,7 +34,9 @@ import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { EsqueletoKpi, EsqueletoPestanas, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { tm, num, fecha, dinero, pct, etiquetaEstado } from '@/lib/formato';
 import { veCostos, puedeVender, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
-import { puedeFijarRestriccionPeso } from '@/lib/permisosVentas';
+import { puedeFijarRestriccionPeso, puedeApartarStock } from '@/lib/permisosVentas';
+import { PUEDEN_FACTURAR, motivoNoFacturarCiclo } from '@/lib/permisosFinanzas';
+import { DocumentosApagados, puedeDescargarDocumentos } from '../../DocumentosApagados';
 import { RestriccionPeso } from './RestriccionPeso';
 import { uno, campo } from '@/lib/relaciones';
 import { BotonFacturar } from './Facturar';
@@ -103,7 +105,11 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
   ]);
   if (!pedido) notFound();
 
-  const puedeFacturar = ['gerencia', 'operaciones', 'comercial'].includes(usuarioCab?.rol ?? '');
+  const puedeFacturar = PUEDEN_FACTURAR.includes((usuarioCab?.rol ?? 'consulta') as Rol);
+  /* Solo de un pedido confirmado (076): el botón se apaga y dice por qué. */
+  const bloqueoFacturar = motivoNoFacturarCiclo(pedido.ciclo as string);
+  /* PDF, Excel y Contrato llevan precios: Almacén, Calidad y Consulta los ven apagados (076). */
+  const descarga = puedeDescargarDocumentos(usuarioCab?.rol);
   // Confirmar y cancelar el pedido: lo valida Gerencia u Operaciones.
   const puedeValidar = ['gerencia', 'operaciones'].includes(usuarioCab?.rol ?? '');
 
@@ -115,16 +121,22 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
         volver={{ href: '/ventas/pedidos', texto: 'Volver a pedidos' }}
       >
         <Semaforo estado={pedido.semaforo as never} />
-        <BotonesDocumento
-          tipo="proforma"
-          id={pedidoId}
-          numero={String(pedido.numero_proforma)}
-        />
-        {/* El contrato de venta con el modelo de Santa Mónica (octubre, punto 8). */}
-        <Link href={`/ventas/pedidos/${pedidoId}/contrato`} className="btn btn-secundario" data-enlace="contrato">
-          Contrato
-        </Link>
-        <BotonFacturar pedidoId={pedidoId} puede={puedeFacturar} />
+        {descarga ? (
+          <>
+            <BotonesDocumento
+              tipo="proforma"
+              id={pedidoId}
+              numero={String(pedido.numero_proforma)}
+            />
+            {/* El contrato de venta con el modelo de Santa Mónica (octubre, punto 8). */}
+            <Link href={`/ventas/pedidos/${pedidoId}/contrato`} className="btn btn-secundario" data-enlace="contrato">
+              Contrato
+            </Link>
+          </>
+        ) : (
+          <DocumentosApagados rol={usuarioCab?.rol} contrato />
+        )}
+        <BotonFacturar pedidoId={pedidoId} puede={puedeFacturar} bloqueo={bloqueoFacturar} />
         <CicloPedido pedidoId={pedidoId} ciclo={String(pedido.ciclo)} puede={puedeValidar} />
       </CabeceraPagina>
 
@@ -162,7 +174,8 @@ async function CuerpoPedido({
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const puedeVerCostos = veCostos((usuario?.rol ?? 'consulta') as Rol);
-  const puedeReservar = ['gerencia', 'operaciones', 'comercial', 'almacen'].includes(usuario?.rol ?? '');
+  //  Misma lista que el servidor y la base (ROLES_APARTAN_STOCK, 076).
+  const puedeReservar = puedeApartarStock(usuario?.rol);
   //  Quién fija la restricción de peso: la MISMA lista que usa el servidor.
   const puedeRestriccion = puedeFijarRestriccionPeso(usuario?.rol);
   //  El enlace al comprobante solo para quien puede abrir Facturación.

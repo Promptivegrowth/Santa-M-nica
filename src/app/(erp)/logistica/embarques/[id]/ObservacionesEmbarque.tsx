@@ -6,6 +6,7 @@
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { accionSegura } from '@/lib/accionSegura';
 import { guardarObservacionesEmbarque } from '../acciones';
 
 export function ObservacionesEmbarque({ id, texto, puede }: { id: number; texto: string | null; puede: boolean }) {
@@ -40,7 +41,7 @@ export function ObservacionesEmbarque({ id, texto, puede }: { id: number; texto:
       <div className="acciones-fila">
         <button type="button" className="btn btn-primario btn-chico" disabled={guardando}
                 onClick={() => iniciar(async () => {
-                  const r = await guardarObservacionesEmbarque(id, valor);
+                  const r = await accionSegura(() => guardarObservacionesEmbarque(id, valor));
                   setAviso({ ok: r.ok, texto: r.mensaje });
                   if (r.ok) { setEditando(false); router.refresh(); }
                 })}>

@@ -25,8 +25,9 @@ import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
 import {
   crearProducto, actualizarProducto, formatosDeEspecie,
-  type DatosProducto, type Resultado,
+  type DatosProducto,
 } from './accionesMaestro';
+import { accionSegura } from '@/lib/accionSegura';
 
 export type ProductoExistente = DatosProducto & { id: number; activo: boolean };
 
@@ -120,11 +121,10 @@ export function FormularioProducto({
     setProblema(null);
 
     iniciar(async () => {
-      const r: Resultado = producto
-        ? await actualizarProducto(producto.id, d)
-        : await crearProducto(d);
+      //  Un corte de red vuelve como aviso aquí, sin perder lo escrito (076).
+      const r = await accionSegura(() => (producto ? actualizarProducto(producto.id, d) : crearProducto(d)));
 
-      if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: r.campo }); return; }
+      if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: 'campo' in r ? r.campo : undefined }); return; }
       /*
        * Se vuelve al listado filtrado por el código y no a una ficha: la ficha
        * de producto es de una PRESENTACIÓN concreta, y un SKU puede tener

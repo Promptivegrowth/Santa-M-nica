@@ -204,7 +204,7 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
         <div className="ficha-aviso ficha-aviso-atencion">
           <Icono nombre="traslados" tamano={17} />
           <span>
-            <strong>Esta carga está en camino.</strong> Sus {tm(enviadoKg)} ya salieron de{' '}
+            <strong>Esta carga está en camino.</strong> Sus {tm(enviadoKg, 2)} TM ({kg(enviadoKg)} kg) ya salieron de{' '}
             {campo(t.origen, 'nombre')} pero todavía no ingresaron a {campo(t.destino, 'nombre')}.
             Mientras tanto figura en «stock en tránsito»: sigue siendo inventario de la empresa,
             pero no se puede vender desde ninguno de los dos almacenes.
@@ -237,12 +237,14 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
 
       <RejillaKpi>
         <Kpi etiqueta="Lotes trasladados" valor={num(filas.length)} nota={`${num(enviadoBultos)} bultos`} href="#lotes" />
-        <Kpi etiqueta="Peso enviado" valor={tm(enviadoKg)} href="#lotes" />
+        {/* Con su unidad: «3,4» a secas no dice si son toneladas o kilos. */}
+        <Kpi etiqueta="Peso enviado" valor={tm(enviadoKg, 2)} sufijo="TM" nota={`${kg(enviadoKg)} kg`} href="#lotes" />
         <Kpi
           etiqueta="Peso aceptado"
-          valor={cerrado ? tm(aceptadoKg) : '—'}
+          valor={cerrado ? tm(aceptadoKg, 2) : '—'}
+          sufijo={cerrado ? 'TM' : undefined}
           tono={cerrado ? (conDiferencia > 0 ? 'critico' : 'ok') : 'neutro'}
-          nota={cerrado ? 'Confirmado en destino' : 'Aún no recibido'}
+          nota={cerrado ? `${kg(aceptadoKg)} kg confirmados en destino` : 'Aún no recibido'}
           href="#lotes"
         />
         <Kpi
@@ -316,8 +318,8 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
               <thead>
                 <tr>
                   <th>Lote</th><th>Producto</th>
-                  <th className="num">Bultos env.</th><th className="num">Peso env.</th>
-                  <th className="num">Bultos acep.</th><th className="num">Peso acep.</th>
+                  <th className="num">Bultos env.</th><th className="num">Kg env.</th>
+                  <th className="num">Bultos acep.</th><th className="num">Kg acep.</th>
                   <th className="num">Dif.</th><th></th>
                 </tr>
               </thead>
@@ -342,9 +344,9 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
                         {campo(sku, 'corte')}
                       </td>
                       <td className="num">{num(l.bultos_enviados)}</td>
-                      <td className="num">{tm(Number(l.peso_enviado_kg))}</td>
+                      <td className="num">{kg(Number(l.peso_enviado_kg))}</td>
                       <td className="num">{l.bultos_aceptados != null ? num(l.bultos_aceptados) : '—'}</td>
-                      <td className="num">{l.peso_aceptado_kg != null ? tm(Number(l.peso_aceptado_kg)) : '—'}</td>
+                      <td className="num">{l.peso_aceptado_kg != null ? kg(Number(l.peso_aceptado_kg)) : '—'}</td>
                       <td className="num">
                         {l.peso_aceptado_kg == null ? '—'
                           : Math.abs(dif) < 0.005 && difB === 0 ? <span style={{ color: 'var(--ok)' }}>0</span>

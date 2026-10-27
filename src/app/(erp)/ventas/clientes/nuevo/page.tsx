@@ -14,6 +14,8 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, Panel } from '@/components/ui/Pagina';
+import { PUEDEN_GESTIONAR_CREDITO } from '@/lib/permisosFinanzas';
+import type { Rol } from '@/lib/navegacion';
 import { FormularioCliente } from '../FormularioCliente';
 import { siguienteCodigoCliente } from '../acciones';
 
@@ -44,6 +46,7 @@ export default async function PaginaNuevoCliente() {
       <Panel>
         <FormularioCliente
           codigoPropuesto={codigo}
+          gestionaCredito={PUEDEN_GESTIONAR_CREDITO.includes((usuario?.rol ?? 'consulta') as Rol)}
           paises={paises}
           vendedores={(vendedores ?? []).map((v) => ({ id: v.id as number, nombre: v.nombre as string }))}
         />

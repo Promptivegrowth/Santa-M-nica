@@ -21,6 +21,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import { registrarCobranza, anularComprobante, anularCobranza } from '../acciones';
+import { accionSegura } from '@/lib/accionSegura';
 import { MEDIOS_DE_PAGO, MOTIVO_MINIMO } from '@/lib/permisosFinanzas';
 
 const cifra = (n: number) =>
@@ -73,14 +74,15 @@ export function RegistrarCobro({
       return;
     }
     iniciar(async () => {
-      const r = await registrarCobranza({
+      //  Un corte de red vuelve como aviso aquí, sin perder lo escrito (accionSegura).
+      const r = await accionSegura(() => registrarCobranza({
         factura_id: facturaId,
         monto: valor,
         fecha,
         medio,
         referencia: referencia || null,
         observaciones: observaciones || null,
-      });
+      }));
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (r.ok) {
         setAbierto(false);
@@ -217,7 +219,7 @@ export function AnularCobro({
   function anular() {
     setAviso(null);
     iniciar(async () => {
-      const r = await anularCobranza(cobroId, motivo);
+      const r = await accionSegura(() => anularCobranza(cobroId, motivo));
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (r.ok) { setAbierto(false); router.refresh(); }
     });
@@ -294,7 +296,7 @@ export function BotonAnular({
   function anular() {
     setAviso(null);
     iniciar(async () => {
-      const r = await anularComprobante(facturaId, motivo);
+      const r = await accionSegura(() => anularComprobante(facturaId, motivo));
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (r.ok) { setAbierto(false); router.refresh(); }
     });

@@ -14,17 +14,23 @@
  *  vence, lo retenido, la cobertura, lo que se puede despachar ya, el
  *  backorder y lo que va fuera de tiempo. Cada tarjeta abre su detalle. El
  *  resto de avisos sigue debajo, como antes.
+ *
+ *  ATENDER UNA ALERTA (077)
+ *  Gerencia y Operaciones tienen «Marcar como atendida» en cada una: queda
+ *  quién y cuándo, y se ven con el filtro «Estado · Atendidas a mano». El
+ *  enlace «Configurar reglas» solo se muestra a quien entra a Configuración.
  * ============================================================================
  */
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { Icono } from '@/components/estructura/Icono';
 import { enlaceEntidad, nombreEntidad } from '@/lib/enlaces';
 import { num, fechaHora, haceTiempo } from '@/lib/formato';
 import { traerTodo } from '@/lib/traerTodo';
+import { BotonAtender } from './BotonAtender';
 
 export const metadata: Metadata = { title: 'Alertas' };
 export const dynamic = 'force-dynamic';
@@ -33,6 +39,11 @@ const POR_PAGINA = 40;
 export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
   const q = await props.searchParams;
   const supabase = await crearClienteServidor();
+  const usuario = await obtenerUsuarioActual();
+  //  Los mismos dos roles que entran a Configuración y administran las reglas.
+  const administra = ['gerencia', 'operaciones'].includes(usuario?.rol ?? '');
+  //  «atendidas»: las que alguien cerró a mano, con quién y cuándo.
+  const verAtendidas = q.ver === 'atendidas';
 
   const pagina = Math.max(1, Number(q.pagina ?? 1));
   const severidad = (q.severidad as string) ?? '';
@@ -42,15 +53,17 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
   // entero y había que buscarlos entre las trescientas restantes.
   const titulo = (q.titulo as string) ?? '';
 
-  let consulta = supabase.from('alertas').select('*', { count: 'exact' }).eq('atendida', false);
+  let consulta = verAtendidas
+    ? supabase.from('alertas').select('*', { count: 'exact' }).eq('atendida', true).not('atendida_por', 'is', null)
+    : supabase.from('alertas').select('*', { count: 'exact' }).eq('atendida', false);
   if (severidad) consulta = consulta.eq('severidad', severidad);
   if (entidad) consulta = consulta.eq('entidad', entidad);
   if (titulo) consulta = consulta.eq('titulo', titulo);
 
   const [{ data: filas, count }, todas, { data: tipos }, { data: principales }] = await Promise.all([
-    consulta
-      .order('severidad', { ascending: false })
-      .order('generada_en', { ascending: false })
+    (verAtendidas
+      ? consulta.order('atendida_en', { ascending: false })
+      : consulta.order('severidad', { ascending: false }).order('generada_en', { ascending: false }))
       .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
     /*
      * Para contar críticas y avisos hacen falta TODAS las abiertas. La API
@@ -75,6 +88,13 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
   ]);
   const TONO: Record<string, 'critico' | 'atencion' | 'ok'> = { critica: 'critico', advertencia: 'atencion', ok: 'ok' };
 
+  //  Quién atendió cada una (solo hace falta en la vista de atendidas).
+  const idsQuien = [...new Set((filas ?? []).map((a) => a.atendida_por as string | null).filter(Boolean))] as string[];
+  const { data: quienes } = verAtendidas && idsQuien.length
+    ? await supabase.from('usuarios').select('id, nombre').in('id', idsQuien)
+    : { data: [] as { id: string; nombre: string }[] };
+  const nombreDe = new Map((quienes ?? []).map((u) => [String(u.id), String(u.nombre)]));
+
   const criticas = (todas ?? []).filter((a) => a.severidad === 'critica').length;
   const avisos = (todas ?? []).filter((a) => a.severidad === 'advertencia').length;
   const entidades = [...new Set((todas ?? []).map((a) => a.entidad as string))];
@@ -85,10 +105,13 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
         titulo="Alertas"
         descripcion="Situaciones que el sistema detectó por sí solo. Haga clic en cualquiera para ir directamente al registro que la provocó."
       >
-        <Link href="/configuracion?t=reglas" className="btn btn-secundario">
-          <Icono nombre="configuracion" tamano={15} />
-          Configurar reglas
-        </Link>
+        {/* Calidad, Consulta y los demás no entran a Configuración: no se les ofrece. */}
+        {administra && (
+          <Link href="/configuracion?t=reglas" className="btn btn-secundario">
+            <Icono nombre="configuracion" tamano={15} />
+            Configurar reglas
+          </Link>
+        )}
       </CabeceraPagina>
 
       {/* ══════ LAS SEIS PRINCIPALES ══════ */}
@@ -132,7 +155,7 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
         />
       </RejillaKpi>
 
-      <Panel id="lista" titulo={`${num(count ?? 0)} alertas sin atender`}>
+      <Panel id="lista" titulo={verAtendidas ? `${num(count ?? 0)} alertas atendidas a mano` : `${num(count ?? 0)} alertas sin atender`}>
         <Filtros
           campos={[
             {
@@ -148,6 +171,10 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
               opciones: entidades.map((e) => ({ valor: e, texto: nombreEntidad(e) })),
             },
             {
+              tipo: 'select', clave: 'ver', etiqueta: 'Estado',
+              opciones: [{ valor: 'atendidas', texto: 'Atendidas a mano' }],
+            },
+            {
               tipo: 'select', clave: 'titulo', etiqueta: 'Tipo de alerta',
               opciones: (tipos ?? []).map((t) => ({
                 valor: t.titulo as string,
@@ -158,7 +185,9 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
         />
 
         {(filas ?? []).length === 0 ? (
-          <Vacio titulo="Todo en orden" mensaje="No hay alertas pendientes con estos filtros." />
+          verAtendidas
+            ? <Vacio titulo="Ninguna atendida a mano" mensaje="Nadie ha marcado alertas como atendidas con estos filtros." />
+            : <Vacio titulo="Todo en orden" mensaje="No hay alertas pendientes con estos filtros." />
         ) : (
           <>
             {/*
@@ -189,6 +218,11 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
                       >
                         {haceTiempo(a.generada_en as string)}
                       </time>
+                      {verAtendidas && a.atendida_por && (
+                        <span className="alerta-tiempo" data-atendida-por="si">
+                          Atendida por {nombreDe.get(String(a.atendida_por)) ?? 'un usuario'} el {fechaHora(a.atendida_en as string)}
+                        </span>
+                      )}
                     </span>
                     {destino && (
                       <span className="alerta-ir">
@@ -199,13 +233,20 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
                   </>
                 );
 
+                const fila = destino ? (
+                  <Link href={destino} className="alerta-fila">{contenido}</Link>
+                ) : (
+                  <div className="alerta-fila" data-sinenlace="si">{contenido}</div>
+                );
                 return (
                   <li key={a.id as number}>
-                    {destino ? (
-                      <Link href={destino} className="alerta-fila">{contenido}</Link>
-                    ) : (
-                      <div className="alerta-fila" data-sinenlace="si">{contenido}</div>
-                    )}
+                    {/* El botón va AL LADO de la tarjeta: la tarjeta es un enlace. */}
+                    {administra && !verAtendidas ? (
+                      <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>{fila}</div>
+                        <BotonAtender id={a.id as number} />
+                      </div>
+                    ) : fila}
                   </li>
                 );
               })}
@@ -216,9 +257,17 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
       </Panel>
 
       <p className="pie-explicativo">
-        Cada alerta nace de una regla configurable. Si alguna resulta ruidosa o falta otra, se
-        activa, desactiva o ajusta desde{' '}
-        <Link href="/configuracion?t=reglas">Configuración → Motor de reglas</Link>, sin tocar código.
+        Cada alerta nace de una regla configurable.{' '}
+        {administra ? (
+          <>
+            Si alguna resulta ruidosa o falta otra, se activa, desactiva o ajusta desde{' '}
+            <Link href="/configuracion?t=reglas">Configuración → Motor de reglas</Link>, sin tocar código.
+            Con <strong>Marcar como atendida</strong> queda constancia de quién la vio y cuándo; las
+            alertas de una regla no se vuelven a abrir para el mismo registro.
+          </>
+        ) : (
+          <>Las reglas y el cierre de alertas los administran Gerencia y Operaciones.</>
+        )}
       </p>
     </>
   );

@@ -16,6 +16,7 @@
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { accionSegura } from '@/lib/accionSegura';
 import { guardarDatosPacking, type DatosPacking } from '../acciones';
 
 export function EditarDatosPacking({
@@ -40,7 +41,7 @@ export function EditarDatosPacking({
   function guardar() {
     setAviso(null);
     iniciar(async () => {
-      const r = await guardarDatosPacking(packingId, d);
+      const r = await accionSegura(() => guardarDatosPacking(packingId, d));
       setAviso({ ok: r.ok, texto: r.mensaje ?? '' });
       if (r.ok) { setAbierto(false); router.refresh(); }
     });

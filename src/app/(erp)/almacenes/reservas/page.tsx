@@ -30,6 +30,7 @@ import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { traerTodo } from '@/lib/traerTodo';
 import { type Rol } from '@/lib/navegacion';
+import { motivoNoLiberar, ROLES_LIBERAN_CUALQUIER_RESERVA } from '@/lib/permisosVentas';
 import { uno, campo } from '@/lib/relaciones';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 
@@ -53,8 +54,14 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
   const usuario = await obtenerUsuarioActual();
   const rol = (usuario?.rol ?? 'consulta') as Rol;
 
-  const puedeLiberar = ['gerencia', 'operaciones', 'comercial', 'almacen'].includes(rol);
-  const puedeExpirar = ['gerencia', 'operaciones'].includes(rol);
+  /*
+   * Liberar se decide FILA POR FILA (076): quien la apartó puede soltarla;
+   * una ajena, solo Gerencia u Operaciones (es lo que exige la base). Antes
+   * Comercial y Almacén veían el botón encendido en reservas de otros y la
+   * base respondía con su mensaje crudo.
+   */
+  const bloqueoLiberar = (creadoPor: string | null) => motivoNoLiberar(rol, usuario?.id, creadoPor);
+  const puedeExpirar = ROLES_LIBERAN_CUALQUIER_RESERVA.includes(rol);
 
   const pagina = Math.max(1, Number(q.pagina ?? 1));
   // Por defecto se muestran las activas: son las que hoy están reteniendo kilos.
@@ -80,7 +87,7 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
     // deduce los tipos de la consulta leyendo ese texto en tiempo de
     // compilación, y una suma de cadenas le impide hacerlo.
     .select(
-      'id, bultos, peso_neto_kg, estado, vence_el, creado_en, liberado_en, motivo_liberacion, sku_solicitado_id, sku_reservado_id, solicitado:sku_presentaciones!reservas_sku_solicitado_id_fkey(skus(codigo)), lotes(id, codigo_pallet, fecha_produccion, sku_presentaciones(skus(codigo, corte, especies(nombre)))), almacenes(nombre), pedido_lineas(pedido_id, pedidos(numero_proforma, ciclo, clientes(id, razon_social)))',
+      'id, bultos, peso_neto_kg, estado, vence_el, creado_en, creado_por, liberado_en, motivo_liberacion, sku_solicitado_id, sku_reservado_id, solicitado:sku_presentaciones!reservas_sku_solicitado_id_fkey(skus(codigo)), lotes(id, codigo_pallet, fecha_produccion, sku_presentaciones(skus(codigo, corte, especies(nombre)))), almacenes(nombre), pedido_lineas(pedido_id, pedidos(numero_proforma, ciclo, clientes(id, razon_social)))',
       { count: 'exact' }
     );
 
@@ -383,7 +390,7 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
                               <BotonLiberar
                                 reservaId={r.id as number}
                                 etiqueta={`${tm(Number(r.peso_neto_kg))} de ${String(lote?.codigo_pallet ?? 'este lote')}`}
-                                puedeLiberar={puedeLiberar}
+                                bloqueo={bloqueoLiberar((r.creado_por as string | null) ?? null)}
                               />
                             )}
                           </div>

@@ -24,7 +24,7 @@ const ok = (cond, texto) => {
 
 await p.goto(`${BASE}/login`, { waitUntil: 'networkidle' });
 await p.fill('input[type="email"]', 'gerencia@santamonica.pe');
-await p.fill('input[type="password"]', 'SantaMonica2026');
+await p.fill('input[type="password"]', (process.env.CLAVE_DEMO ?? ''));
 await p.click('button[type="submit"]');
 await p.waitForURL(/\/panel/, { timeout: 25000 });
 

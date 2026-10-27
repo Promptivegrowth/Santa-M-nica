@@ -26,6 +26,13 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { traerTodo } from '@/lib/traerTodo';
+import { rolNoPuede, traducirErrorBase } from '@/lib/mensajesBase';
+import {
+  cargarContextoTraslado, problemaLinea, insertarTraslado,
+  type DatosTraslado,
+} from './registro';
+
+export type { LineaTraslado, DatosTraslado } from './registro';
 
 export type Resultado =
   | { ok: true; id: number; mensaje: string }
@@ -51,7 +58,8 @@ async function autorizar(permitidos: string[], que: string) {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { error: 'Su sesión caducó. Vuelva a entrar.' };
   if (!permitidos.includes(usuario.rol)) {
-    return { error: `Su rol (${usuario.rol}) no puede ${que}.` };
+    //  Con el nombre del rol («Comercio Exterior»), no su clave, y quién sí puede.
+    return { error: rolNoPuede(usuario.rol, que, permitidos) };
   }
   return { usuario };
 }
@@ -60,21 +68,10 @@ async function autorizar(permitidos: string[], que: string) {
    CREAR
    ========================================================================== */
 
-export type LineaTraslado = { lote_id: number; bultos: number; peso_kg: number };
-
-export type DatosTraslado = {
-  almacen_origen_id: number;
-  almacen_destino_id: number;
-  /** Opcional al crear: si ya se conoce, viene puesta al despachar. */
-  guia_numero?: string | null;
-  fecha_programada: string | null;
-  transportista_id: number | null;
-  vehiculo_id: number | null;
-  conductor_id: number | null;
-  observaciones: string | null;
-  lineas: LineaTraslado[];
-};
-
+/*
+ * Las reglas de cada pallet y el alta viven en registro.ts: son las mismas
+ * para este formulario y para la importación desde Excel (074).
+ */
 export async function crearTraslado(d: DatosTraslado): Promise<Resultado> {
   const permiso = await autorizar(PUEDEN_SOLICITAR, 'solicitar traslados');
   if (permiso.error) return { ok: false, mensaje: permiso.error };
@@ -95,93 +92,21 @@ export async function crearTraslado(d: DatosTraslado): Promise<Resultado> {
   const supabase = await crearClienteServidor();
 
   /* ---- Cada pallet tiene que tener saldo en el origen y estar liberado ---- */
+  const ctx = await cargarContextoTraslado(supabase, d.lineas.map((l) => l.lote_id));
   for (const l of d.lineas) {
-    if (!(l.peso_kg > 0) || !(l.bultos > 0) || !Number.isInteger(l.bultos)) {
-      return { ok: false, mensaje: 'Todos los pallets necesitan bultos (enteros) y peso mayores que cero.' };
-    }
-
-    const { data: stock } = await supabase
-      .from('v_stock_lote')
-      .select('codigo_pallet, disponible_kg, bloqueado_kg, fisico_bultos')
-      .eq('lote_id', l.lote_id)
-      .eq('almacen_id', d.almacen_origen_id)
-      .maybeSingle();
-
-    if (!stock) {
-      return { ok: false, mensaje: `El lote ${l.lote_id} no tiene saldo en la bodega de origen.` };
-    }
-    if (Number(stock.bloqueado_kg) > 0) {
-      return {
-        ok: false,
-        mensaje: `El pallet ${stock.codigo_pallet} está bloqueado por calidad y no puede moverse de bodega.`,
-      };
-    }
-    if (l.peso_kg > Number(stock.disponible_kg) + 0.001) {
-      return {
-        ok: false,
-        mensaje:
-          `Del pallet ${stock.codigo_pallet} hay ${Number(stock.disponible_kg).toLocaleString('es-PE', { maximumFractionDigits: 1 })} kg ` +
-          `disponibles y quiere mover ${l.peso_kg.toLocaleString('es-PE', { maximumFractionDigits: 1 })} kg. ` +
-          'El resto está apartado para un pedido.',
-      };
-    }
-    if (l.bultos > Number(stock.fisico_bultos)) {
-      return {
-        ok: false,
-        mensaje: `El pallet ${stock.codigo_pallet} tiene ${stock.fisico_bultos} bultos en el origen y quiere mover ${l.bultos}.`,
-      };
-    }
+    const p = problemaLinea(l, d.almacen_origen_id, ctx);
+    if (p) return { ok: false, mensaje: p.mensaje };
   }
 
-  const anio = new Date().getFullYear();
-  const { data: correlativo, error: errNum } = await supabase
-    .rpc('siguiente_correlativo', { p_serie: 'TRAS', p_anio: anio });
-  if (errNum) return { ok: false, mensaje: `No se pudo reservar el número: ${errNum.message}` };
+  const r = await insertarTraslado(supabase, permiso.usuario!.id as string, d);
+  if (!r.ok) return r;
 
-  const numero = `TRAS-${anio}-${String(correlativo).padStart(4, '0')}`;
-
-  const { data: traslado, error } = await supabase
-    .from('traslados')
-    .insert({
-      numero,
-      almacen_origen_id: d.almacen_origen_id,
-      almacen_destino_id: d.almacen_destino_id,
-      // El primer estado del enum es «borrador», no «solicitado».
-      estado: 'borrador',
-      guia_numero: d.guia_numero?.trim() || null,
-      fecha_programada: d.fecha_programada || null,
-      transportista_id: d.transportista_id,
-      vehiculo_id: d.vehiculo_id,
-      conductor_id: d.conductor_id,
-      observaciones: d.observaciones?.trim() || null,
-      creado_por: permiso.usuario!.id,
-    })
-    .select('id')
-    .single();
-
-  if (error || !traslado) return { ok: false, mensaje: `No se pudo crear el traslado: ${error?.message}` };
-
-  const { error: errLin } = await supabase.from('traslado_lineas').insert(
-    d.lineas.map((l) => ({
-      traslado_id: traslado.id,
-      lote_id: l.lote_id,
-      bultos_enviados: Math.round(l.bultos),
-      peso_enviado_kg: l.peso_kg,
-    }))
-  );
-
-  if (errLin) {
-    // Un traslado sin líneas no significa nada: se deshace entero.
-    await supabase.from('traslados').delete().eq('id', traslado.id);
-    return { ok: false, mensaje: `No se pudieron cargar los pallets: ${errLin.message}` };
-  }
-
-  refrescar(traslado.id as number);
+  refrescar(r.id);
   return {
     ok: true,
-    id: traslado.id as number,
+    id: r.id,
     mensaje:
-      `Traslado ${numero} creado en borrador con ${d.lineas.length} pallet${d.lineas.length === 1 ? '' : 's'}. ` +
+      `Traslado ${r.numero} creado en borrador con ${d.lineas.length} pallet${d.lineas.length === 1 ? '' : 's'}. ` +
       'Todavía no se movió nada: falta que Gerencia u Operaciones lo autorice y que Almacén lo despache.',
   };
 }
@@ -196,7 +121,7 @@ export async function autorizarTraslado(id: number): Promise<Resultado> {
 
   const supabase = await crearClienteServidor();
   const { error } = await supabase.rpc('traslado_autorizar', { p_traslado_id: id });
-  if (error) return { ok: false, mensaje: `No se pudo autorizar: ${error.message}` };
+  if (error) return { ok: false, mensaje: traducirErrorBase(error, { que: 'autorizar el traslado', quien: PUEDEN_AUTORIZAR }) };
 
   refrescar(id);
   return {
@@ -219,7 +144,7 @@ export async function despacharTraslado(id: number, guia: string): Promise<Resul
   const supabase = await crearClienteServidor();
   const { error } = await supabase
     .rpc('traslado_despachar', { p_traslado_id: id, p_guia: guia.trim() });
-  if (error) return { ok: false, mensaje: `No se pudo despachar: ${error.message}` };
+  if (error) return { ok: false, mensaje: traducirErrorBase(error, { que: 'despachar el traslado', quien: PUEDEN_DESPACHAR }) };
 
   refrescar(id);
   return {
@@ -258,11 +183,11 @@ export async function aceptarTraslado(
       .eq('id', r.linea_id)
       .eq('traslado_id', id);
 
-    if (error) return { ok: false, mensaje: `No se pudo anotar lo recibido: ${error.message}` };
+    if (error) return { ok: false, mensaje: traducirErrorBase(error, { que: 'anotar lo recibido', quien: PUEDEN_ACEPTAR }) };
   }
 
   const { error } = await supabase.rpc('traslado_aceptar', { p_traslado_id: id });
-  if (error) return { ok: false, mensaje: `No se pudo aceptar: ${error.message}` };
+  if (error) return { ok: false, mensaje: traducirErrorBase(error, { que: 'recibir el traslado', quien: PUEDEN_ACEPTAR }) };
 
   /* ---- ¿Cuadró? Se dice, con el número ---- */
   const { data: lineas } = await supabase
@@ -331,7 +256,7 @@ export async function anularTraslado(id: number, motivo: string): Promise<Result
     return {
       ok: false,
       mensaje:
-        `El traslado ${t.numero} está ${String(t.estado).replace('_', ' ')}: el stock ya se movió y ` +
+        `El traslado ${t.numero} está ${t.estado === 'en_transito' ? 'en tránsito' : 'aceptado'}: el stock ya se movió y ` +
         'no se puede anular. Si llegó mal, acéptelo con la cantidad real y quedará la discrepancia.',
     };
   }
@@ -341,7 +266,7 @@ export async function anularTraslado(id: number, motivo: string): Promise<Result
     .update({ estado: 'anulado', observaciones: motivo.trim() })
     .eq('id', id);
 
-  if (error) return { ok: false, mensaje: `No se pudo anular: ${error.message}` };
+  if (error) return { ok: false, mensaje: traducirErrorBase(error, { que: 'anular el traslado', quien: PUEDEN_AUTORIZAR }) };
 
   refrescar(id);
   return { ok: true, id, mensaje: `Traslado ${t.numero} anulado.` };
@@ -595,7 +520,7 @@ export async function consolidarEnBodega(
 
     const { data: correlativo, error: errNum } = await supabase
       .rpc('siguiente_correlativo', { p_serie: 'TRAS', p_anio: anio });
-    if (errNum) return { ok: false, mensaje: `No se pudo reservar el número: ${errNum.message}` };
+    if (errNum) return { ok: false, mensaje: traducirErrorBase(errNum, { que: 'reservar el número del traslado', quien: PUEDEN_SOLICITAR }) };
 
     const numero = `TRAS-${anio}-${String(correlativo).padStart(4, '0')}`;
 
@@ -622,7 +547,7 @@ export async function consolidarEnBodega(
       .single();
 
     if (error || !traslado) {
-      return { ok: false, mensaje: `No se pudo crear el traslado desde ${origen.nombre}: ${error?.message}` };
+      return { ok: false, mensaje: traducirErrorBase(error, { que: `crear el traslado desde ${origen.nombre}`, quien: PUEDEN_SOLICITAR }) };
     }
 
     const { error: errLin } = await supabase.from('traslado_lineas').insert(
@@ -636,7 +561,7 @@ export async function consolidarEnBodega(
 
     if (errLin) {
       await supabase.from('traslados').delete().eq('id', traslado.id);
-      return { ok: false, mensaje: `No se pudieron cargar los pallets: ${errLin.message}` };
+      return { ok: false, mensaje: traducirErrorBase(errLin, { que: 'cargar los pallets del traslado', quien: PUEDEN_SOLICITAR }) };
     }
 
     creados.push({

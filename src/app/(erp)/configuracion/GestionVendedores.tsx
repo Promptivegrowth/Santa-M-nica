@@ -19,6 +19,7 @@ import {
   crearVendedor, actualizarVendedor, cambiarEstadoVendedor, borrarVendedor,
   type DatosVendedor, type TipoVendedor,
 } from './accionesVendedores';
+import { accionSegura } from '@/lib/accionSegura';
 
 export type FilaVendedor = {
   id: number; nombre: string; tipo: TipoVendedor; email: string | null; activo: boolean;
@@ -91,7 +92,7 @@ export function GestionVendedores({ filas, editable }: { filas: FilaVendedor[]; 
   function hacer(accion: () => Promise<{ ok: boolean; mensaje: string }>, alTerminar?: () => void) {
     setAviso(null);
     iniciar(async () => {
-      const r = await accion();
+      const r = await accionSegura(accion);
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (r.ok) { alTerminar?.(); router.refresh(); }
     });

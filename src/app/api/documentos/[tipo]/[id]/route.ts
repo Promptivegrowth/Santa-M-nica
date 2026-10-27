@@ -27,6 +27,8 @@ import { cargarDocumento, nombreArchivo, type TipoDocumento } from '@/lib/docume
 import { generarPdf } from '@/lib/pdf';
 import { generarProformaExportacion } from '@/lib/pdfProforma';
 import { generarDocumentoExcel } from '@/lib/excelDocumento';
+import { PUEDEN_DESCARGAR_DOCUMENTOS } from '@/lib/permisosFinanzas';
+import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 
 const TIPOS: TipoDocumento[] = ['cotizacion', 'proforma', 'factura', 'boleta'];
 
@@ -38,7 +40,7 @@ const TIPOS: TipoDocumento[] = ['cotizacion', 'proforma', 'factura', 'boleta'];
  * quedan fuera: su trabajo no requiere ver precios, y un PDF con precios que
  * sale por correo ya no se controla.
  */
-const PUEDEN_DESCARGAR = ['gerencia', 'operaciones', 'comercial', 'comex'];
+const PUEDEN_DESCARGAR: string[] = PUEDEN_DESCARGAR_DOCUMENTOS;
 
 export async function GET(
   peticion: NextRequest,
@@ -54,7 +56,11 @@ export async function GET(
   }
   if (!PUEDEN_DESCARGAR.includes(usuario.rol)) {
     return NextResponse.json(
-      { error: `Su rol (${usuario.rol}) no puede descargar documentos comerciales.` },
+      {
+        error: `${nombreRol(usuario.rol)} no descarga documentos comerciales (llevan precios): ` +
+          `lo hacen ${listaDeRoles(PUEDEN_DESCARGAR_DOCUMENTOS)}.`,
+        permiso: true,
+      },
       { status: 403 }
     );
   }

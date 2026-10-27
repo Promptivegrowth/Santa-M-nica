@@ -17,6 +17,7 @@
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { accionSegura } from '@/lib/accionSegura';
 import { editarEmbarque, type DatosEdicionEmbarque } from '../acciones';
 
 export function EditarEmbarque({
@@ -62,8 +63,8 @@ export function EditarEmbarque({
   function guardar() {
     setAviso(null);
     iniciar(async () => {
-      const r = await editarEmbarque(embarqueId, d);
-      setAviso({ ok: r.ok, texto: r.mensaje, campo: r.ok ? undefined : r.campo });
+      const r = await accionSegura(() => editarEmbarque(embarqueId, d));
+      setAviso({ ok: r.ok, texto: r.mensaje, campo: r.ok || !('campo' in r) ? undefined : r.campo });
       if (r.ok) { setAbierto(false); router.refresh(); }
     });
   }

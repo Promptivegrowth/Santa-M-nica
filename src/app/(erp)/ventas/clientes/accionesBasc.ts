@@ -13,6 +13,8 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { hoyEnLima } from '@/lib/fechas';
+import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
+import type { Rol } from '@/lib/navegacion';
 
 const PUEDEN = ['gerencia', 'operaciones', 'comercial', 'comex'];
 const CONTROLES = ['lista_clinton', 'onu_terrorismo', 'onu_armas', 'acuerdo_seguridad'] as const;
@@ -28,7 +30,9 @@ export async function registrarVerificacion(v: {
 }): Promise<{ ok: boolean; mensaje: string }> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
-  if (!PUEDEN.includes(usuario.rol)) return { ok: false, mensaje: 'Su rol no puede registrar verificaciones BASC.' };
+  if (!PUEDEN.includes(usuario.rol)) {
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no registra verificaciones BASC: lo hacen ${listaDeRoles(PUEDEN as Rol[])}.` };
+  }
   if (!CONTROLES.includes(v.control)) return { ok: false, mensaje: 'Ese control no existe.' };
   const resultado = v.resultado.trim();
   if (!resultado) return { ok: false, mensaje: 'Indique el resultado (OK, Negativo, SI…).' };

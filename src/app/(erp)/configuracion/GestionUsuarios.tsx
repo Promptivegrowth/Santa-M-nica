@@ -19,6 +19,7 @@ import { NOMBRE_ROL, type Rol } from '@/lib/navegacion';
 import {
   crearUsuario, cambiarRolUsuario, cambiarEstadoUsuario, restablecerClaveUsuario,
 } from './accionesUsuarios';
+import { accionSegura } from '@/lib/accionSegura';
 
 type Aviso = { ok: boolean; texto: string } | null;
 type Almacen = { id: number; nombre: string };
@@ -73,9 +74,9 @@ export function NuevoUsuario({ editable, almacenes }: { editable: boolean; almac
     e.preventDefault();
     setAviso(null);
     iniciar(async () => {
-      const r = await crearUsuario({
+      const r = await accionSegura(() => crearUsuario({
         nombre, email, rol, clave, almacenId: rol === 'almacen' && almacen ? Number(almacen) : null,
-      });
+      }));
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (r.ok) {
         setCreada({ email: email.trim().toLowerCase(), clave });
@@ -208,7 +209,7 @@ export function SelectorRol({
   function guardar(nuevoRol: Rol, nuevoAlmacen: string) {
     setAviso(null);
     iniciar(async () => {
-      const r = await cambiarRolUsuario(id, nuevoRol, nuevoRol === 'almacen' && nuevoAlmacen ? Number(nuevoAlmacen) : null);
+      const r = await accionSegura(() => cambiarRolUsuario(id, nuevoRol, nuevoRol === 'almacen' && nuevoAlmacen ? Number(nuevoAlmacen) : null));
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (!r.ok) { setValor(rol); setAlmacen(almacenId ? String(almacenId) : ''); }
       else router.refresh();
@@ -277,7 +278,7 @@ export function AccesoUsuario({
     if (!confirm(mensaje)) return;
     setAviso(null); setClave(null);
     iniciar(async () => {
-      const r = await cambiarEstadoUsuario(id, !activo);
+      const r = await accionSegura(() => cambiarEstadoUsuario(id, !activo));
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (r.ok) router.refresh();
     });
@@ -288,7 +289,7 @@ export function AccesoUsuario({
     const nueva = generarClave();
     setAviso(null); setClave(null);
     iniciar(async () => {
-      const r = await restablecerClaveUsuario(id, nueva);
+      const r = await accionSegura(() => restablecerClaveUsuario(id, nueva));
       setAviso({ ok: r.ok, texto: r.mensaje });
       if (r.ok) { setClave(nueva); router.refresh(); }
     });

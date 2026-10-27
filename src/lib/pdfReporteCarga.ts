@@ -7,7 +7,9 @@
  *
  *    1. La operación: despacho, embarque, proformas, contenedor, precinto,
  *       guía, DAM, transporte, supervisor y horario de carga.
- *    2. Qué se cargó, pallet por pallet, con su proforma, y los totales.
+ *    2. Qué salió, pallet por pallet, con su proforma, y los totales.
+ *       Si salió distinto de lo cargado (075: muestreo, sacos dañados, lo que
+ *       no entró), un cuadro «cargado / despachado / diferencia y motivo».
  *    3. Las fotos, dos por fila, con su nombre.
  *
  *  El diseño es provisional: el documento dice que depende de un reporte
@@ -19,7 +21,7 @@ import PDFDocument from 'pdfkit';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MARCA_PDF as MARCA, seguro } from './textoPdf';
-import type { Despacho } from './despachosDatos';
+import { MOTIVO_DIFERENCIA, DESTINO_DIFERENCIA, type Despacho } from './despachosDatos';
 
 const M = 40;
 const ANCHO = 595.28;
@@ -123,7 +125,9 @@ export async function generarReporteCarga(op: {
       }
       doc.y = y + 17;
     };
-    doc.fillColor(MARCA.azulProfundo).font('Helvetica-Bold').fontSize(9).text(`QUÉ SE CARGÓ · ${d.items.length} PALLETS`, M, doc.y);
+    const conDiferencia = d.items.filter((i) => i.motivo);
+    doc.fillColor(MARCA.azulProfundo).font('Helvetica-Bold').fontSize(9)
+      .text(conDiferencia.length ? `QUÉ SALIÓ · ${d.items.length} PALLETS` : `QUÉ SE CARGÓ · ${d.items.length} PALLETS`, M, doc.y);
     doc.moveDown(0.3);
     encabezado();
     d.items.forEach((it, k) => {
@@ -148,6 +152,64 @@ export async function generarReporteCarga(op: {
       .text(bultos.toLocaleString('es-PE'), M + UTIL - cols[5].w - cols[4].w + 4, yT, { width: cols[4].w - 8, align: 'right' })
       .text(cifra(kg / 1000), M + UTIL - cols[5].w + 4, yT, { width: cols[5].w - 8, align: 'right' });
     doc.y = yT + 18;
+
+    /* ---- 2 bis. Cargado / despachado / diferencia y motivo (075) ---- */
+    if (conDiferencia.length) {
+      const kgCargado = d.items.reduce((t, i) => t + i.kg_cargados, 0);
+      const bultosCargados = d.items.reduce((t, i) => t + i.bultos_cargados, 0);
+      saltoSiHaceFalta(60);
+      doc.fillColor(MARCA.atencion).font('Helvetica-Bold').fontSize(9)
+        .text(`SALIÓ DISTINTO DE LO CARGADO · ${conDiferencia.length} PALLET${conDiferencia.length === 1 ? '' : 'S'}`, M, doc.y);
+      doc.fillColor(MARCA.tintaSuave).font('Helvetica').fontSize(7.5)
+        .text(seguro(`Cargado: ${bultosCargados.toLocaleString('es-PE')} bultos · ${cifra(kgCargado / 1000)} TM. ` +
+          `Despachado: ${bultos.toLocaleString('es-PE')} bultos · ${cifra(kg / 1000)} TM. ` +
+          `Diferencia: ${(bultosCargados - bultos).toLocaleString('es-PE')} bultos · ${cifra((kgCargado - kg) / 1000)} TM.`),
+          M, doc.y + 1, { width: UTIL });
+      doc.moveDown(0.3);
+      const colsD = [
+        { t: 'PALLET', w: 78, a: 'left' as const },
+        { t: 'CARGADO', w: 80, a: 'right' as const },
+        { t: 'DESPACHADO', w: 80, a: 'right' as const },
+        { t: 'DIFERENCIA', w: 80, a: 'right' as const },
+        { t: 'MOTIVO Y QUÉ PASÓ', w: UTIL - 78 - 80 - 80 - 80, a: 'left' as const },
+      ];
+      const encabezadoD = () => {
+        const y = doc.y;
+        doc.rect(M, y, UTIL, 15).fill(MARCA.atencion);
+        let x = M;
+        for (const c of colsD) {
+          doc.fillColor(MARCA.blanco).font('Helvetica-Bold').fontSize(7).text(c.t, x + 4, y + 4, { width: c.w - 8, align: c.a });
+          x += c.w;
+        }
+        doc.y = y + 17;
+      };
+      encabezadoD();
+      conDiferencia.forEach((it, k) => {
+        const motivo = `${MOTIVO_DIFERENCIA[it.motivo ?? ''] ?? it.motivo}${it.detalle ? `: ${it.detalle}` : ''} — ${DESTINO_DIFERENCIA[it.motivo ?? ''] ?? ''}`;
+        const alto = Math.max(12, doc.font('Helvetica').fontSize(7.2).heightOfString(seguro(motivo), { width: colsD[4].w - 8 }) + 3);
+        if (doc.y + alto > ALTO - PIE - 14) { doc.addPage(); encabezadoD(); }
+        const y = doc.y;
+        if (k % 2 === 1) doc.rect(M, y - 1, UTIL, alto).fill(MARCA.grisSuave);
+        const valores = [
+          it.pallet,
+          `${it.bultos_cargados.toLocaleString('es-PE')} b · ${cifra(it.kg_cargados / 1000)}`,
+          `${it.bultos.toLocaleString('es-PE')} b · ${cifra(it.kg / 1000)}`,
+          `-${(it.bultos_cargados - it.bultos).toLocaleString('es-PE')} b · ${cifra((it.kg_cargados - it.kg) / 1000)}`,
+        ];
+        let x = M;
+        colsD.slice(0, 4).forEach((c, i) => {
+          doc.fillColor(MARCA.tinta).font('Helvetica').fontSize(7.2)
+            .text(seguro(valores[i]), x + 4, y + 1, { width: c.w - 8, align: c.a, lineBreak: false, ellipsis: true });
+          x += c.w;
+        });
+        doc.fillColor(MARCA.tinta).font('Helvetica').fontSize(7.2).text(seguro(motivo), x + 4, y + 1, { width: colsD[4].w - 8 });
+        doc.y = y + alto;
+      });
+      doc.fillColor(MARCA.tintaSuave).font('Helvetica').fontSize(6.8)
+        .text('Toneladas en TM. El muestreo y la merma salieron del stock con su propio movimiento; lo que no entró volvió a cámara apartado para su pedido. El plano de estiba es el de la carga.',
+          M, doc.y + 3, { width: UTIL });
+      doc.y += 12;
+    }
 
     /* ---- 3. Las fotos ---- */
     const fotos = op.fotos.get(d.id) ?? [];

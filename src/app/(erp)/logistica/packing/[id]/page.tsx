@@ -149,7 +149,7 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
   const [{ data: lineas }, { data: celdas }, { data: supervisores }] = await Promise.all([
     supabase
       .from('packing_lineas')
-      .select('lote_id, bultos, peso_neto_kg, lotes(codigo_pallet, codigo_lote, fecha_produccion, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg)))')
+      .select('lote_id, bultos, peso_neto_kg, bultos_cargados, kg_cargados, motivo_diferencia, detalle_diferencia, lotes(codigo_pallet, codigo_lote, fecha_produccion, sku_presentaciones(skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg)))')
       .eq('packing_list_id', packingId),
     supabase
       .from('plano_estiba')
@@ -188,8 +188,29 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
       pesoBulto: Number(pres?.peso_bulto_kg ?? 0),
       bultos: Number(l.bultos ?? 0),
       peso: Number(l.peso_neto_kg ?? 0),
+      /* Lo cargado: igual a lo de arriba salvo que al despachar saliera otra cosa (075). */
+      bultosCargados: l.bultos_cargados === null || l.bultos_cargados === undefined ? Number(l.bultos ?? 0) : Number(l.bultos_cargados),
+      pesoCargado: l.kg_cargados === null || l.kg_cargados === undefined ? Number(l.peso_neto_kg ?? 0) : Number(l.kg_cargados),
+      motivo: (l.motivo_diferencia as string) ?? null,
+      detalle: (l.detalle_diferencia as string) ?? null,
     };
   }).sort((a, b) => (a.fechaProduccion ?? '').localeCompare(b.fechaProduccion ?? ''));
+
+  /*
+   * PALLETS BLOQUEADOS POR CALIDAD (075). Un pallet que Calidad bloqueó
+   * después de subirlo al contenedor no puede salir: se marca aquí, antes de
+   * pulsar «Despachar», y el despacho lo rechaza en el servidor y en la base.
+   */
+  const abierto = pk.estado !== 'cerrado' && pk.estado !== 'anulado';
+  const bloqueos = abierto
+    ? await Promise.all(lotes.map(async (l) => {
+        const { data } = await supabase.rpc('lote_bloqueo_texto', { p_lote_id: l.loteId });
+        return [l.loteId, (data as string | null) ?? null] as const;
+      }))
+    : [];
+  const bloqueoDe = new Map(bloqueos);
+  const bloqueados = lotes.filter((l) => bloqueoDe.get(l.loteId));
+  const conDiferencia = lotes.filter((l) => l.motivo);
 
   // Índice rápido: cuántos sacos del lote X van en la fila Y
   const mapa = new Map<string, number>();
@@ -215,6 +236,8 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
   const saldoPorFila = totalPorFila.map((t) => sacosPorFila - t);
   const totalBultos = lotes.reduce((s, l) => s + l.bultos, 0);
   const totalPeso = lotes.reduce((s, l) => s + l.peso, 0);
+  const totalBultosCargados = lotes.reduce((s, l) => s + l.bultosCargados, 0);
+  const totalPesoCargado = lotes.reduce((s, l) => s + l.pesoCargado, 0);
   /*
    * «Cierra» significa que lo cargado cuadra con el plano. Un contenedor sin
    * nada dentro no cierra ni deja de cerrar: está vacío, y decir «todas las
@@ -225,9 +248,38 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
 
   return (
     <>
+      {bloqueados.length > 0 && (
+        <div className="ficha-aviso ficha-aviso-critico" role="alert" data-aviso="bloqueo-calidad">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>
+              {bloqueados.length === 1 ? 'Un pallet de este contenedor está bloqueado' : `${bloqueados.length} pallets de este contenedor están bloqueados`} por
+              Calidad y no puede{bloqueados.length === 1 ? '' : 'n'} salir:
+            </strong>{' '}
+            {bloqueados.map((l) => `${l.pallet} (${bloqueoDe.get(l.loteId)})`).join(' · ')}.{' '}
+            Quítelo del contenedor y rehaga el plano, o espere a que Calidad lo libere. Si ya lo bajaron
+            del contenedor, al despachar use «Ajustar lo que salió»: 0 bultos y «No entró en el contenedor».
+          </span>
+        </div>
+      )}
+
+      {conDiferencia.length > 0 && (
+        <div className="ficha-aviso ficha-aviso-atencion" data-aviso="salio-distinto">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>Salió distinto de lo cargado en {conDiferencia.length} pallet{conDiferencia.length === 1 ? '' : 's'}:</strong>{' '}
+            se cargaron {num(totalBultosCargados)} bultos ({tm(totalPesoCargado, 3)} TM) y salieron {num(totalBultos)} ({tm(totalPeso, 3)} TM).
+            El detalle y el motivo de cada uno están en «Pallets cargados».
+          </span>
+        </div>
+      )}
+
       <RejillaKpi>
-        <Kpi etiqueta="Total de bultos" valor={num(totalBultos)} nota={`${lotes.length} lotes distintos`} href="#pallets" />
-        <Kpi etiqueta="Peso neto" valor={tm(totalPeso)} sufijo="TM" href="#pallets" />
+        <Kpi etiqueta={pk.estado === 'cerrado' ? 'Bultos despachados' : 'Total de bultos'} valor={num(totalBultos)}
+             nota={conDiferencia.length ? `De ${num(totalBultosCargados)} cargados · ${lotes.length} lotes` : `${lotes.length} lotes distintos`}
+             tono={conDiferencia.length ? 'atencion' : undefined} href="#pallets" />
+        <Kpi etiqueta={pk.estado === 'cerrado' ? 'Peso despachado' : 'Peso neto'} valor={tm(totalPeso)} sufijo="TM"
+             nota={conDiferencia.length ? `De ${tm(totalPesoCargado, 3)} TM cargadas` : undefined} href="#pallets" />
         <Kpi etiqueta="Filas utilizadas" valor={`${filaMax} / ${filasContenedor}`}
              tono={vacio ? 'neutro' : 'marca'}
              nota={`${sacosPorFila} sacos por fila`}
@@ -303,7 +355,13 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
             producto: `${l.especie} · ${l.corte} · ${l.presentacion}`,
             bultos: l.bultos,
             peso: l.peso,
+            bultos_cargados: l.bultosCargados,
+            peso_cargado: l.pesoCargado,
+            motivo: l.motivo,
+            detalle: l.detalle,
+            bloqueo: bloqueoDe.get(l.loteId) ?? null,
           }))}
+          despachado={pk.estado === 'cerrado'}
           puede={puedeDespachar}
         />
       </Panel>
@@ -321,7 +379,8 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
             lote_id: l.loteId,
             codigo_pallet: l.pallet,
             producto: `${l.especie} · ${l.corte} · ${l.presentacion}`,
-            bultos: l.bultos,
+            // El plano es de lo CARGADO: así se estibó, saliera después lo que saliera.
+            bultos: l.bultosCargados,
           }))}
           celdasIniciales={(celdas ?? []).map((c) => ({
             lote_id: c.lote_id as number,

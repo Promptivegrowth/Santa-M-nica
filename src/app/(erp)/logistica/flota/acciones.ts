@@ -23,6 +23,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { NOMBRE_ROL, type Rol } from '@/lib/navegacion';
 
 export type ResultadoFlota = { ok: true; id: number; mensaje: string } | { ok: false; mensaje: string; campo?: string };
 
@@ -37,7 +38,7 @@ async function autorizar() {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { error: 'Su sesión caducó. Vuelva a entrar.' };
   if (!PUEDEN.includes(usuario.rol)) {
-    return { error: `Su rol (${usuario.rol}) no puede modificar la flota: lo hacen Gerencia, Operaciones y Comercio Exterior.` };
+    return { error: `${NOMBRE_ROL[usuario.rol as Rol] ?? 'Su rol'} no puede modificar la flota: lo hacen Gerencia, Operaciones y Comercio Exterior.` };
   }
   return { usuario };
 }

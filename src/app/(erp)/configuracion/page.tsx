@@ -28,8 +28,12 @@ import { InterruptorRegla } from './InterruptorRegla';
 import { ContactosYCuentas } from './ContactosYCuentas';
 import { NuevoUsuario, SelectorRol, AccesoUsuario } from './GestionUsuarios';
 import { GestionVendedores, type FilaVendedor } from './GestionVendedores';
+//  074 · Almacenes se edita aquí (qué recibe cada uno, alta, desactivar).
+import { GestionAlmacenes, type FilaAlmacen } from './GestionAlmacenes';
+import { cargarAlmacenes } from './datosAlmacenes';
 import { Icono } from '@/components/estructura/Icono';
 import { num, fecha, fechaHora } from '@/lib/formato';
+import { etiquetaClave } from '@/lib/etiquetas';
 import { NOMBRE_ROL, type Rol } from '@/lib/navegacion';
 
 export const metadata: Metadata = { title: 'Configuración' };
@@ -71,7 +75,7 @@ type Catalogo =
 const CATALOGOS: Catalogo[] = [
   {
     clave: 'almacenes', titulo: 'Almacenes',
-    desc: 'Bodegas propias y de terceros, con su capacidad.',
+    desc: 'Bodegas propias y de terceros: capacidad y si reciben producción o compras. Se editan aquí.',
     tabla: 'almacenes',
     columnas: 'id, codigo, nombre, tipo, operador, ciudad, capacidad_tm, despachos_dia_max, activo',
     orden: 'codigo',
@@ -120,6 +124,28 @@ const CATALOGOS: Catalogo[] = [
     orden: 'nombre',
   },
 ];
+
+/** Los ámbitos del maestro de motivos, dichos para el usuario. */
+const NOMBRE_AMBITO: Record<string, string> = {
+  ingreso: 'Ingreso a cámara',
+  salida: 'Salida de cámara',
+  ajuste: 'Ajustes de stock',
+  bloqueo: 'Dictámenes de calidad (observación y bloqueo)',
+  liberacion_reserva: 'Liberación de reservas',
+};
+
+/** Signo de una condición, en palabras. */
+const SIGNO: Record<string, string> = { '>': 'más de', '>=': 'desde', '<': 'menos de', '<=': 'hasta', '=': 'igual a' };
+
+/** Lo que mide cada regla, en palabras, y en qué unidad. */
+const MEDIDA: Record<string, { texto: string; unidad: string }> = {
+  meses_almacenado: { texto: 'Meses en cámara', unidad: 'meses' },
+  dias_para_vencer: { texto: 'Días para que venza la reserva', unidad: 'días' },
+  dias_sin_movimiento: { texto: 'Días sin movimiento', unidad: 'días' },
+  margen_pct: { texto: 'Margen del pedido', unidad: '%' },
+  dias_vencida: { texto: 'Días vencida', unidad: 'días' },
+  dias_en_transito: { texto: 'Días en tránsito', unidad: 'días' },
+};
 
 /** Convierte nombre_de_columna en «Nombre de columna». */
 function etiquetaColumna(clave: string): string {
@@ -274,7 +300,10 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
     }));
   }
 
-  if (pestana === 'maestros' && abierto && 'tabla' in abierto && catalogo !== 'vendedores') {
+  let filasAlmacenes: FilaAlmacen[] = [];
+  if (pestana === 'maestros' && catalogo === 'almacenes') filasAlmacenes = await cargarAlmacenes(supabase);
+
+  if (pestana === 'maestros' && abierto && 'tabla' in abierto && catalogo !== 'vendedores' && catalogo !== 'almacenes') {
     const { data } = await supabase
       .from(abierto.tabla).select(abierto.columnas).order(abierto.orden).limit(300);
     filasCatalogo = (data ?? []) as unknown as Record<string, unknown>[];
@@ -345,7 +374,16 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                         <td>
                           <strong style={{ fontWeight: 600 }}>{p.etiqueta as string}</strong>
                           <br />
-                          <code style={{ fontSize: '.66rem', color: 'var(--tinta-3)' }}>{p.clave as string}</code>
+                          {/*
+                            Quién lo cambia, dicho igual para todos: «comercial»
+                            ya no aparece (Comercial no entra a Configuración;
+                            077 pasó esos parámetros a Operaciones).
+                          */}
+                          <span style={{ fontSize: '.68rem', color: 'var(--tinta-3)' }} data-quien={p.clave as string}>
+                            {p.editable_por === 'gerencia' ? 'Lo cambia solo Gerencia' : 'Lo cambian Gerencia y Operaciones'}
+                          </span>
+                          <br />
+                          <code style={{ fontSize: '.62rem', color: 'var(--tinta-3)' }}>{p.clave as string}</code>
                         </td>
                         <td style={{ fontSize: '.79rem', color: 'var(--tinta-2)', maxWidth: '34rem' }}>
                           {(p.descripcion as string) ?? '—'}
@@ -384,9 +422,11 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
           ))}
 
           <p className="pie-explicativo">
-            <strong>Pruébelo:</strong> cambie el <em>umbral de anticuamiento</em> de 12 a 6 meses y
+            <strong>Pruébelo:</strong> cambie la <em>Alerta de anticuamiento</em> de 12 a 6 meses y
             abra el reporte de <Link href="/almacenes/anticuamiento">Anticuamiento</Link>. Verá que
-            la cantidad de lotes en alerta cambia de inmediato, sin desplegar nada.
+            la cantidad de lotes en alerta cambia de inmediato, sin desplegar nada. Los parámetros que
+            son el umbral de una regla (anticuamiento, vida útil, aviso de la reserva y margen mínimo)
+            cambian también esa regla en el acto: ver <Link href="/configuracion?t=reglas">Motor de reglas</Link>.
           </p>
         </>
       )}
@@ -398,8 +438,11 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
             Cada regla vigila una condición del negocio y abre una alerta por cada registro que la
             cumple. El sistema las revisa <strong>cada mañana</strong> y <strong>al mover el
             interruptor</strong>: al apagar una regla se cierran sus alertas abiertas; al encenderla
-            se abren las que correspondan. Una alerta que alguien marcó como atendida no se vuelve a
-            abrir para el mismo registro.
+            se abren las que correspondan. Una alerta que alguien marcó como atendida (botón{' '}
+            <strong>Marcar como atendida</strong> en <Link href="/alertas">Alertas</Link>) no se vuelve a
+            abrir para el mismo registro. Cuando el umbral de una regla es un parámetro del negocio, se
+            cambia en <Link href="/configuracion?t=parametros">Parámetros del negocio</Link>: es un solo
+            número, el mismo para la regla y para las pantallas.
           </p>
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0, marginTop: '.7rem' }}>
             <table className="datos">
@@ -413,11 +456,29 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                     <td style={{ fontSize: '.79rem', color: 'var(--tinta-2)', maxWidth: '32rem' }}>
                       {(r.descripcion as string) ?? '—'}
                       <br />
-                      <code style={{ fontSize: '.66rem', color: 'var(--tinta-3)' }}>
-                        {JSON.stringify(r.condicion)}
-                      </code>
+                      {(() => {
+                        /*
+                         * La condición en palabras, con el umbral que de verdad
+                         * usa la regla. Si sale de un parámetro, se dice cuál:
+                         * antes se veía el JSON con un 8 fijo mientras el
+                         * parámetro decía otra cosa.
+                         */
+                        const c = (r.condicion ?? {}) as { campo?: string; operador?: string; valor?: number | string; parametro?: string };
+                        const medida = MEDIDA[c.campo ?? ''] ?? { texto: c.campo ?? '—', unidad: '' };
+                        const par = c.parametro ? (parametros ?? []).find((p) => p.clave === c.parametro) : null;
+                        const umbral = par ? String(par.valor) : String(c.valor ?? '—');
+                        return (
+                          <span style={{ fontSize: '.72rem', color: 'var(--tinta-3)' }} data-umbral-regla={r.id as number}>
+                            Condición: {medida.texto.toLowerCase()} {SIGNO[c.operador ?? ''] ?? c.operador}{' '}
+                            <strong>{umbral}{medida.unidad === '%' ? ' %' : ` ${medida.unidad}`}</strong>
+                            {par
+                              ? <> · umbral del parámetro <Link href="/configuracion?t=parametros" className="enlace-dato">«{String(par.etiqueta)}»</Link></>
+                              : ' · umbral propio de esta regla'}
+                          </span>
+                        );
+                      })()}
                     </td>
-                    <td className="mono">{r.entidad as string}</td>
+                    <td>{etiquetaClave(r.entidad === 'lote' ? 'pallet' : (r.entidad as string))}</td>
                     <td>
                       <Etiqueta
                         texto={r.severidad === 'critica' ? 'Crítica' : r.severidad === 'advertencia' ? 'Advertencia' : 'Info'}
@@ -462,7 +523,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
             firma de un rol superior.
           </p>
           {[...porAmbito.entries()].map(([ambito, lista]) => (
-            <Panel key={ambito} titulo={ambito.replace('_', ' ')} className="mb-espacio">
+            <Panel key={ambito} titulo={NOMBRE_AMBITO[ambito] ?? etiquetaClave(ambito)} className="mb-espacio">
               <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
                 <table className="datos">
                   <thead><tr><th>Código</th><th>Nombre</th><th>Autorización</th><th>Estado</th></tr></thead>
@@ -509,7 +570,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                     <strong>{m.titulo}</strong>
                     <span className="tarjeta-maestro-desc">{m.desc}</span>
                     <span className="tarjeta-maestro-pie">
-                      {'ruta' in m ? 'Abrir su pantalla' : activa ? 'Viendo este catálogo' : m.clave === 'vendedores' ? 'Ver y editar' : 'Ver el catálogo'}
+                      {'ruta' in m ? 'Abrir su pantalla' : activa ? 'Viendo este catálogo' : m.clave === 'vendedores' || m.clave === 'almacenes' ? 'Ver y editar' : 'Ver el catálogo'}
                       <Icono nombre="expandir" tamano={12} />
                     </span>
                   </Link>
@@ -520,6 +581,8 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
 
           {catalogo === 'vendedores' ? (
             <GestionVendedores filas={filasVendedores} editable={['gerencia', 'operaciones'].includes(rol)} />
+          ) : catalogo === 'almacenes' ? (
+            <GestionAlmacenes filas={filasAlmacenes} editable={['gerencia', 'operaciones'].includes(rol)} />
           ) : !abierto ? (
             <Panel>
               <Vacio
@@ -681,9 +744,9 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
             </div>
           )}
           <p className="pie-explicativo" style={{ padding: '.9rem 1rem 1rem' }}>
-            El rol de cada usuario gobierna sus permisos <strong>dentro de la base de datos</strong>,
-            no solo en la pantalla. Aunque alguien manipulara el navegador, PostgreSQL rechazaría la
-            operación que no le corresponde. Una cuenta <strong>desactivada</strong> no puede entrar,
+            El rol de cada usuario decide qué puede ver y hacer, y el sistema lo comprueba en cada
+            operación, no solo en los botones: aunque alguien intentara saltarse la pantalla, el
+            sistema rechazaría lo que no le corresponde. Una cuenta <strong>desactivada</strong> no puede entrar,
             pierde sus sesiones abiertas y deja de aparecer en las listas para elegir responsables;
             sus registros y su historial se conservan. Las contraseñas temporales las comunica
             Gerencia en persona y el sistema obliga a cambiarlas al entrar.

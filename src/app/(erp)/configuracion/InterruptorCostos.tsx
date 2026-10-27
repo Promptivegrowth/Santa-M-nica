@@ -10,6 +10,7 @@
  */
 import { useState, useTransition } from 'react';
 import { alternarCargaCostos } from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 export function InterruptorCostos({ id, carga, editable }: { id: string; carga: boolean; editable: boolean }) {
   const [valor, setValor] = useState(carga);
@@ -26,7 +27,7 @@ export function InterruptorCostos({ id, carga, editable }: { id: string; carga: 
                onChange={() => {
                  setError(null);
                  iniciar(async () => {
-                   const r = await alternarCargaCostos(id, !valor);
+                   const r = await accionSegura(() => alternarCargaCostos(id, !valor));
                    if (r.ok) setValor(!valor); else setError(r.mensaje);
                  });
                }} />

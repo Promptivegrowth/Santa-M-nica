@@ -30,6 +30,7 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { uno, campo } from '@/lib/relaciones';
+import { NOMBRE_ROL, type Rol } from '@/lib/navegacion';
 
 export type TipoAjuste = 'ajuste_positivo' | 'ajuste_negativo' | 'salida_merma' | 'salida_muestra';
 
@@ -98,7 +99,10 @@ export async function registrarAjuste(d: DatosAjuste): Promise<ResultadoAjuste> 
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
   if (!PUEDEN_REGISTRAR.includes(usuario.rol)) {
-    return { ok: false, mensaje: `Su rol (${usuario.rol}) no puede registrar ajustes, mermas ni muestras.` };
+    return {
+      ok: false,
+      mensaje: `${NOMBRE_ROL[usuario.rol as Rol] ?? 'Su rol'} no puede registrar ajustes, mermas ni muestras: los registran Gerencia y Operaciones (y, según el tipo, Almacén y Calidad).`,
+    };
   }
   if (!TIPOS_AJUSTE.includes(d.tipo)) return { ok: false, mensaje: 'Elija qué pasó: ajuste, merma o muestra.' };
   if (!d.lote_id || !d.almacen_id) return { ok: false, mensaje: 'Elija el pallet y la bodega.' };
