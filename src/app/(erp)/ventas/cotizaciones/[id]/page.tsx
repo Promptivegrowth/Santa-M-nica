@@ -538,7 +538,7 @@ async function CuerpoCotizacion({
           <dl className="ficha">
             <div><dt>Cliente</dt><dd>{campo(cot.clientes, 'razon_social')}</dd></div>
             <div><dt>País</dt><dd>{campo(cot.clientes, 'pais')}</dd></div>
-            <div><dt>Vendedor</dt><dd>{campo(cot.vendedores, 'nombre', 'Venta directa')}</dd></div>
+            <div><dt>Vendedor</dt><dd>{campo(cot.vendedores, 'nombre', 'Sin vendedor')}</dd></div>
             <div><dt>Destino</dt><dd>{campo(cot.destinos, 'puerto')}</dd></div>
             <div><dt>Lista de precio</dt><dd>{campo(cot.listas_precio, 'nombre')}</dd></div>
             <div><dt>Creada por</dt><dd>{campo(cot.usuarios, 'nombre')}</dd></div>

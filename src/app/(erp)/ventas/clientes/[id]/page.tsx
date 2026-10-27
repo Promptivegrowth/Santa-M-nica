@@ -287,7 +287,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
             <div><dt>Contacto</dt><dd>{(c.contacto as string) ?? '—'}</dd></div>
             <div><dt>Correo</dt><dd>{(c.email as string) ?? '—'}</dd></div>
             <div><dt>Teléfono</dt><dd>{(c.telefono as string) ?? '—'}</dd></div>
-            <div><dt>Vendedor asignado</dt><dd>{campo(c.vendedores, 'nombre', 'Venta directa')}</dd></div>
+            <div><dt>Vendedor asignado</dt><dd>{campo(c.vendedores, 'nombre', 'Sin vendedor')}</dd></div>
             <div><dt>Alta</dt><dd>{fecha(c.creado_en as string)}</dd></div>
           </dl>
         </Panel>

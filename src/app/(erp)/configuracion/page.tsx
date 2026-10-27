@@ -27,6 +27,7 @@ import { InterruptorCostos } from './InterruptorCostos';
 import { InterruptorRegla } from './InterruptorRegla';
 import { ContactosYCuentas } from './ContactosYCuentas';
 import { NuevoUsuario, SelectorRol, AccesoUsuario } from './GestionUsuarios';
+import { GestionVendedores, type FilaVendedor } from './GestionVendedores';
 import { Icono } from '@/components/estructura/Icono';
 import { num, fecha, fechaHora } from '@/lib/formato';
 import { NOMBRE_ROL, type Rol } from '@/lib/navegacion';
@@ -53,7 +54,7 @@ const NOMBRE_GRUPO: Record<string, string> = {
 };
 
 /**
- * Los seis catálogos del sistema.
+ * Los siete catálogos del sistema.
  *
  * Dos de ellos ya tienen pantalla propia —Clientes es una cartera completa y
  * Vehículos es la Flota, con el estado de sus documentos—, así que su tarjeta
@@ -104,6 +105,18 @@ const CATALOGOS: Catalogo[] = [
     desc: 'Tarifarios con vigencia y escalas por volumen.',
     tabla: 'listas_precio',
     columnas: 'id, nombre, moneda, incoterm, vigente_desde, vigente_hasta, activo',
+    orden: 'nombre',
+  },
+  /*
+   * El único catálogo de esta pestaña que se EDITA aquí mismo (alta, cambios,
+   * desactivar y borrar): antes los vendedores solo se cargaban por base de
+   * datos. Su tabla la dibuja GestionVendedores, no la tabla genérica.
+   */
+  {
+    clave: 'vendedores', titulo: 'Vendedores',
+    desc: 'Venta directa e intermediarios que traen al cliente. Se editan aquí.',
+    tabla: 'vendedores',
+    columnas: 'id, nombre, tipo, email, activo',
     orden: 'nombre',
   },
 ];
@@ -171,10 +184,12 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
         supabase.from('destinos').select('id', { count: 'exact', head: true }),
         supabase.from('vehiculos').select('id', { count: 'exact', head: true }),
         supabase.from('listas_precio').select('id', { count: 'exact', head: true }),
-      ]).then(([a, s, c, d, v, l]) => ({
+        supabase.from('vendedores').select('id', { count: 'exact', head: true }),
+      ]).then(([a, s, c, d, v, l, ve]) => ({
         data: {
           almacenes: a.count ?? 0, skus: s.count ?? 0, clientes: c.count ?? 0,
           destinos: d.count ?? 0, vehiculos: v.count ?? 0, listas: l.count ?? 0,
+          vendedores: ve.count ?? 0,
         },
       })),
     ]);
@@ -237,7 +252,29 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
    * texto— porque la tabla de abajo se dibuja recorriendo esas claves.
    */
   let filasCatalogo: Record<string, unknown>[] = [];
-  if (pestana === 'maestros' && abierto && 'tabla' in abierto) {
+
+  /*
+   * Vendedores: además de sus datos, cuántas veces se usó cada uno. Decide si
+   * se puede borrar (nunca usado) o solo desactivar.
+   */
+  let filasVendedores: FilaVendedor[] = [];
+  if (pestana === 'maestros' && catalogo === 'vendedores') {
+    const { data: vend } = await supabase.from('vendedores').select('id, nombre, tipo, email, activo')
+      .order('activo', { ascending: false }).order('nombre');
+    const contar = async (tabla: 'clientes' | 'cotizaciones' | 'pedidos', id: number) =>
+      (await supabase.from(tabla).select('id', { count: 'exact', head: true }).eq('vendedor_id', id)).count ?? 0;
+    filasVendedores = await Promise.all((vend ?? []).map(async (v) => {
+      const [clientes, cotizaciones, pedidos] = await Promise.all([
+        contar('clientes', v.id as number), contar('cotizaciones', v.id as number), contar('pedidos', v.id as number),
+      ]);
+      return {
+        id: v.id as number, nombre: v.nombre as string, tipo: v.tipo as FilaVendedor['tipo'],
+        email: (v.email as string) ?? null, activo: Boolean(v.activo), clientes, cotizaciones, pedidos,
+      };
+    }));
+  }
+
+  if (pestana === 'maestros' && abierto && 'tabla' in abierto && catalogo !== 'vendedores') {
     const { data } = await supabase
       .from(abierto.tabla).select(abierto.columnas).order(abierto.orden).limit(300);
     filasCatalogo = (data ?? []) as unknown as Record<string, unknown>[];
@@ -472,7 +509,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                     <strong>{m.titulo}</strong>
                     <span className="tarjeta-maestro-desc">{m.desc}</span>
                     <span className="tarjeta-maestro-pie">
-                      {'ruta' in m ? 'Abrir su pantalla' : activa ? 'Viendo este catálogo' : 'Ver el catálogo'}
+                      {'ruta' in m ? 'Abrir su pantalla' : activa ? 'Viendo este catálogo' : m.clave === 'vendedores' ? 'Ver y editar' : 'Ver el catálogo'}
                       <Icono nombre="expandir" tamano={12} />
                     </span>
                   </Link>
@@ -481,7 +518,9 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
             </div>
           </Panel>
 
-          {!abierto ? (
+          {catalogo === 'vendedores' ? (
+            <GestionVendedores filas={filasVendedores} editable={['gerencia', 'operaciones'].includes(rol)} />
+          ) : !abierto ? (
             <Panel>
               <Vacio
                 titulo="Elija un catálogo"

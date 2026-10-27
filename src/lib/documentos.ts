@@ -637,7 +637,8 @@ async function cargarCotizacion(id: number): Promise<Documento> {
       { etiqueta: 'Validez', valor: `${validez} días · hasta ${fechaCorta(vence.toISOString())}` },
       { etiqueta: 'Incoterm', valor: String(cot.incoterm ?? '—') },
       { etiqueta: 'Destino', valor: String(uno<Record<string, unknown>>(cot.destinos)?.puerto ?? 'Por definir') },
-      { etiqueta: 'Vendedor', valor: String(uno<Record<string, unknown>>(cot.vendedores)?.nombre ?? 'Venta directa') },
+      // Sin vendedor: un guion (en un documento para el cliente, «Sin vendedor» se lee raro).
+      { etiqueta: 'Vendedor', valor: String(uno<Record<string, unknown>>(cot.vendedores)?.nombre ?? '—') },
       { etiqueta: 'Moneda', valor: `${moneda}${moneda === 'USD' ? ` · TC ${Number(cot.tipo_cambio).toFixed(3)}` : ''}` },
     ],
     lineas: filas,

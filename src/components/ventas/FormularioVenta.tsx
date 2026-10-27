@@ -792,7 +792,8 @@ export function FormularioVenta({
               value={vendedorId}
               onChange={(e) => setVendedorId(e.target.value ? Number(e.target.value) : '')}
             >
-              <option value="">Venta directa</option>
+              {/* Vacío = la cotización queda sin vendedor. Antes decía «Venta directa» y se confundía con el vendedor «Venta Directa Santa Mónica». */}
+              <option value="">Sin vendedor</option>
               {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
             </select>
           </label>
