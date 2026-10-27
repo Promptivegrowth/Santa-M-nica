@@ -2,34 +2,21 @@
 
 /**
  * ============================================================================
- *  FORMULARIO DE ACCESO · con inicio rápido por rol
+ *  FORMULARIO DE ACCESO
  * ============================================================================
- *  Además del ingreso normal con correo y contraseña, esta pantalla ofrece un
- *  panel de ACCESO RÁPIDO: siete tarjetas, una por cada rol del sistema.
- *  Un clic entra directamente con ese perfil.
+ *  Cada persona entra con su correo corporativo y su contraseña.
  *
- *  ¿Para qué sirve? Durante el desarrollo y las pruebas, permite comprobar en
- *  segundos qué ve y qué puede hacer cada persona del equipo, sin andar
- *  copiando contraseñas. Es una ayuda de la etapa de construcción.
+ *  Durante la construcción hubo aquí un panel de «Acceso rápido por rol» que
+ *  entraba con un clic como cualquiera de los perfiles de prueba, Gerencia
+ *  incluida, con la contraseña común escrita en este mismo archivo. Se retiró
+ *  al dar de alta las cuentas reales: con datos reales, esa puerta dejaba
+ *  entrar a cualquiera que abriera la página.
  * ============================================================================
  */
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { crearClienteNavegador } from '@/lib/supabase/navegador';
 import { Logotipo } from '@/components/marca/Logo';
-
-/** Los siete perfiles sembrados, con lo que hace cada uno. */
-const PERFILES = [
-  { rol: 'gerencia',    email: 'gerencia@santamonica.pe',    nombre: 'Marco A. León',  cargo: 'Gerencia General',      resumen: 'Ve todo. Configura el sistema, precios y reglas.',            color: '#304F8C' },
-  { rol: 'operaciones', email: 'operaciones@santamonica.pe', nombre: 'Oliver Tello',   cargo: 'Jefatura Operaciones',  resumen: 'Autoriza traslados, ajustes y libera reservas.',              color: '#3d67ab' },
-  { rol: 'comercial',   email: 'comercial@santamonica.pe',   nombre: 'Andrea Ríos',    cargo: 'Ventas',                resumen: 'Cotiza, registra pedidos y reserva producto.',                color: '#5095BF' },
-  { rol: 'comex',       email: 'comex@santamonica.pe',       nombre: 'Paolo Quiñones', cargo: 'Comercio Exterior',     resumen: 'Programa embarques y arma la documentación.',                 color: '#4a90a8' },
-  { rol: 'almacen',     email: 'almacen@santamonica.pe',     nombre: 'Luis Palacios',  cargo: 'Jefatura de Almacén',   resumen: 'Registra ingresos, carga contenedores y recibe traslados.',   color: '#53A6A6' },
-  { rol: 'calidad',     email: 'calidad@santamonica.pe',     nombre: 'Karina Sotelo',  cargo: 'Calidad',               resumen: 'Observa y libera producto con sustento documental.',          color: '#5aa88f' },
-  { rol: 'consulta',    email: 'consulta@santamonica.pe',    nombre: 'Invitado',       cargo: 'Solo lectura',          resumen: 'Solo consulta. No ve costos ni márgenes.',                    color: '#7a8aa3' },
-];
-
-const CLAVE_DEMO = 'SantaMonica2026';
 
 export function FormularioAcceso() {
   const router = useRouter();
@@ -53,9 +40,9 @@ export function FormularioAcceso() {
   }, [inactiva]);
 
   /** Realiza el ingreso contra Supabase y navega al panel. */
-  async function ingresar(email: string, password: string, etiqueta?: string) {
+  async function ingresar(email: string, password: string) {
     setError(null);
-    setEntrando(etiqueta ?? email);
+    setEntrando(email);
 
     const supabase = crearClienteNavegador();
     const { error: fallo } = await supabase.auth.signInWithPassword({ email, password });
@@ -136,7 +123,7 @@ export function FormularioAcceso() {
               <input
                 id="correo" type="email" className="campo" autoComplete="username"
                 value={correo} onChange={(e) => setCorreo(e.target.value)}
-                placeholder="nombre@santamonica.pe" disabled={ocupado}
+                placeholder="nombre@santamonicafishing.com" disabled={ocupado}
               />
             </div>
 
@@ -163,39 +150,6 @@ export function FormularioAcceso() {
             </button>
           </form>
 
-          {/* ---------- Acceso rápido ---------- */}
-          <section className="acceso-rapido">
-            <div className="acceso-rapido-cabecera">
-              <span className="panel-titulo">Acceso rápido por rol</span>
-              <span className="acceso-rapido-nota">Ayuda de desarrollo</span>
-            </div>
-            <p className="acceso-rapido-texto">
-              Un clic entra con ese perfil. Sirve para verificar qué ve y qué puede
-              hacer cada área.
-            </p>
-
-            <div className="acceso-tarjetas">
-              {PERFILES.map((p) => (
-                <button
-                  key={p.rol}
-                  type="button"
-                  className="tarjeta-rol"
-                  disabled={ocupado}
-                  onClick={() => ingresar(p.email, CLAVE_DEMO, p.rol)}
-                  title={p.resumen}
-                >
-                  <span className="tarjeta-rol-punto" style={{ background: p.color }} />
-                  <span className="tarjeta-rol-datos">
-                    <strong>{p.cargo}</strong>
-                    <small>{p.nombre}</small>
-                  </span>
-                  <span className="tarjeta-rol-estado">
-                    {entrando === p.rol ? '…' : '→'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
         </div>
       </main>
 
@@ -298,61 +252,6 @@ export function FormularioAcceso() {
           font-size: 0.82rem;
         }
 
-        /* --- acceso rápido --- */
-        .acceso-rapido {
-          margin-top: 2rem;
-          padding-top: 1.5rem;
-          border-top: 1px solid var(--linea);
-        }
-        .acceso-rapido-cabecera {
-          display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
-        }
-        .acceso-rapido-nota {
-          font-family: var(--font-mono);
-          font-size: 0.56rem;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          color: var(--tinta-3);
-          border: 1px solid var(--linea);
-          padding: 0.1em 0.4em;
-          border-radius: 2px;
-        }
-        .acceso-rapido-texto {
-          font-size: 0.8rem;
-          color: var(--tinta-3);
-          margin: 0.5rem 0 0.85rem;
-        }
-        .acceso-tarjetas { display: grid; gap: 0.4rem; }
-        .tarjeta-rol {
-          display: flex;
-          align-items: center;
-          gap: 0.65rem;
-          width: 100%;
-          text-align: left;
-          background: var(--superficie);
-          border: 1px solid var(--linea);
-          border-radius: var(--radio);
-          padding: 0.5rem 0.7rem;
-          cursor: pointer;
-          transition: border-color .12s ease, background .12s ease, transform .12s ease;
-        }
-        .tarjeta-rol:hover:not(:disabled) {
-          border-color: var(--acento-2);
-          background: var(--superficie-2);
-        }
-        .tarjeta-rol:active:not(:disabled) { transform: translateY(1px); }
-        .tarjeta-rol:disabled { opacity: 0.55; cursor: not-allowed; }
-        .tarjeta-rol-punto {
-          width: 0.55rem; height: 0.55rem; border-radius: 50%; flex: none;
-        }
-        .tarjeta-rol-datos { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-        .tarjeta-rol-datos strong { font-size: 0.82rem; font-weight: 600; }
-        .tarjeta-rol-datos small { font-size: 0.72rem; color: var(--tinta-3); }
-        .tarjeta-rol-estado {
-          font-family: var(--font-mono);
-          color: var(--tinta-3);
-          font-size: 0.85rem;
-        }
         .w-full { width: 100%; }
       `}</style>
     </div>
