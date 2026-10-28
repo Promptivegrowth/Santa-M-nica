@@ -23,9 +23,9 @@ export const COLUMNAS_TRASLADO: ColumnaPlantilla[] = [
   { clave: 'kilos', titulo: 'Kilos (si es parcial)', ancho: 12, tipo: 'numero', alias: ['Kilos', 'Kg'],
     ayuda: 'Vacío: se calculan con los kilos por bulto reales del pallet. No puede pasar de lo disponible.' },
   { clave: 'fecha', titulo: 'Fecha programada', ancho: 13, tipo: 'fecha',
-    ayuda: 'Opcional. DD/MM/AAAA, de hoy en adelante. Los pallets con el mismo origen, destino y fecha van en un mismo traslado.' },
+    ayuda: 'DD/MM/AAAA, de hoy en adelante. Los pallets con el mismo origen, destino y fecha van en un mismo traslado.' },
   { clave: 'observaciones', titulo: 'Observaciones', ancho: 34, tipo: 'texto',
-    ayuda: 'Opcional. Por qué se traslada (liberar espacio, acercarlo a la planta…).' },
+    ayuda: 'Por qué se traslada (liberar espacio, acercarlo a la planta…).' },
 ];
 
 export const TITULO_COLUMNA_TRASLADO: Record<string, string> = Object.fromEntries(
