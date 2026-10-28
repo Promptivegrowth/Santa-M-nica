@@ -29,7 +29,7 @@ import { BotonLiberar, BotonExpirar } from './Liberar';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { traerTodo } from '@/lib/traerTodo';
-import { type Rol } from '@/lib/navegacion';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { motivoNoLiberar, ROLES_LIBERAN_CUALQUIER_RESERVA } from '@/lib/permisosVentas';
 import { uno, campo } from '@/lib/relaciones';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
@@ -53,6 +53,9 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const rol = (usuario?.rol ?? 'consulta') as Rol;
+  /* Enlaces a Clientes y a Configuración solo para quien tiene esas pantallas. */
+  const veClientes = rolPuedeVerRuta(rol, '/ventas/clientes');
+  const veConfiguracion = rolPuedeVerRuta(rol, '/configuracion');
 
   /*
    * Liberar se decide FILA POR FILA (076): quien la apartó puede soltarla;
@@ -353,11 +356,11 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
                           ) : '—'}
                         </td>
                         <td>
-                          {cli?.id ? (
+                          {cli?.id && veClientes ? (
                             <Link href={`/ventas/clientes/${cli.id}`} className="enlace-ficha">
                               {String(cli.razon_social)}
                             </Link>
-                          ) : '—'}
+                          ) : cli?.id ? String(cli.razon_social) : '—'}
                         </td>
                         <td className="num">{num(r.bultos)}</td>
                         <td className="num">{tm(Number(r.peso_neto_kg))}</td>
@@ -409,7 +412,9 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
       <p className="pie-explicativo">
         Una reserva nunca se borra: al liberarla cambia de estado y conserva quién la soltó, cuándo y
         por qué. El plazo de vencimiento se configura en{' '}
-        <Link href="/configuracion?t=parametros">Configuración → Parámetros</Link>, junto con si la
+        {veConfiguracion
+          ? <Link href="/configuracion?t=parametros">Configuración → Parámetros</Link>
+          : 'Configuración → Parámetros (Gerencia u Operaciones)'}, junto con si la
         expiración automática está activa.
       </p>
     </>

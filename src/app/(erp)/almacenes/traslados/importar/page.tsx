@@ -61,7 +61,11 @@ export default async function PaginaImportarTraslados() {
         </Panel>
         <Panel titulo="2 · Suba el archivo lleno">
           <div style={{ padding: '1rem' }}>
-            <SubirArchivo accion={subirImportacionTraslados} rutaRevision="/almacenes/traslados/importar" />
+            <SubirArchivo
+              accion={subirImportacionTraslados}
+              rutaRevision="/almacenes/traslados/importar"
+              pista="Solo se lee el archivo y se revisa cada fila. Al confirmar, los traslados nacen en borrador: ningún pallet se mueve de bodega hasta que se despachen."
+            />
           </div>
         </Panel>
       </div>

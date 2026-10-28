@@ -159,8 +159,27 @@ export function validezVencida(venceEl: string | null | undefined, hoy: string):
   return !!venceEl && String(venceEl).slice(0, 10) < hoy;
 }
 
-/** El mensaje que se pidió, con la fecha en dd/mm/aaaa. */
-export function mensajeValidezVencida(venceEl: string): string {
+/**
+ * El aviso de validez vencida, con la fecha en dd/mm/aaaa y dicho a QUIEN LO LEE.
+ *
+ * Antes era uno solo («pídale a Comercial que la actualice antes de aprobar»)
+ * y lo leía también el propio vendedor, que es justamente Comercial: se le
+ * pedía que se pidiera algo a sí mismo. Ahora depende de lo que puede hacer
+ * la persona con esta cotización:
+ *   · la edita y no aprueba (Comercial, Comex…): que la actualice con Editar
+ *     antes de pedir la aprobación;
+ *   · la aprueba y no la edita: que se lo pida a Comercial;
+ *   · las dos cosas (Gerencia): que la actualice y después la apruebe;
+ *   · ninguna (Consulta, Almacén…): solo se le informa quién debe hacerlo.
+ */
+export function mensajeValidezVencida(
+  venceEl: string,
+  quien: { edita: boolean; aprueba: boolean } = { edita: false, aprueba: true }
+): string {
   const [a, m, d] = String(venceEl).slice(0, 10).split('-');
-  return `La validez venció el ${d}/${m}/${a}: pídale a Comercial que la actualice antes de aprobar.`;
+  const inicio = `La validez venció el ${d}/${m}/${a}: `;
+  if (quien.edita && quien.aprueba) return `${inicio}actualice la validez con Editar y después apruébela.`;
+  if (quien.edita) return `${inicio}actualice la validez con Editar antes de pedir la aprobación.`;
+  if (quien.aprueba) return `${inicio}pídale a Comercial que la actualice antes de aprobar.`;
+  return `${inicio}Comercial debe actualizarla antes de que se apruebe.`;
 }

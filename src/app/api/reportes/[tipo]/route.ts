@@ -36,6 +36,12 @@ type DefinicionReporte = {
    */
   columnasConPrecios?: string[];
   /**
+   * El nombre del reporte para quien no ve precios. «Kardex valorizado» sin
+   * la columna Valor no es un kardex valorizado: para esos roles se llama
+   * «Kardex», en el archivo, en su hoja y en la bitácora.
+   */
+  tituloSinPrecios?: string;
+  /**
    * El reporte es la misma información que una pantalla: lo descarga quien
    * puede abrir esa pantalla, ni más ni menos. Así el menú, la pantalla y el
    * archivo no se contradicen (antes Consulta veía Cuentas por cobrar y no
@@ -266,6 +272,7 @@ const REPORTES: Record<string, DefinicionReporte> = {
 
   kardex: {
     titulo: 'Kardex valorizado',
+    tituloSinPrecios: 'Kardex',
     subtitulo: 'Todas las entradas y salidas del almacén, en orden cronológico',
     vista: 'v_kardex',
     orden: 'fecha',
@@ -279,10 +286,14 @@ const REPORTES: Record<string, DefinicionReporte> = {
       { titulo: 'Almacén', clave: 'almacen', ancho: 26 },
       { titulo: 'Entrada (kg)', clave: 'entrada_kg', ancho: 14, formato: FORMATO.kilos, tituloPdf: 'Ent. kg' },
       { titulo: 'Salida (kg)', clave: 'salida_kg', ancho: 14, formato: FORMATO.kilos, tituloPdf: 'Sal. kg' },
+      /* Lo que lo hace «valorizado», como la columna Valor de la pantalla
+         Kardex. Antes el archivo no la traía para nadie. */
+      { titulo: 'Valor', clave: 'valor', ancho: 14, formato: FORMATO.dolares },
       { titulo: 'Documento', clave: 'documento_ref', ancho: 18 },
       { titulo: 'Registró', clave: 'usuario', ancho: 18 },
     ],
     totalizar: ['entrada_kg', 'salida_kg'],
+    columnasConPrecios: ['valor'],
     filtrable: {
       fecha: 'fecha',
       texto: ['codigo_pallet', 'sku_codigo', 'documento_ref'],
@@ -548,6 +559,8 @@ export async function GET(
   const fuera = new Set(sinPrecios ? def.columnasConPrecios : []);
   const columnas = def.columnas.filter((c) => !fuera.has(c.clave));
   const totalizar = def.totalizar?.filter((c) => !fuera.has(c));
+  /* El nombre acorde a lo que trae: sin importes, «Kardex» y no «Kardex valorizado». */
+  const titulo = sinPrecios && def.tituloSinPrecios ? def.tituloSinPrecios : def.titulo;
 
   /* ---- Consulta con la sesión del usuario: las políticas RLS también aplican ---- */
   const supabase = await crearClienteServidor();
@@ -659,7 +672,7 @@ export async function GET(
       p_entidad_id: null,
       p_tipo: 'reporte_exportado',
       p_descripcion:
-        `${def.titulo} exportado en ${formato.toUpperCase()} por ${usuario.nombre}` +
+        `${titulo} exportado en ${formato.toUpperCase()} por ${usuario.nombre}` +
         ` (${filas.length} filas)`,
       p_severidad: 'info',
       p_metadatos: { reporte: tipo, formato, filas: filas.length, filtros: filtrosUsados },
@@ -671,7 +684,7 @@ export async function GET(
   /* ---- Generación del archivo ---- */
   if (formato === 'pdf') {
     const pdf = await generarPdfReporte({
-      titulo: def.titulo,
+      titulo,
       subtitulo: def.subtitulo,
       columnas: aColumnasPdf(columnas),
       filas,
@@ -693,9 +706,9 @@ export async function GET(
   }
 
   const buffer = await generarReporte({
-    titulo: def.titulo,
+    titulo,
     subtitulo: def.subtitulo,
-    hoja: def.titulo.slice(0, 30),
+    hoja: titulo.slice(0, 30),
     columnas,
     filas,
     filtros: filtrosUsados,

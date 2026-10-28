@@ -20,11 +20,14 @@ export function SubirArchivo({
   accion,
   rutaRevision,
   textoBoton = 'Subir y revisar',
+  pista = 'Solo se lee el archivo y se revisa cada fila: no entra nada al stock hasta registrar.',
 }: {
   accion: (f: FormData) => Promise<{ ok: true; id: number; mensaje: string } | { ok: false; mensaje: string }>;
   /** Adónde ir al terminar: se le agrega el número de la importación. */
   rutaRevision: string;
   textoBoton?: string;
+  /** La nota bajo el botón: cada importación explica lo suyo (ingresos y traslados no siguen el mismo circuito). */
+  pista?: string;
 }) {
   const router = useRouter();
   const [subiendo, iniciar] = useTransition();
@@ -78,7 +81,7 @@ export function SubirArchivo({
         </button>
       </div>
       <p className="form-pista" style={{ marginTop: '.5rem' }}>
-        Solo se lee el archivo y se revisa cada fila: no entra nada al stock hasta registrar.
+        {pista}
       </p>
     </div>
   );

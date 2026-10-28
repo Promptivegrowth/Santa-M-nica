@@ -28,6 +28,7 @@ import { PUEDEN_COBRAR, PUEDEN_DESCARGAR_DOCUMENTOS, TONO_ESTADO_FACTURA } from 
 import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { DocumentosApagados } from '@/app/(erp)/ventas/DocumentosApagados';
 import { RegistrarCobro, BotonAnular, AnularCobro } from './AccionesComprobante';
+import { AvisoSunat } from '@/components/ui/AvisoSunat';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,6 +115,7 @@ export default async function FichaFactura(props: PageProps<'/finanzas/facturas/
           <BotonAnular facturaId={facId} numero={f.numero as string} bloqueo={bloqueoAnular} />
         )}
       </CabeceraPagina>
+      <AvisoSunat />
 
       <Suspense fallback={<CargandoCuerpo />}>
         <CuerpoFactura

@@ -14,6 +14,7 @@
 import type { Metadata } from 'next';
 import { CabeceraPagina, Etiqueta, Panel } from '@/components/ui/Pagina';
 import { Listado } from '@/components/ui/Listado';
+import { AvisoSunat } from '@/components/ui/AvisoSunat';
 import { fecha, dinero, etiquetaEstado } from '@/lib/formato';
 import { TONO_ESTADO_FACTURA as TONO } from '@/lib/permisosFinanzas';
 
@@ -41,6 +42,7 @@ export default async function PaginaFacturas(props: PageProps<'/finanzas/factura
         titulo="Facturación"
         descripcion="Comprobantes emitidos, vinculados uno a uno con su venta. En esta fase son documentos internos con formato de factura."
       />
+      <AvisoSunat />
 
       <Panel titulo="Sobre estos documentos" className="mb-espacio">
         <p className="pie-explicativo" style={{ padding: '.9rem 1rem' }}>

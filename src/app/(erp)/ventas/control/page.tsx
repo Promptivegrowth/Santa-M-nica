@@ -38,7 +38,8 @@
  */
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { veCostos, type Rol } from '@/lib/navegacion';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
 import { Paginacion } from '@/components/ui/Filtros';
@@ -134,6 +135,9 @@ const corta = (d: Date) =>
 
 export default async function PaginaControl(props: PageProps<'/ventas/control'>) {
   const q = await props.searchParams;
+  /* El importe de venta solo para quien ve precios (veCostos), como en
+     Pedidos y en Tiempos: Consulta veía la columna «Venta US$» aquí. */
+  const puedeVerImportes = veCostos(((await obtenerUsuarioActual())?.rol ?? 'consulta') as Rol);
   const vista: Vista = (Object.keys(VISTAS) as Vista[]).includes(q.vista as Vista)
     ? (q.vista as Vista) : 'por_atender';
   /* Lunes de la semana hasta la que se quieren ver los completos. */
@@ -406,7 +410,7 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                   {vista !== 'completos' && vista !== 'cancelados' && (
                     <><th className="num">Listo</th><th className="num">Falta</th></>
                   )}
-                  <th className="num">Venta US$</th>
+                  {puedeVerImportes && <th className="num">Venta US$</th>}
                   <th className="num">{vista === 'completos' ? 'Completado' : 'Salida prog.'}</th>
                   <th>Prioridad</th><th>Acciones</th>
                 </tr>
@@ -441,7 +445,7 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                         </td>
                       </>
                     )}
-                    <td className="num">{dinero(p.venta_usd, 'USD', 0)}</td>
+                    {puedeVerImportes && <td className="num">{dinero(p.venta_usd, 'USD', 0)}</td>}
                     <td className="num" style={{ color: p.retrasado ? 'var(--critico)' : undefined }}>
                       {vista === 'completos'
                         ? fecha(p.fecha_completado)
@@ -470,7 +474,7 @@ export default async function PaginaControl(props: PageProps<'/ventas/control'>)
                       </td>
                     </>
                   )}
-                  <td className="num"><strong>{dinero(totalFilas.venta, 'USD', 0)}</strong></td>
+                  {puedeVerImportes && <td className="num"><strong>{dinero(totalFilas.venta, 'USD', 0)}</strong></td>}
                   <td colSpan={3} />
                 </tr>
               </tfoot>

@@ -29,6 +29,8 @@ type Reporte = {
   descripcion: string;
   /** Lo que dice para quien no ve precios: el archivo le sale sin la columna de importes (076). */
   descripcionSinPrecios?: string;
+  /** El nombre para quien no ve precios (el «Kardex valorizado» sin Valor es el «Kardex»). */
+  tituloSinPrecios?: string;
   requiereCostos?: boolean;
   /** Lo baja quien puede abrir esta pantalla (la API comprueba lo mismo). */
   ruta?: string;
@@ -39,7 +41,8 @@ const GRUPOS: { grupo: string; reportes: Reporte[] }[] = [
     grupo: 'Almacén',
     reportes: [
       { clave: 'existencias',   titulo: 'Existencias por lote',   descripcion: 'Todo el stock en cámara, lote por lote, con su antigüedad y disponibilidad.' },
-      { clave: 'kardex',        titulo: 'Kardex valorizado',      descripcion: 'Todas las entradas y salidas en orden cronológico, con documento y responsable.' },
+      { clave: 'kardex',        titulo: 'Kardex valorizado',      descripcion: 'Todas las entradas y salidas en orden cronológico, con su valor, documento y responsable.',
+        tituloSinPrecios: 'Kardex', descripcionSinPrecios: 'Todas las entradas y salidas en orden cronológico, en kilos, con documento y responsable.' },
       { clave: 'anticuamiento', titulo: 'Anticuamiento',          descripcion: 'Producto ordenado por tiempo en cámara, con su valor inmovilizado.', descripcionSinPrecios: 'Producto ordenado por tiempo en cámara, en kilos.' },
       { clave: 'ocupabilidad',  titulo: 'Ocupabilidad de bodegas',descripcion: 'Capacidad utilizada y disponible en cada almacén.' },
       { clave: 'despachos',     titulo: 'Productividad de despacho', descripcion: 'Tiempos reales de carga por contenedor frente al objetivo.' },
@@ -98,7 +101,7 @@ export default async function PaginaReportes() {
                 <div key={r.clave} className="tarjeta-reporte" data-bloqueado={bloqueo ? 'si' : 'no'}
                      data-reporte={r.clave}>
                   <div className="tarjeta-reporte-texto">
-                    <strong>{r.titulo}</strong>
+                    <strong>{!puedeVerCostos && r.tituloSinPrecios ? r.tituloSinPrecios : r.titulo}</strong>
                     <span>{!puedeVerCostos && r.descripcionSinPrecios ? r.descripcionSinPrecios : r.descripcion}</span>
                   </div>
                   {bloqueo ? (

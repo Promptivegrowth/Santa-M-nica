@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { num, fecha, dinero, etiquetaEstado } from '@/lib/formato';
-import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
+import { veCostos, puedeVender, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { AccionesLista } from '@/components/ui/Acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { uno } from '@/lib/relaciones';
@@ -74,6 +74,8 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
   const supabase = await crearClienteServidor();
   const usuario = await obtenerUsuarioActual();
   const rol = (usuario?.rol ?? 'consulta') as Rol;
+  /* El cliente se enlaza solo si el rol tiene la pantalla Clientes. */
+  const veClientes = rolPuedeVerRuta(rol, '/ventas/clientes');
   const puedeVerCostos = veCostos(rol);
   const puedeCrear = puedeVender(rol);
 
@@ -464,9 +466,11 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
                     return (
                       <tr key={c.id}>
                         <td>
-                          <Link href={`/ventas/clientes/${c.id}`} className="enlace-ficha">
-                            {c.cliente.length > 38 ? c.cliente.slice(0, 37) + '…' : c.cliente}
-                          </Link>
+                          {veClientes ? (
+                            <Link href={`/ventas/clientes/${c.id}`} className="enlace-ficha">
+                              {c.cliente.length > 38 ? c.cliente.slice(0, 37) + '…' : c.cliente}
+                            </Link>
+                          ) : (c.cliente.length > 38 ? c.cliente.slice(0, 37) + '…' : c.cliente)}
                         </td>
                         <td className="num">{num(c.pedidos)}</td>
                         <td className="num">{num(c.tm, 1)} TM</td>

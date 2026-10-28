@@ -88,7 +88,7 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
     <>
       <CabeceraPagina
         titulo="Calidad"
-        descripcion="Dictámenes sanitarios por lote. Un lote observado no se puede reservar ni despachar; uno «Solo mercado nacional» sí, pero solo para pedidos nacionales. Las restricciones están en la base de datos."
+        descripcion="Dictámenes sanitarios por lote. Un lote observado no se puede reservar ni despachar; uno «Solo mercado nacional» sí, pero solo para pedidos nacionales. El sistema aplica estas reglas por sí solo: ninguna pantalla permite saltárselas."
       />
 
       <RejillaKpi>
@@ -142,7 +142,10 @@ export default async function PaginaCalidad(props: PageProps<'/almacenes/calidad
                         {(() => {
                           //  El tipificado arriba y lo escrito debajo, si hay los dos.
                           const tip = nombreMotivo(d.motivos);
-                          const txt = (d.motivo_texto as string | null)?.trim() || null;
+                          let txt = (d.motivo_texto as string | null)?.trim() || null;
+                          /* Si lo escrito repite el tipificado («Producto parasitado» /
+                             «Producto parasitado»), se muestra una sola vez. */
+                          if (tip && txt && txt.toLocaleLowerCase('es').replace(/[.\s]+$/, '') === tip.toLocaleLowerCase('es').trim()) txt = null;
                           if (!tip && !txt) return '—';
                           return (
                             <>

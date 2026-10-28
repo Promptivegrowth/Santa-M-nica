@@ -49,7 +49,14 @@ export default async function PaginaAuditoria(props: PageProps<'/trazabilidad/au
 
   let consulta = supabase
     .from('auditoria')
-    .select('id, tabla, registro_id, accion, campos_cambiados, ocurrido_en, usuario_id, origen', { count: 'exact' });
+    .select('id, tabla, registro_id, accion, campos_cambiados, ocurrido_en, usuario_id, origen', { count: 'exact' })
+    /*
+     * 078: fuera las filas en las que lo ÚNICO que cambió fue la fecha de
+     * actualización. Son «toques» de otros disparadores (una reserva que
+     * recalcula su pedido) y hacían que un mismo cambio saliera tres veces.
+     * Desde la 078 la base ya no las escribe; las anteriores se dejan de ver.
+     */
+    .or('campos_cambiados.is.null,campos_cambiados.not.cd."{actualizado_en,actualizado_por}"');
   if (tabla) consulta = consulta.eq('tabla', tabla);
   if (accion) consulta = consulta.eq('accion', accion);
 

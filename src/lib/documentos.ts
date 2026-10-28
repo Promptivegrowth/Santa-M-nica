@@ -30,6 +30,8 @@
  * ============================================================================
  */
 import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { fecha } from '@/lib/formato';
+import { desplazarDias } from '@/lib/fechas';
 
 export type TipoDocumento = 'cotizacion' | 'proforma' | 'factura' | 'boleta';
 
@@ -209,10 +211,17 @@ const redondear = (n: number) => Math.round(n * 100) / 100;
 /** ¿Es un RUC peruano? Once dígitos, ni más ni menos. */
 const esRucPeruano = (id: string | null | undefined) => !!id && /^[0-9]{11}$/.test(id.trim());
 
+/**
+ * La fecha en dd/mm/aaaa, igual que en pantalla.
+ *
+ * Antes se leía con `getDate()` sobre `new Date(v)`, que usa el huso de la
+ * MÁQUINA: en Vercel (UTC) una marca de la noche de Lima salía con el día
+ * siguiente, y en una máquina de Lima una fecha sin hora («2026-05-26») salía
+ * el día anterior. Se delega en `fecha()` de formato.ts, que reordena las
+ * fechas de calendario tal cual y lleva los instantes a la hora de Lima.
+ */
 function fechaCorta(v: string | null | undefined): string {
-  if (!v) return '—';
-  const d = new Date(v);
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  return fecha(v);
 }
 
 /**
@@ -612,7 +621,10 @@ async function cargarCotizacion(id: number): Promise<Documento> {
   const igv = esExportacion ? 0 : redondear(subtotal * (igvPct / 100));
 
   const validez = Number(cot.validez_dias ?? 15);
-  const vence = new Date(new Date(cot.fecha as string).getTime() + validez * 86400000);
+  /* La fecha de vencimiento es la que guarda la base (`vence_el`), la misma que
+     usan la ficha y el aviso de Aprobar. Antes se sumaban milisegundos a la
+     medianoche UTC y, leída en Lima, salía un día antes. */
+  const vence = String(cot.vence_el ?? desplazarDias(String(cot.fecha).slice(0, 10), validez)).slice(0, 10);
 
   const base: Omit<Documento, 'errores' | 'avisos'> = {
     tipo: 'cotizacion',
@@ -634,7 +646,7 @@ async function cargarCotizacion(id: number): Promise<Documento> {
     },
     datos: [
       { etiqueta: 'Fecha', valor: fechaCorta(cot.fecha as string) },
-      { etiqueta: 'Validez', valor: `${validez} días · hasta ${fechaCorta(vence.toISOString())}` },
+      { etiqueta: 'Validez', valor: `${validez} días · hasta ${fechaCorta(vence)}` },
       { etiqueta: 'Incoterm', valor: String(cot.incoterm ?? '—') },
       { etiqueta: 'Destino', valor: String(uno<Record<string, unknown>>(cot.destinos)?.puerto ?? 'Por definir') },
       // Sin vendedor: un guion (en un documento para el cliente, «Sin vendedor» se lee raro).

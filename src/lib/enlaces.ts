@@ -11,6 +11,8 @@
  * ============================================================================
  */
 
+import { etiquetaTabla } from './etiquetas';
+
 /** Nombres de entidad tal como los guardan las tablas alertas y eventos. */
 export type Entidad =
   | 'lote' | 'lotes'
@@ -113,6 +115,14 @@ export function nombreEntidad(entidad: Entidad): string {
     vehiculo: 'Vehículo', vehiculos: 'Vehículo',
     dictamenes_calidad: 'Dictamen de calidad',
     importacion: 'Importación de Excel',
+    /* Avisos de resumen que no hablan de un registro sino de una tarea o del
+       stock entero. Sin estos nombres, la etiqueta salía con la clave cruda
+       («COSTOS_MENSUALES», «INVENTARIO»). */
+    costos_mensuales: 'Costos de producción',
+    inventario: 'Inventario',
+    sku: 'Producto', skus: 'Producto',
+    usuario: 'Usuario', usuarios: 'Usuario',
   };
-  return nombres[entidad] ?? entidad;
+  //  Lo que no esté en la lista se escribe legible igual: nunca la clave cruda.
+  return nombres[entidad] ?? etiquetaTabla(entidad);
 }

@@ -20,7 +20,8 @@
  */
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros } from '@/components/ui/Filtros';
 import { traerTodo } from '@/lib/traerTodo';
@@ -60,6 +61,9 @@ type FilaCondicion = {
 export default async function PaginaAlertasStock(props: PageProps<'/almacenes/alertas'>) {
   const q = await props.searchParams;
   const supabase = await crearClienteServidor();
+  /* Configuración solo es de Gerencia y Operaciones: a los demás se les
+     nombra el lugar sin enlace (pulsar los devolvía al panel). */
+  const veConfiguracion = rolPuedeVerRuta(((await obtenerUsuarioActual())?.rol ?? 'consulta') as Rol, '/configuracion');
 
   const familia = (q.familia as string) ?? '';
   const venc = (q.venc as string) ?? '';
@@ -327,7 +331,9 @@ export default async function PaginaAlertasStock(props: PageProps<'/almacenes/al
 
       <p className="pie-explicativo">
         El aviso de vencimiento se da {diasAviso} días antes, y se cambia en{' '}
-        <Link href="/configuracion">Configuración → Parámetros</Link>. Las condiciones salen de los
+        {veConfiguracion
+          ? <Link href="/configuracion?t=parametros">Configuración → Parámetros</Link>
+          : 'Configuración → Parámetros (Gerencia u Operaciones)'}. Las condiciones salen de los
         dictámenes de <Link href="/almacenes/calidad">Calidad</Link>: al liberar un lote desaparece de
         este cuadro. «Solo mercado nacional» es un motivo de observación más, y como tal saca el pallet
         del disponible para exportar.

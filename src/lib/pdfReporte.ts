@@ -96,8 +96,14 @@ function celda(bruto: unknown, tipo: ColumnaPdf['tipo'], mapa?: Record<string, s
     case 'dinero':
       return 'US$ ' + cifra(Number(valor), 2);
     case 'fecha': {
-      const d = new Date(String(valor));
-      return isNaN(d.getTime()) ? String(valor) : d.toLocaleDateString('es-PE');
+      /* Una fecha de calendario («2026-05-26») se reordena tal cual: pasarla
+         por `new Date` la vuelve la medianoche UTC y, leída en la hora de
+         Lima, salía el día anterior. Los instantes se muestran en Lima. */
+      const texto = String(valor);
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto);
+      if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+      const d = new Date(texto);
+      return isNaN(d.getTime()) ? texto : d.toLocaleDateString('es-PE', { timeZone: 'America/Lima' });
     }
     case 'fechaHora': {
       const d = new Date(String(valor));
@@ -110,7 +116,7 @@ function celda(bruto: unknown, tipo: ColumnaPdf['tipo'], mapa?: Record<string, s
        */
       return d.toLocaleString('es-PE', {
         day: '2-digit', month: '2-digit', year: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: false,
+        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Lima',
       }).replace(',', '');
     }
     default:

@@ -23,7 +23,7 @@ import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Es
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { aDolares } from '@/lib/moneda';
-import { veCostos, type Rol } from '@/lib/navegacion';
+import { veCostos, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
 import { PUEDEN_CONSOLIDAR, mensajeNoPuede, rolPuede } from '@/lib/permisosLogistica';
 import { NuevoPacking } from './NuevoPacking';
@@ -472,11 +472,12 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
                         </Link>
                       </td>
                       <td>
-                        {cli?.id ? (
+                        {/* Almacén no tiene Clientes: el nombre va sin enlace. */}
+                        {cli?.id && rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, '/ventas/clientes') ? (
                           <Link href={`/ventas/clientes/${cli.id}`} className="enlace-ficha">
                             {String(cli.razon_social)}
                           </Link>
-                        ) : '—'}
+                        ) : cli?.id ? String(cli.razon_social) : '—'}
                       </td>
                       <td className="num">{num(t, 1)}</td>
                       {puedeVerImportes && (

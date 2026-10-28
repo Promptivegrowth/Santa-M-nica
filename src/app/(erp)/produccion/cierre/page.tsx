@@ -95,7 +95,7 @@ export default async function PaginaCierre(props: PageProps<'/produccion/cierre'
     <>
       <CabeceraPagina
         titulo="Cierre semanal de producción"
-        descripcion="Avance del plan del mes: materia prima, producción y ventas contra lo planificado, con la proyección a fin de mes. Lo ven Marco y Oliver."
+        descripcion="Avance del plan del mes: materia prima, producción y ventas contra lo planificado, con la proyección a fin de mes. Lo ven las personas con el permiso «Objetivos» (Configuración → Usuarios y roles)."
       >
         <a href={`/api/cierre/excel?mes=${periodo}`} className="btn btn-secundario" data-accion="exportar">
           <Icono nombre="descargar" tamano={15} />
@@ -182,8 +182,8 @@ export default async function PaginaCierre(props: PageProps<'/produccion/cierre'
           </div>
         )}
         <p className="pie-explicativo" style={{ padding: '.6rem 1rem .9rem' }}>
-          <strong>Al inicio del mes</strong> Marco ingresa Plan MP, Prod. Plan y Plan Ventas (se pueden corregir
-          después). <strong>Al final del mes</strong> Oliver ingresa el Real MP. Prod. Real, Stock Real (el del día 1)
+          <strong>Al inicio del mes</strong> se ingresan Plan MP, Prod. Plan y Plan Ventas (se pueden corregir
+          después). <strong>Al final del mes</strong> se ingresa el Real MP. Prod. Real, Stock Real (el del día 1)
           y Ventas (lo despachado a la fecha) de pota y merluza salen del sistema; los de las harinas residuales se
           ingresan. Los porcentajes se marcan en rojo bajo el 90 %. El 20 y el 26 de la proyección se cambian en
           Configuración → Parámetros. Todo cambio queda en el historial.

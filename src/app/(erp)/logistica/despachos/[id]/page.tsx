@@ -22,6 +22,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { CabeceraPagina, Panel, RejillaKpi, Kpi, Vacio } from '@/components/ui/Pagina';
 import { Historial } from '@/components/ui/Historial';
 import { Icono } from '@/components/estructura/Icono';
@@ -80,6 +81,10 @@ export default async function FichaDespacho(props: PageProps<'/logistica/despach
   const guias = visibles('guia');
   const fotos = visibles('foto');
   const puede = PUEDEN.includes(usuario?.rol ?? '');
+  /* El embarque y el packing se enlazan solo si el rol tiene esas pantallas
+     (el menú de navegacion.ts); si no, el número va como texto. Antes Calidad
+     pulsaba y el sistema la devolvía al panel. */
+  const ve = (ruta: string) => rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, ruta);
 
   const totalKg = d.items.reduce((t, i) => t + i.kg, 0);
   const totalBultos = d.items.reduce((t, i) => t + i.bultos, 0);
@@ -125,7 +130,7 @@ export default async function FichaDespacho(props: PageProps<'/logistica/despach
       <div className="rejilla-2 mb-espacio">
         <Panel titulo="La operación">
           <dl className="ficha" data-bloque="operacion">
-            <div><dt>Embarque</dt><dd>{d.embarque_id ? <Link href={`/logistica/embarques/${d.embarque_id}`} className="enlace-dato mono">{d.embarque}</Link> : '—'}</dd></div>
+            <div><dt>Embarque</dt><dd>{d.embarque_id ? (ve('/logistica/embarques') ? <Link href={`/logistica/embarques/${d.embarque_id}`} className="enlace-dato mono">{d.embarque}</Link> : <span className="mono">{d.embarque}</span>) : '—'}</dd></div>
             <div><dt>Proformas</dt><dd>
               {d.proformas.length === 0 ? '—' : d.proformas.map((p, i) => (
                 <span key={p.pedido_id}>{i > 0 ? ', ' : ''}<Link href={`/ventas/pedidos/${p.pedido_id}`} className="enlace-dato mono">{p.numero}</Link>{p.cliente ? ` · ${p.cliente}` : ''}</span>
@@ -139,7 +144,7 @@ export default async function FichaDespacho(props: PageProps<'/logistica/despach
         </Panel>
         <Panel titulo="El contenedor y el transporte">
           <dl className="ficha">
-            <div><dt>Packing</dt><dd>{d.packing_id ? <Link href={`/logistica/packing/${d.packing_id}`} className="enlace-dato mono">{d.packing}</Link> : '—'}</dd></div>
+            <div><dt>Packing</dt><dd>{d.packing_id ? (ve('/logistica/packing') ? <Link href={`/logistica/packing/${d.packing_id}`} className="enlace-dato mono">{d.packing}</Link> : <span className="mono">{d.packing}</span>) : '—'}</dd></div>
             <div><dt>Contenedor · precinto</dt><dd className="mono">{[d.contenedor, d.precinto].filter(Boolean).join(' · ') || '—'}</dd></div>
             <div><dt>Guía de remisión</dt><dd className="mono">{d.guia ?? '—'}</dd></div>
             <div><dt>DAM</dt><dd className="mono">{d.dam ?? '—'}</dd></div>

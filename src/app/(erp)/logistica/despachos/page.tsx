@@ -16,7 +16,8 @@
  * ============================================================================
  */
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { CabeceraPagina, Panel, Vacio } from '@/components/ui/Pagina';
 import { cargarDespachos } from '@/lib/despachosDatos';
 import { SelectorDespachos } from './SelectorDespachos';
@@ -26,7 +27,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function PaginaDespachos() {
   const supabase = await crearClienteServidor();
-  const despachos = await cargarDespachos(supabase, { limite: 150 });
+  const [despachos, usuario] = await Promise.all([
+    cargarDespachos(supabase, { limite: 150 }),
+    obtenerUsuarioActual(),
+  ]);
+  /* El número de embarque se enlaza solo si el rol tiene Embarques. */
+  const veEmbarques = rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, '/logistica/embarques');
 
   return (
     <>
@@ -39,7 +45,7 @@ export default async function PaginaDespachos() {
         {despachos.length === 0 ? (
           <Vacio titulo="Sin despachos" mensaje="Todavía no se ha ejecutado ningún despacho." />
         ) : (
-          <SelectorDespachos despachos={despachos} />
+          <SelectorDespachos despachos={despachos} veEmbarques={veEmbarques} />
         )}
       </Panel>
     </>

@@ -190,7 +190,7 @@ export function RevisionIngresos({
               </button>
               <span className="form-pista" style={{ margin: 0 }} data-pista="validar">
                 {estado === 'lista'
-                  ? 'Ya está lista: falta que Gerencia u Operaciones (Walter, Marco u Oliver) pulse «Validar y registrar». Lo ven en Alertas y en su panel.'
+                  ? 'Ya está lista: falta que Gerencia u Operaciones pulse «Validar y registrar». Lo ven en Alertas y en su panel.'
                   : validas.length === 0
                     ? 'No hay filas listas: corrija o descarte las que tienen error.'
                     : `Los ingresos los validan Gerencia u Operaciones. Al dejarla lista se les avisa; el stock entra cuando la validen (${validas.length} fila${validas.length === 1 ? '' : 's'}).`}

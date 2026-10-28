@@ -372,7 +372,8 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                     {(lista ?? []).map((p) => (
                       <tr key={p.clave as string}>
                         <td>
-                          <strong style={{ fontWeight: 600 }}>{p.etiqueta as string}</strong>
+                          {/* La clave técnica no se muestra: queda solo como ayuda al pasar el ratón. */}
+                          <strong style={{ fontWeight: 600 }} title={p.clave as string} data-clave={p.clave as string}>{p.etiqueta as string}</strong>
                           <br />
                           {/*
                             Quién lo cambia, dicho igual para todos: «comercial»
@@ -382,8 +383,6 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                           <span style={{ fontSize: '.68rem', color: 'var(--tinta-3)' }} data-quien={p.clave as string}>
                             {p.editable_por === 'gerencia' ? 'Lo cambia solo Gerencia' : 'Lo cambian Gerencia y Operaciones'}
                           </span>
-                          <br />
-                          <code style={{ fontSize: '.62rem', color: 'var(--tinta-3)' }}>{p.clave as string}</code>
                         </td>
                         <td style={{ fontSize: '.79rem', color: 'var(--tinta-2)', maxWidth: '34rem' }}>
                           {(p.descripcion as string) ?? '—'}

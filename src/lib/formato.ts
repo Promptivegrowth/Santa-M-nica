@@ -162,9 +162,22 @@ export function haceTiempo(valor: string | Date | null | undefined): string {
   return fecha(d);
 }
 
-/** Diferencia en días entre una fecha y hoy (negativo = pasado). */
+/**
+ * Diferencia en días entre una fecha y hoy (negativo = pasado).
+ *
+ * Una fecha de calendario («2026-05-26», columna `date`) se compara casilla
+ * contra casilla con el HOY DE LIMA. Antes se restaba al reloj su medianoche
+ * en UTC (las siete de la tarde del día anterior en Lima) y se redondeaba:
+ * según la hora del día, una cotización que vence mañana decía «0 días» y una
+ * que venció ayer podía no verse vencida. Los instantes (marcas de tiempo
+ * completas) siguen contando horas reales.
+ */
 export function diasDesdeHoy(valor: string | Date | null | undefined): number {
   if (!valor) return 0;
+  if (typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
+    return Math.round((Date.parse(`${valor}T12:00:00Z`) - Date.parse(`${hoy}T12:00:00Z`)) / 86400000);
+  }
   const d = typeof valor === 'string' ? new Date(valor) : valor;
   return Math.round((d.getTime() - Date.now()) / 86400000);
 }

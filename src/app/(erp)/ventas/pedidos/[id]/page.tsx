@@ -34,7 +34,7 @@ import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { EsqueletoKpi, EsqueletoPestanas, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { tm, num, fecha, dinero, pct, etiquetaEstado } from '@/lib/formato';
 import { veCostos, puedeVender, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
-import { puedeFijarRestriccionPeso, puedeApartarStock } from '@/lib/permisosVentas';
+import { puedeFijarRestriccionPeso, puedeApartarStock, nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 import { PUEDEN_FACTURAR, motivoNoFacturarCiclo } from '@/lib/permisosFinanzas';
 import { DocumentosApagados, puedeDescargarDocumentos } from '../../DocumentosApagados';
 import { RestriccionPeso } from './RestriccionPeso';
@@ -180,6 +180,10 @@ async function CuerpoPedido({
   const puedeRestriccion = puedeFijarRestriccionPeso(usuario?.rol);
   //  El enlace al comprobante solo para quien puede abrir Facturación.
   const veFacturacion = rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, '/finanzas/facturas');
+  /* Enlaces a pantallas que el rol no tiene (cotización, packing, embarque):
+     se muestra el dato como texto, sin enlace. Antes Calidad pulsaba y el
+     sistema la devolvía al panel con «Esa pantalla no está disponible…». */
+  const ve = (ruta: string) => rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, ruta);
 
   const moneda = pedido.moneda as 'USD' | 'PEN';
 
@@ -384,7 +388,9 @@ async function CuerpoPedido({
               <div>
                 <dt>Origen</dt>
                 <dd>
-                  {origen ? (
+                  {origen && !ve('/ventas/cotizaciones') ? (
+                    <span className="mono">{String(origen.numero)}</span>
+                  ) : origen ? (
                     <Link
                       href={`/ventas/cotizaciones/${cabecera?.cotizacion_id}`}
                       className="enlace-dato mono"
@@ -796,9 +802,13 @@ async function CuerpoPedido({
                           </span>
                         </td>
                         <td className="mono">
-                          <Link href={`/logistica/packing/${c.packing_list_id}`} className="enlace-dato">
-                            {c.packing_codigo as string}
-                          </Link>
+                          {ve('/logistica/packing') ? (
+                            <Link href={`/logistica/packing/${c.packing_list_id}`} className="enlace-dato">
+                              {c.packing_codigo as string}
+                            </Link>
+                          ) : (
+                            <span>{c.packing_codigo as string}</span>
+                          )}
                           {/*
                             Si el contenedor lleva otra proforma dentro, hay que
                             decirlo: sus bultos y sus toneladas son los del
@@ -869,9 +879,13 @@ async function CuerpoPedido({
                     return (
                       <tr key={i}>
                         <td>
-                          <Link href={`/logistica/embarques/${emb.id}`} className="enlace-dato">
-                            {emb.numero as string}
-                          </Link>
+                          {ve('/logistica/embarques') ? (
+                            <Link href={`/logistica/embarques/${emb.id}`} className="enlace-dato">
+                              {emb.numero as string}
+                            </Link>
+                          ) : (
+                            <span>{emb.numero as string}</span>
+                          )}
                         </td>
                         <td className="mono">{fecha(emb.fecha_programada as string)}</td>
                         <td>{campo(emb.almacenes, 'nombre')}</td>
@@ -1114,7 +1128,11 @@ async function CuerpoPedido({
           </div>
         ) : (
           <Panel titulo="Rentabilidad">
-            <Vacio titulo="Sin acceso" mensaje="Su rol no tiene permiso para consultar costos ni márgenes." />
+            {/* Con el nombre del rol y quién sí puede (los roles de veCostos). */}
+            <Vacio
+              titulo="Sin acceso"
+              mensaje={`${nombreRol(usuario?.rol)} no consulta costos ni márgenes. Solo ${listaDeRoles(['gerencia', 'operaciones', 'comercial'])} pueden verlos.`}
+            />
           </Panel>
         )
       )}

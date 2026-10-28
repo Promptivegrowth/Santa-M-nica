@@ -20,7 +20,8 @@
  */
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros } from '@/components/ui/Filtros';
 import { traerTodo } from '@/lib/traerTodo';
@@ -46,6 +47,10 @@ const tm = (kg: number) => num(Number(kg) / 1000, 1);
 export default async function PaginaProduccion(props: PageProps<'/produccion'>) {
   const q = await props.searchParams;
   const supabase = await crearClienteServidor();
+  /* Las tarjetas que llevan a Control de pedidos se enlazan solo si el rol
+     tiene esa pantalla (Almacén no la tiene: antes pulsaba y volvía al panel). */
+  const usuario = await obtenerUsuarioActual();
+  const veControl = rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, '/ventas/control');
   const hoy = hoyEnLima();
 
   const familia = (q.familia as string) ?? '';
@@ -111,10 +116,10 @@ export default async function PaginaProduccion(props: PageProps<'/produccion'>) 
         <Kpi etiqueta="Productos" valor={num(productos.length)} tono={productos.length > 0 ? 'atencion' : 'ok'}
              nota={`en ${num(familias.length)} familias`} href="/produccion#familias" />
         <Kpi etiqueta="Pedidos que esperan" valor={num(pedidosEsperan)}
-             nota={`${num(clientesEsperan)} clientes`} href="/ventas/control?vista=backorder" />
+             nota={`${num(clientesEsperan)} clientes`} href={veControl ? '/ventas/control?vista=backorder' : undefined} />
         <Kpi etiqueta="Ya comprometidos" valor={num(new Set(atrasadas.map((l) => l.pedido_id)).size)}
              tono={atrasadas.length > 0 ? 'critico' : 'ok'}
-             nota="pedidos con la fecha comprometida vencida y algo por producir" href="/ventas/control?vista=retrasados" />
+             nota="pedidos con la fecha comprometida vencida y algo por producir" href={veControl ? '/ventas/control?vista=retrasados' : undefined} />
         <Kpi etiqueta="Retenido por Calidad" valor={tm(retenidoKg)} sufijo="TM"
              nota="de estos productos: podría liberarse antes de producir"
              href="/almacenes/alertas#condicion" />

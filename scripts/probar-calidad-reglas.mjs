@@ -248,7 +248,7 @@ try {
     const nuevo = cand?.m != null ? String(Math.ceil((Number(cand.m) + 0.5) * 10) / 10) : '9';
     const [esperado] = await consultar(`select count(*)::int n from v_rentabilidad_pedido
        where ciclo in ('pendiente_validacion','confirmado') and margen_pct is not null and coalesce(costo_estimado,0) > 0 and margen_pct < ${nuevo}`);
-    const fila = g.locator('tr', { has: g.locator('code', { hasText: /^margen_minimo_alerta$/ }) });
+    const fila = g.locator('tr', { has: g.locator('[data-clave="margen_minimo_alerta"]') });
     await fila.locator('input.param-campo').fill(nuevo);
     await fila.locator('input.param-campo').press('Enter');
     await fila.locator('.param-ok, .param-error').waitFor({ timeout: 30000 });
@@ -283,9 +283,9 @@ try {
     /* Operaciones edita la validez de la cotización (antes «Solo Gerencia»). */
     const o = await sesion('operaciones');
     await o.goto(`${BASE}/configuracion?t=parametros`, { waitUntil: 'networkidle' });
-    const filaVal = o.locator('tr', { has: o.locator('code', { hasText: /^cotizacion_validez_dias$/ }) });
+    const filaVal = o.locator('tr', { has: o.locator('[data-clave="cotizacion_validez_dias"]') });
     ok(await filaVal.locator('input.param-campo').count() === 1, 'Operaciones puede cambiar la Validez de la cotización');
-    const filaMargen = o.locator('tr', { has: o.locator('code', { hasText: /^margen_minimo_alerta$/ }) });
+    const filaMargen = o.locator('tr', { has: o.locator('[data-clave="margen_minimo_alerta"]') });
     ok(/Solo Gerencia puede cambiarlo/.test(await filaMargen.innerText()), 'y ve apagado el margen mínimo, que es de Gerencia');
 
     /* «Marcar como atendida» sobre una alerta de prueba. */

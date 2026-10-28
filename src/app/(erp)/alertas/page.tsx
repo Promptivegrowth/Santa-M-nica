@@ -28,6 +28,7 @@ import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/compo
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { Icono } from '@/components/estructura/Icono';
 import { enlaceEntidad, nombreEntidad } from '@/lib/enlaces';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { num, fechaHora, haceTiempo } from '@/lib/formato';
 import { traerTodo } from '@/lib/traerTodo';
 import { BotonAtender } from './BotonAtender';
@@ -42,6 +43,7 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
   const usuario = await obtenerUsuarioActual();
   //  Los mismos dos roles que entran a Configuración y administran las reglas.
   const administra = ['gerencia', 'operaciones'].includes(usuario?.rol ?? '');
+  const rol = (usuario?.rol ?? 'consulta') as Rol;
   //  «atendidas»: las que alguien cerró a mano, con quién y cuándo.
   const verAtendidas = q.ver === 'atendidas';
 
@@ -197,8 +199,11 @@ export default async function PaginaAlertas(props: PageProps<'/alertas'>) {
             */}
             <ul className="lista-alertas-nav">
               {(filas ?? []).map((a) => {
-                const destino = enlaceEntidad(a.entidad as string, a.entidad_id as number)
+                const posible = enlaceEntidad(a.entidad as string, a.entidad_id as number)
                   ?? rutaDeAviso.get(a.titulo as string) ?? null;
+                /* Solo se enlaza si el rol tiene esa pantalla (el menú de
+                   navegacion.ts); si no, la alerta se lee sin «Ver detalle». */
+                const destino = posible && rolPuedeVerRuta(rol, posible.split(/[?#]/)[0]) ? posible : null;
                 const contenido = (
                   <>
                     <span className="alerta-marca" data-sev={a.severidad as string} aria-hidden />

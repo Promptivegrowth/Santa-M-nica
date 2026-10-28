@@ -205,7 +205,8 @@ try {
       const kpis = await p.locator('.rejilla-kpi').first().textContent();
       const nivel2 = await p.locator('.rejilla-3').first().textContent();
       ok(!/US\$|\$\s?\d/.test(kpis + nivel2), `${rol}: el Control Tower no enseña dólares`);
-      ok(/Comprometido en pedidos/.test(kpis) && /TM sin stock completo/.test(nivel2), `${rol}: ve toneladas y cantidad de pedidos`);
+      //  078: la tarjeta dice lo que falta despachar y el riesgo, lo que aún no tiene stock reservado.
+      ok(/Por despachar en pedidos/.test(kpis) && /TM aún sin stock reservado/.test(nivel2), `${rol}: ve toneladas y cantidad de pedidos`);
       await ir(p, '/ventas/productos');
       const t = await p.locator('main').textContent();
       ok(!/Último precio/.test(t) && !/Con precio de venta/.test(t), `${rol}: Productos sin «Último precio» ni «Con precio de venta»`);
@@ -331,7 +332,8 @@ try {
       if (await ap.count()) {
         ok(await ap.isDisabled(), `«Aprobar» apagado en ${c130.numero}, vencida`);
         const [a, m, d] = c130.vence_el.slice(0, 10).split('-');
-        const esperado = `La validez venció el ${d}/${m}/${a}: pídale a Comercial que la actualice antes de aprobar`;
+        //  078: Gerencia la edita y la aprueba, así que el aviso le dice que la actualice ella.
+        const esperado = `La validez venció el ${d}/${m}/${a}: actualice la validez con Editar y después apruébela`;
         ok((await ap.getAttribute('title'))?.includes(esperado), 'con el mensaje pedido', esperado);
         ok((await pg.locator('[data-aviso="validez-vencida"]').innerText()).includes(esperado), 'y el mismo texto en el aviso de la ficha');
       } else ok(true, 'la empresa no exige aprobación: no hay botón «Aprobar»');

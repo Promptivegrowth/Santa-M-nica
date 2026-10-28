@@ -30,7 +30,7 @@ import { DocumentosApagados, puedeDescargarDocumentos } from '../../DocumentosAp
 import { uno, campo } from '@/lib/relaciones';
 import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
 import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
-import { hoyEnLima } from '@/lib/fechas';
+import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 
 export const dynamic = 'force-dynamic';
 
@@ -134,6 +134,11 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
   const puedeAprobar = usuario?.aprueba_cotizaciones === true;
   /* 076: una oferta con la validez vencida no se aprueba: hay que actualizarla antes. */
   const vencidaLaValidez = validezVencida(cot.vence_el as string | null, hoyEnLima());
+  /* El aviso se dice según quién lo lee: quien edita la actualiza; quien
+     aprueba se la pide a Comercial (ver mensajeValidezVencida). */
+  const avisoVencida = vencidaLaValidez
+    ? mensajeValidezVencida(String(cot.vence_el), { edita: puedeOperar, aprueba: puedeAprobar })
+    : null;
 
   return (
     <>
@@ -156,7 +161,7 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
             requiereAprobacion={requiereAprobacion}
             puedeAprobar={puedeAprobar}
             puedeRechazar={ROLES_RECHAZAN_COTIZACION.includes((usuario?.rol ?? 'consulta') as Rol)}
-            bloqueoAprobar={vencidaLaValidez ? mensajeValidezVencida(String(cot.vence_el)) : null}
+            bloqueoAprobar={avisoVencida}
             bloqueoEliminar={motivoNoEliminarCotizacion(usuario?.rol, estado, cot.numero as string, !!pedido)}
           />
         )}
@@ -186,7 +191,7 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
             <strong>Esperando aprobación.</strong> Esta oferta no puede salir al cliente hasta que
             una persona autorizada a aprobar cotizaciones revise el precio.{' '}
             {vencidaLaValidez
-              ? <strong data-aviso="validez-vencida">{mensajeValidezVencida(String(cot.vence_el))}</strong>
+              ? <strong data-aviso="validez-vencida">{avisoVencida}</strong>
               : puedeAprobar
                 ? 'Usted tiene esa facultad: use el botón «Aprobar» de arriba.'
                 : 'Avise a quien aprueba cotizaciones para que la revise.'}
@@ -277,7 +282,13 @@ async function CuerpoCotizacion({
 
   /* ---- Vigencia ---- */
   const diasValidez = Number(cot.validez_dias ?? 15);
-  const vence = new Date(new Date(cot.fecha as string).getTime() + diasValidez * 86400000);
+  /*
+   * El vencimiento es el que guarda la base (`vence_el`, fecha + validez), el
+   * mismo que usan el aviso de Aprobar, la lista y el PDF. Antes se sumaban
+   * milisegundos a la medianoche UTC de la fecha y, mostrado en hora de Lima,
+   * salía un día antes (COT-2026-0130: «vence 25/05» con la base en 26/05).
+   */
+  const vence = String(cot.vence_el ?? desplazarDias(String(cot.fecha).slice(0, 10), diasValidez)).slice(0, 10);
   const diasRestantes = diasDesdeHoy(vence);
   const vencida = diasRestantes < 0 && !['aceptada', 'rechazada'].includes(estado);
 

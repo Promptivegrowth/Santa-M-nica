@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import { previaFactura, emitirComprobante, type Previa } from '@/app/(erp)/finanzas/facturas/acciones';
 import { accionSegura } from '@/lib/accionSegura';
+import { AvisoSunat } from '@/components/ui/AvisoSunat';
 
 const cifra = (n: number) =>
   n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -111,6 +112,9 @@ export function BotonFacturar({
             </div>
             <span className="facturar-tipo" data-tipo={previa.tipo}>{previa.tipo}</span>
           </div>
+
+          {/* 078: el comprobante aún no va a SUNAT; se recuerda antes de emitir. */}
+          <AvisoSunat style={{ margin: '.6rem 0' }} />
 
           {/* Por qué sale este comprobante y no otro */}
           <p className="facturar-regla">

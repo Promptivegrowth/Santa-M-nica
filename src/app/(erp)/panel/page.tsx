@@ -22,6 +22,7 @@ import { tm, dinero, num, fecha, haceTiempo } from '@/lib/formato';
 import { veCostos, rolPuedeVerRuta, NOMBRE_ROL, NAVEGACION, type Rol } from '@/lib/navegacion';
 import { Icono } from '@/components/estructura/Icono';
 import { enlaceEntidad } from '@/lib/enlaces';
+import { traerTodo } from '@/lib/traerTodo';
 
 export const metadata: Metadata = { title: 'Control Tower' };
 
@@ -118,6 +119,31 @@ export default async function PaginaPanel(props: PageProps<'/panel'>) {
     .sort((a, b) => b[1] - a[1]).slice(0, 8)
     .map(([nombre, valor]) => ({ etiqueta: nombre.length > 26 ? nombre.slice(0, 25) + '…' : nombre, valor }));
 
+  /*
+   * TONELADAS DE LOS PEDIDOS ABIERTOS, PARA QUIEN NO VE PRECIOS.
+   * La tarjeta mostraba `tm_comprometidas` de v_kpi_ventas: TODO lo pedido en
+   * los pedidos confirmados (unas 22 500 TM en 136 pedidos con los datos de
+   * prueba, de ~166 TM cada uno), al lado de ~2 200 TM de stock, y parecía un
+   * error. La cifra era correcta, pero no decía qué era. Ahora se muestra lo
+   * que FALTA DESPACHAR (pedido − ya despachado), que es lo que se compara con
+   * el stock, y en «Pedidos en riesgo» las toneladas que esos pedidos aún no
+   * tienen reservadas (no su total). Mismos pedidos que cuenta v_kpi_ventas.
+   */
+  let tmPorDespachar = 0;
+  let tmRiesgoSinReservar = 0;
+  if (!puedeVerCostos) {
+    const abiertos = await traerTodo((desde, hasta) =>
+      supabase.from('v_pedidos_tablero').select('id, tm_pedidas, tm_despachadas, tm_faltantes, cobertura')
+        .eq('ciclo', 'confirmado').order('id').range(desde, hasta)
+    );
+    for (const p of abiertos ?? []) {
+      tmPorDespachar += Math.max(0, Number(p.tm_pedidas ?? 0) - Number(p.tm_despachadas ?? 0));
+      if (['pendiente_stock', 'parcialmente_disponible'].includes(String(p.cobertura))) {
+        tmRiesgoSinReservar += Number(p.tm_faltantes ?? 0);
+      }
+    }
+  }
+
   const inv = inventario ?? { fisico_kg: 0, disponible_kg: 0, reservado_kg: 0, bloqueado_kg: 0, preparacion_kg: 0, valor_total: 0, lotes: 0 };
   const k = kpi ?? { venta_comprometida: 0, venta_mes: 0, backlog: 0, pedidos_abiertos: 0, pedidos_en_riesgo: 0, pedidos_atrasados: 0, pedidos_urgentes: 0, margen_pct: 0, venta_en_riesgo: 0, pedidos_bloqueados: 0 };
 
@@ -194,10 +220,10 @@ export default async function PaginaPanel(props: PageProps<'/panel'>) {
         ) : (
           /* Lo mismo, sin dólares: toneladas y cantidad de pedidos (076). */
           <Kpi
-            etiqueta="Comprometido en pedidos"
-            valor={tm(Number((k as { tm_comprometidas?: number }).tm_comprometidas ?? 0) * 1000)}
+            etiqueta="Por despachar en pedidos"
+            valor={tm(tmPorDespachar * 1000)}
             sufijo="TM"
-            nota={`${num(k.pedidos_abiertos)} pedidos abiertos`}
+            nota={`Lo pedido menos lo ya despachado · ${num(k.pedidos_abiertos)} pedidos confirmados`}
             href="/ventas/pedidos"
           />
         )}
@@ -211,7 +237,7 @@ export default async function PaginaPanel(props: PageProps<'/panel'>) {
           tono={Number(k.pedidos_en_riesgo) > 0 ? 'atencion' : 'ok'}
           nota={puedeVerCostos
             ? `${dinero(k.venta_en_riesgo, 'USD', 0)} en juego`
-            : `${tm(Number((k as { tm_en_riesgo?: number }).tm_en_riesgo ?? 0) * 1000)} TM sin stock completo`}
+            : `${tm(tmRiesgoSinReservar * 1000)} TM aún sin stock reservado`}
           href={enlaceControl}
         />
         <Kpi

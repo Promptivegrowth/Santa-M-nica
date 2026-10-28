@@ -206,8 +206,8 @@ export default async function PaginaCostos(props: PageProps<'/finanzas/costos'>)
         <div className="ficha-aviso ficha-aviso-info" role="status">
           <Icono nombre="alerta" tamano={17} />
           <span>
-            Está viendo los costos en <strong>solo lectura</strong>. Los cargan las personas con
-            permiso (hoy Marco y Oliver); Gerencia lo da en Configuración → Usuarios y roles.
+            Está viendo los costos en <strong>solo lectura</strong>. Los cargan las personas con el
+            permiso «Carga costos»; Gerencia lo da en Configuración → Usuarios y roles.
           </span>
         </div>
       )}

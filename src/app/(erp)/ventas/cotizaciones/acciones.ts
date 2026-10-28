@@ -490,7 +490,13 @@ export async function aprobarCotizacion(id: number): Promise<Resultado> {
    * entonces se aprueba. El botón también se apaga con este mismo texto.
    */
   if (validezVencida(cot.vence_el as string | null, hoyEnLima())) {
-    return { ok: false, mensaje: mensajeValidezVencida(String(cot.vence_el)) };
+    return {
+      ok: false,
+      mensaje: mensajeValidezVencida(String(cot.vence_el), {
+        edita: puedeVender(usuario.rol as Rol),
+        aprueba: true,
+      }),
+    };
   }
   // Aprobar una oferta vacía no significa nada.
   if (!(cot.cotizacion_lineas ?? []).length) {

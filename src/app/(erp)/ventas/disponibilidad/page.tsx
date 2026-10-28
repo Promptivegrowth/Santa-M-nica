@@ -21,7 +21,8 @@
  * ============================================================================
  */
 import type { Metadata } from 'next';
-import { crearClienteServidor } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { AccionesLista } from '@/components/ui/Acciones';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
@@ -36,6 +37,8 @@ const POR_PAGINA = 40;
 export default async function PaginaDisponibilidad(props: PageProps<'/ventas/disponibilidad'>) {
   const q = await props.searchParams;
   const supabase = await crearClienteServidor();
+  /* «En preparación» lleva a Packing solo si el rol tiene esa pantalla. */
+  const vePacking = rolPuedeVerRuta(((await obtenerUsuarioActual())?.rol ?? 'consulta') as Rol, '/logistica/packing');
 
   const pagina = Math.max(1, Number(q.pagina ?? 1));
   const buscar = (q.buscar as string) ?? '';
@@ -83,7 +86,8 @@ export default async function PaginaDisponibilidad(props: PageProps<'/ventas/dis
         <Kpi etiqueta="Stock físico" valor={tm(inv.fisico_kg)} sufijo="TM" nota="Todo lo que hay en cámara" href="/almacenes/existencias" />
         <Kpi etiqueta="Bloqueado" valor={tm(inv.bloqueado_kg)} sufijo="TM" tono="critico" nota="Observado por Calidad" href="/almacenes/alertas#condicion" />
         <Kpi etiqueta="Reservado" valor={tm(inv.reservado_kg)} sufijo="TM" tono="atencion" nota="Apartado para pedidos" href="/almacenes/reservas?estado=activa" />
-        <Kpi etiqueta="En preparación" valor={tm(inv.preparacion_kg)} sufijo="TM" tono="atencion" nota="Ya en un contenedor" href="/logistica/packing" />
+        <Kpi etiqueta="En preparación" valor={tm(inv.preparacion_kg)} sufijo="TM" tono="atencion" nota="Ya en un contenedor"
+             href={vePacking ? '/logistica/packing' : undefined} />
         <Kpi etiqueta="Disponible" valor={tm(inv.disponible_kg)} sufijo="TM" tono="ok"
              nota={nacionalKg > 0 ? `Lo que se puede vender hoy · ${tm(nacionalKg)} TM solo mercado nacional` : 'Lo que se puede vender hoy'}
              href="/ventas/disponibilidad?disponible=si#detalle" />

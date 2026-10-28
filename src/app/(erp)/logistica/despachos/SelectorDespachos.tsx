@@ -36,7 +36,14 @@ function Casilla({ marcada, aMedias, onChange, etiqueta, ...resto }: {
   return <input ref={ref} type="checkbox" checked={marcada} onChange={onChange} aria-label={etiqueta} {...resto} />;
 }
 
-export function SelectorDespachos({ despachos }: { despachos: Despacho[] }) {
+export function SelectorDespachos({
+  despachos,
+  veEmbarques = true,
+}: {
+  despachos: Despacho[];
+  /** ¿El rol tiene la pantalla Embarques? Si no, el número va sin enlace. */
+  veEmbarques?: boolean;
+}) {
   /** Ítems elegidos, por despacho. */
   const [elegidos, setElegidos] = useState<Map<number, Set<number>>>(new Map());
   const [abiertos, setAbiertos] = useState<Set<number>>(new Set());
@@ -146,7 +153,7 @@ export function SelectorDespachos({ despachos }: { despachos: Despacho[] }) {
                       ))}
                     </td>
                     <td className="mono">
-                      {d.embarque_id ? <Link href={`/logistica/embarques/${d.embarque_id}`} className="enlace-ficha">{d.embarque}</Link> : '—'}
+                      {d.embarque_id ? (veEmbarques ? <Link href={`/logistica/embarques/${d.embarque_id}`} className="enlace-ficha">{d.embarque}</Link> : d.embarque) : '—'}
                     </td>
                     <td className="mono">{d.contenedor ?? '—'}</td>
                     <td className="mono">{d.guia ?? '—'}</td>

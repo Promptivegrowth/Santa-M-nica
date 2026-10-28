@@ -23,7 +23,7 @@ import { CabeceraPagina, Panel, Vacio, Etiqueta, RejillaKpi, Kpi } from '@/compo
 import { EsqueletoKpi, EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, num, dinero, tm } from '@/lib/formato';
-import { veCostos, type Rol } from '@/lib/navegacion';
+import { veCostos, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { puedeCotizar } from '@/lib/permisosVentas';
 import { uno, campo } from '@/lib/relaciones';
 import { AccionesMaestro } from '@/components/ui/AccionesMaestro';
@@ -394,11 +394,11 @@ async function CuerpoProducto({
                         ) : '—'}
                       </td>
                       <td>
-                        {cli?.id ? (
+                        {cli?.id && rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, '/ventas/clientes') ? (
                           <Link href={`/ventas/clientes/${cli.id}`} className="enlace-ficha">
                             {String(cli.razon_social)}
                           </Link>
-                        ) : '—'}
+                        ) : cli?.id ? String(cli.razon_social) : '—'}
                       </td>
                       <td className="num">{num(v.cantidad_tm, 3)} TM</td>
                       {puedeVerImportes && (
