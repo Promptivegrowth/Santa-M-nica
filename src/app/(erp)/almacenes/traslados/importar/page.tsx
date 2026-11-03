@@ -2,10 +2,10 @@
  * ============================================================================
  *  IMPORTAR TRASLADOS DESDE EXCEL
  * ============================================================================
- *  Igual que los ingresos: plantilla, pegar, subir, revisar. La plantilla
- *  trae los pallets que hoy se pueden mover, bodega por bodega, para copiar
- *  su código. Lo que se crea son traslados en borrador con su circuito de
- *  siempre.
+ *  Igual que los ingresos: plantilla, pegar, subir, revisar, validar. La
+ *  plantilla trae los pallets que hoy se pueden mover, bodega por bodega,
+ *  para copiar su código. Son traslados YA HECHOS (079): al validarlos entran
+ *  despachados y recibidos, con su fecha y su guía, moviendo el stock.
  * ============================================================================
  */
 import Link from 'next/link';
@@ -43,16 +43,16 @@ export default async function PaginaImportarTraslados() {
     <>
       <CabeceraPagina
         titulo="Importar traslados desde Excel"
-        descripcion="Descargue la plantilla (trae los pallets disponibles de cada bodega), pegue los que se mueven y súbala. Se crean traslados en borrador, que siguen su circuito normal."
+        descripcion="Para registrar traslados que ya ocurrieron. Descargue la plantilla (trae los pallets disponibles de cada bodega), pegue los que se movieron con su fecha y su guía, y súbala. Al validarla, cada traslado entra ya recibido en destino."
         volver={{ href: '/almacenes/traslados', texto: 'Volver a traslados' }}
       />
       <div className="rejilla-2 mb-espacio">
         <Panel titulo="1 · Descargue la plantilla">
           <div style={{ padding: '1rem' }}>
             <p style={{ marginTop: 0 }}>
-              Con los campos de un traslado (pallet, bodega de origen y de destino, bultos y kilos si va una parte, fecha,
-              observaciones) y una hoja con los <strong>pallets disponibles</strong> de hoy: código, producto, bodega, bultos y kilos
-              que se pueden mover.
+              Con los campos de un traslado ya hecho (pallet, bodega de origen y de destino, bultos y kilos si fue una parte,
+              fecha de traslado, n.º de guía, observaciones) y una hoja con los <strong>pallets disponibles</strong> de hoy: código,
+              producto, bodega, bultos y kilos que se pueden mover.
             </p>
             <a href="/almacenes/traslados/importar/plantilla" className="btn btn-secundario" data-accion="descargar-plantilla-traslados" download>
               <Icono nombre="descargar" tamano={15} /> Descargar plantilla
@@ -64,7 +64,7 @@ export default async function PaginaImportarTraslados() {
             <SubirArchivo
               accion={subirImportacionTraslados}
               rutaRevision="/almacenes/traslados/importar"
-              pista="Solo se lee el archivo y se revisa cada fila. Al confirmar, los traslados nacen en borrador: ningún pallet se mueve de bodega hasta que se despachen."
+              pista="Solo se lee el archivo y se revisa cada fila: no se mueve nada. El stock cambia de bodega cuando Gerencia u Operaciones pulsa «Validar y registrar» (Almacén la deja «Lista para validar»)."
             />
           </div>
         </Panel>
@@ -78,7 +78,7 @@ export default async function PaginaImportarTraslados() {
             <table className="datos">
               <thead>
                 <tr><th>Subida</th><th>Archivo</th><th>Subió</th><th>Estado</th><th className="num">Filas</th>
-                  <th className="num">En traslados</th><th className="num">Traslados creados</th><th></th></tr>
+                  <th className="num">Registradas</th><th className="num">Traslados registrados</th><th></th></tr>
               </thead>
               <tbody>
                 {(importaciones ?? []).map((i) => {
@@ -89,7 +89,8 @@ export default async function PaginaImportarTraslados() {
                       <td>{fechaHora(i.creado_en as string)}</td>
                       <td>{String(i.archivo)}</td>
                       <td>{nombre(i.autor)}</td>
-                      <td><Etiqueta texto={i.estado === 'validada' ? 'Traslados creados' : 'En revisión'} tono={i.estado === 'validada' ? 'ok' : 'neutro'} /></td>
+                      <td><Etiqueta texto={i.estado === 'validada' ? 'Validada' : i.estado === 'lista' ? 'Lista para validar' : 'En revisión'}
+                                    tono={i.estado === 'validada' ? 'ok' : i.estado === 'lista' ? 'atencion' : 'neutro'} /></td>
                       <td className="num">{num(mias.length)}</td>
                       <td className="num">{num(mias.filter((f) => f.estado === 'registrada').length)}</td>
                       <td className="num">{num(new Set(mias.map((f) => f.traslado_id).filter(Boolean)).size)}</td>

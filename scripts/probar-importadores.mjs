@@ -17,8 +17,11 @@
  *       programada sin mover stock; «Confirmar llegada» con bultos y kilos
  *       corregidos; «Anular».
  *    4. Importar traslados: plantilla con los pallets disponibles, filas
- *       buena / apartada / bloqueada / de otra bodega / repetida, borradores
- *       agrupados por origen→destino.
+ *       buena / bloqueada / de otra bodega / repetida; desde 079 son traslados
+ *       YA HECHOS: Almacén deja la importación lista y Gerencia la valida
+ *       (entran aceptados, moviendo el stock). Solo con pallets de la prueba:
+ *       la base ya tiene el stock real.
+ *    079 · Las compras entran por Exalmar y Peruvian (ya no Elamar/Perufrost).
  *    5. Fallas: el peso de la ficha del traslado con su unidad, el historial
  *       sin «en_transito», los mensajes de rol con nombre legible y el corte
  *       de red en los formularios.
@@ -119,6 +122,9 @@ const esperarFila = (p, n, estado) => p.locator(`[data-bloque="filas-importacion
 let impIngresos = null;
 let impTraslados = null;
 let almacenNuevo = null;
+let dictamenPrueba = null;
+/* 079 · Exalmar y Peruvian reciben las compras. */
+const ID = Object.fromEntries((await consultar(`select id, codigo from almacenes`)).map((x) => [x.codigo, Number(x.id)]));
 
 try {
   const g = await sesion('gerencia');
@@ -133,8 +139,8 @@ try {
     const de = Object.fromEntries(al.map((x) => [x.codigo, x]));
     ok(['STM-C1', 'STM-C2', 'STM-C3', 'FREEKO', 'HAYDUK'].every((c) => de[c]?.p) && !de.ELAMAR.p && !de.DEPSA.p,
       'producción: las tres cámaras de Santa Mónica, Freeko y Hayduk');
-    ok(de.ELAMAR.c && de.PERUFR.c && ['STM-C1', 'FREEKO', 'DEPSA', 'COINRE', 'EMERG', 'HAYDUK'].every((c) => !de[c].c),
-      'compras: solo Elamar y Perufrost');
+    ok(de.EXALMAR?.c && de.PERUVIAN?.c && ['STM-C1', 'FREEKO', 'DEPSA', 'COINRE', 'EMERG', 'HAYDUK', 'ELAMAR', 'PERUFR'].every((c) => !de[c].c),
+      'compras: solo Exalmar y Peruvian');
 
     // La base rechaza un ingreso de producción en Depsa (almacenamiento externo).
     const [l] = await consultar(`select id from lotes order by id limit 1`);
@@ -143,14 +149,14 @@ try {
       values ('ingreso', ${l.id}, 7, 1, 1, 0, '${ge}', 'produccion'); rollback;`);
     ok(/Depsa no recibe ingresos de Producción/.test(e1 ?? ''), 'la base rechaza un ingreso de Producción en Depsa', (e1 ?? '').slice(0, 120));
     const e2 = await intentar(`begin; insert into movimientos (tipo, lote_id, almacen_id, bultos, peso_neto_kg, costo_unitario, usuario_id, origen_ingreso)
-      values ('ingreso', ${l.id}, 5, 1, 1, 0, '${ge}', 'compras'); rollback;`);
-    ok(e2 === null, 'y acepta una compra en Elamar');
+      values ('ingreso', ${l.id}, ${ID.EXALMAR}, 1, 1, 0, '${ge}', 'compras'); rollback;`);
+    ok(e2 === null, 'y acepta una compra en Exalmar');
 
     // El formulario manual filtra la bodega según el origen.
     await a.goto(`${BASE}/almacenes/ingresos/nuevo`, { waitUntil: 'networkidle' });
     await a.locator('input[name="origen_ingreso"][value="compras"]').check();
     const opcCompras = await a.locator('select[name="almacen_id"] option').allInnerTexts();
-    ok(opcCompras.length === 2 && opcCompras.includes('Elamar') && opcCompras.includes('Perufrost'), 'con Compras, el desplegable de bodega solo ofrece Elamar y Perufrost', opcCompras.join(', '));
+    ok(opcCompras.length === 2 && opcCompras.includes('Exalmar') && opcCompras.includes('Peruvian'), 'con Compras, el desplegable de bodega solo ofrece Exalmar y Peruvian', opcCompras.join(', '));
     await a.locator('input[name="origen_ingreso"][value="produccion"]').check();
     const opcProd = await a.locator('select[name="almacen_id"] option').allInnerTexts();
     ok(opcProd.length === 5 && !opcProd.includes('Depsa') && opcProd.includes('Freeko'), 'con Producción, las cinco que reciben producción', opcProd.join(', '));
@@ -198,7 +204,8 @@ try {
     hi.getRow(4).eachCell((c) => encabezados.push(String(c.value)));
     ok(encabezados.includes('Código de pallet *') && encabezados.includes('Llega el (si es programado)') && encabezados.includes('Origen *'),
       'con los encabezados del formulario (obligatorios con *) y «Llega el»', `${encabezados.length} columnas`);
-    ok(String(hi.getCell(5, 1).value).startsWith('EJEMPLO'), 'y una fila de ejemplo');
+    //  079 · La columna del código es la C (orden de Oliver): se busca por su título.
+    ok(String(hi.getCell(5, encabezados.indexOf('Código de pallet *') + 1).value).startsWith('EJEMPLO'), 'y una fila de ejemplo');
     const colDe = (t) => encabezados.findIndex((e) => e.replace(' *', '') === t) + 1;
     const dv = (t) => hi.getCell(6, colDe(t)).dataValidation;
     ok(['Origen', 'Bodega', 'Cámara', 'Turno', 'Producto'].every((t) => dv(t)?.type === 'list' && /Listas!/.test(dv(t).formulae?.[0] ?? '')),
@@ -208,9 +215,9 @@ try {
     listas.getRow(1).eachCell((c, k) => { if (c.value === 'Bodega') listas.getColumn(k).eachCell((x, r) => { if (r > 1 && x.value) colBod.push(String(x.value)); }); });
     ok(colBod.length === 7 && !colBod.includes('Depsa'), 'la lista de bodegas trae solo las que reciben algo', colBod.join(', '));
     const bod = libro.getWorksheet('Bodegas');
-    let elamar = null;
-    bod.eachRow((f) => { if (f.getCell(1).value === 'Elamar') elamar = [f.getCell(3).value, f.getCell(4).value]; });
-    ok(elamar?.[0] === 'No' && elamar?.[1] === 'Sí', 'la hoja Bodegas dice qué recibe cada una (Elamar: compras)');
+    let exalmar = null;
+    bod.eachRow((f) => { if (f.getCell(1).value === 'Exalmar') exalmar = [f.getCell(3).value, f.getCell(4).value]; });
+    ok(exalmar?.[0] === 'No' && exalmar?.[1] === 'Sí', 'la hoja Bodegas dice qué recibe cada una (Exalmar: compras)');
     let hayProd = false;
     libro.getWorksheet('Productos').eachRow((f) => { if (f.getCell(1).value === etiquetaProd && f.getCell(2).value === prod.codigo) hayProd = true; });
     ok(hayProd, 'la hoja Productos trae cada producto con su código', etiquetaProd);
@@ -219,12 +226,12 @@ try {
     const base = { 'Producto': etiquetaProd, 'Bultos': 20, 'Peso neto total (kg)': 400, 'Fecha de producción': dma(hoy), 'Observaciones': 'PRUEBA-IMP' };
     const ruta = await llenar(libro, 'Ingresos', [
       /* 6 */ { ...base, 'Código de pallet': COD(1), 'Origen': 'Producción', 'Bodega': 'Santa Mónica · Cámara 01', 'Cámara': 'Cámara 01', 'Turno': 'Noche' },
-      /* 7 */ { ...base, 'Código de pallet': COD(2), 'Origen': 'Compras', 'Proveedor (si es compra)': 'Proveedor PRUEBA-IMP', 'Bodega': 'Elamar' },
+      /* 7 */ { ...base, 'Código de pallet': COD(2), 'Origen': 'Compras', 'Proveedor (si es compra)': 'Proveedor PRUEBA-IMP', 'Bodega': 'Exalmar' },
       /* 8 */ { ...base, 'Código de pallet': COD(1), 'Origen': 'Producción', 'Bodega': 'Freeko' },
       /* 9 */ { ...base, 'Código de pallet': COD(4), 'Origen': 'Compras', 'Proveedor (si es compra)': 'X', 'Bodega': 'Freeko' },
       /* 10 */ { ...base, 'Código de pallet': COD(5), 'Origen': 'Producción', 'Bodega': 'Freeko', 'Producto': 'ZZ-NO-EXISTE · 9 X 9 KG' },
       /* 11 */ { ...base, 'Código de pallet': COD(6), 'Origen': 'Producción', 'Bodega': 'Freeko', 'Cámara': 'Cámara 02' },
-      /* 12 */ { ...base, 'Código de pallet': COD(7), 'Origen': 'Compras', 'Proveedor (si es compra)': 'Proveedor PRUEBA-IMP', 'Bodega': 'Perufrost', 'Llega el (si es programado)': dma(enDias(3)) },
+      /* 12 */ { ...base, 'Código de pallet': COD(7), 'Origen': 'Compras', 'Proveedor (si es compra)': 'Proveedor PRUEBA-IMP', 'Bodega': 'Peruvian', 'Llega el (si es programado)': dma(enDias(3)) },
       /* 13 */ { ...base, 'Código de pallet': COD(8), 'Origen': 'Producción', 'Bodega': 'Freeko', 'Bultos': 0, 'Fecha de producción': dma(enDias(5)) },
       /* 14 */ { ...base, 'Código de pallet': COD(9), 'Origen': 'Producción', 'Bodega': 'Depsa' },
       /* 15 */ { ...base, 'Código de pallet': COD(10), 'Origen': 'Producción', 'Bodega': 'Hayduk', 'Peso neto total (kg)': null, 'Kg por bulto': 20 },
@@ -243,7 +250,7 @@ try {
     ok(await estadoFila(6) === 'valida' && await estadoFila(7) === 'valida', 'las filas buenas quedan listas (producción y compra)');
     ok(/ya aparece en la fila 6/.test(await detalle(8)), 'pallet repetido dentro del archivo', await detalle(8));
     ok(/Código de pallet:/.test(await detalle(8)), 'cada error dice su columna');
-    ok(/Bodega: La bodega Freeko no recibe ingresos de Compras\. Los ingresos de Compras entran por: Elamar, Perufrost/.test(await detalle(9)), 'bodega que no admite el origen', (await detalle(9)).slice(0, 110));
+    ok(/Bodega: La bodega Freeko no recibe ingresos de Compras\. Los ingresos de Compras entran por: Exalmar, Peruvian/.test(await detalle(9)), 'bodega que no admite el origen', (await detalle(9)).slice(0, 110));
     ok(/Producto: No existe el producto «ZZ-NO-EXISTE/.test(await detalle(10)), 'producto inexistente', (await detalle(10)).slice(0, 90));
     ok(/Cámara: La Cámara 02 es de la bodega Santa Mónica · Cámara 02, no de la elegida/.test(await detalle(11)), 'cámara de otra bodega', (await detalle(11)).slice(0, 100));
     ok(await estadoFila(12) === 'valida' && /Quedará como ingreso programado/.test(await detalle(12)), 'una fila con «Llega el» futuro queda para programar');
@@ -304,7 +311,7 @@ try {
     const porCod = Object.fromEntries(lotes.map((l) => [l.codigo_pallet, l]));
     ok(lotes.length === 4, 'nacen 4 pallets con su ingreso en el Kardex', lotes.map((l) => l.codigo_pallet.slice(-2)).join(','));
     ok(porCod[COD(1)]?.camara_id === 1 && porCod[COD(1)]?.turno === 'noche', 'con su cámara y turno');
-    ok(porCod[COD(2)]?.origen_ingreso === 'compras' && porCod[COD(2)]?.proveedor === 'Proveedor PRUEBA-IMP' && porCod[COD(2)]?.almacen_id === 5, 'la compra en Elamar con su proveedor');
+    ok(porCod[COD(2)]?.origen_ingreso === 'compras' && porCod[COD(2)]?.proveedor === 'Proveedor PRUEBA-IMP' && porCod[COD(2)]?.almacen_id === ID.EXALMAR, 'la compra en Exalmar con su proveedor');
     ok(Number(porCod[COD(10)]?.kg) === 400, 'el peso por bulto multiplicado (20 × 20 kg)');
     const [imp2] = await consultar(`select estado, procesado_por from importaciones_excel where id = ${impIngresos}`);
     ok(imp2.estado === 'validada' && imp2.procesado_por === (await uid('gerencia')), 'la importación queda validada, con quién la validó');
@@ -334,13 +341,13 @@ try {
     ok(/1 llegada confirmada/.test(await a.locator('[data-aviso="programados"]').innerText()), 'Almacén confirma la llegada', await a.locator('[data-aviso="programados"]').innerText());
     const [l] = await consultar(`select l.id, l.bultos_iniciales b, m.peso_neto_kg::numeric kg, m.almacen_id, m.origen_ingreso
                                    from lotes l join movimientos m on m.lote_id = l.id where l.codigo_pallet = '${COD(7)}'`);
-    ok(l && l.b === 19 && Number(l.kg) === 381.5 && l.almacen_id === 6 && l.origen_ingreso === 'compras', 'nace el pallet con lo que de verdad llegó, en Perufrost');
+    ok(l && l.b === 19 && Number(l.kg) === 381.5 && l.almacen_id === ID.PERUVIAN && l.origen_ingreso === 'compras', 'nace el pallet con lo que de verdad llegó, en Peruvian');
     const [p2] = await consultar(`select estado, lote_id, confirmado_por from ingresos_programados where id = ${p.id}`);
     ok(p2.estado === 'confirmado' && p2.lote_id === l.id && p2.confirmado_por === (await uid('almacen')), 'el programado queda confirmado con su pallet y quién lo confirmó');
 
     // Anular: uno programado directo en la base, como lo dejaría otra importación.
     await ejecutarSQL(`insert into ingresos_programados (codigo_pallet, sku_presentacion_id, almacen_id, fecha_llegada, fecha_produccion, bultos, peso_neto_kg, origen_ingreso, proveedor, observaciones, creado_por)
-      values ('${COD(11)}', ${prod.id}, 5, '${enDias(4)}', '${hoy}', 5, 100, 'compras', 'Proveedor PRUEBA-IMP', 'PRUEBA-IMP', '${await uid('gerencia')}')`);
+      values ('${COD(11)}', ${prod.id}, ${ID.EXALMAR}, '${enDias(4)}', '${hoy}', 5, 100, 'compras', 'Proveedor PRUEBA-IMP', 'PRUEBA-IMP', '${await uid('gerencia')}')`);
     const eProg = await intentar(`insert into ingresos_programados (codigo_pallet, sku_presentacion_id, almacen_id, fecha_llegada, fecha_produccion, bultos, peso_neto_kg, origen_ingreso, creado_por)
       values ('${COD(12)}', ${prod.id}, 7, '${enDias(4)}', '${hoy}', 5, 100, 'produccion', '${await uid('gerencia')}')`);
     ok(/Depsa no recibe ingresos de Producción/.test(eProg ?? ''), 'la base tampoco deja programar en una bodega que no recibe ese origen');
@@ -375,22 +382,28 @@ async function seccionesRestantes({ g, a }) {
      4 · IMPORTAR TRASLADOS
      ====================================================================== */
   console.log(SEC(4, 'Importar traslados desde Excel'));
-  const libre = (alm, n, extra = '') => consultar(`
-    select v.lote_id, v.codigo_pallet, v.fisico_bultos b, v.fisico_kg::numeric kg, v.disponible_kg::numeric disp from v_stock_lote v
-     where v.almacen_id = ${alm} ${extra}
-       and (select count(*) from lotes l2 where l2.codigo_pallet = v.codigo_pallet) = 1
-       and (select count(*) from v_stock_lote v2 where v2.lote_id = v.lote_id) = 1
-       and not exists (select 1 from traslado_lineas tl join traslados t on t.id = tl.traslado_id
-                        where tl.lote_id = v.lote_id and t.estado in ('borrador','autorizado','en_transito'))
-     order by v.lote_id desc offset 3 limit ${n}`);
-  const LIBRE = `and v.bloqueado_kg = 0 and v.reservado_kg = 0 and v.preparacion_kg = 0 and v.fisico_bultos between 10 and 200`;
-  const [A, B] = await libre(2, 2, LIBRE);
-  const [C] = await libre(3, 1, LIBRE);
-  const [D] = await libre(5, 1, LIBRE);
-  const [AP] = await libre(2, 1, 'and v.disponible_kg <= 0.001 and v.bloqueado_kg = 0 and v.fisico_kg > 0');
-  const [BQ] = await libre(2, 1, 'and v.bloqueado_kg > 0');
-  console.log(`  pallets: A ${A.codigo_pallet}, B ${B.codigo_pallet}, C ${C.codigo_pallet}, otra bodega ${D.codigo_pallet}, apartado ${AP?.codigo_pallet}, bloqueado ${BQ?.codigo_pallet}`);
-  const existAntes = await consultar(`select lote_id, almacen_id, bultos, peso_neto_kg from existencias where lote_id in (${[A, B, C].map((x) => x.lote_id)}) order by 1, 2`);
+  /*
+   * 079 · La base ya tiene el stock REAL de Santa Mónica: los traslados se
+   * prueban SOLO con los pallets que creó esta prueba en la sección 2 (y la 3).
+   * Lo importado son traslados YA HECHOS: Almacén deja la importación lista,
+   * Gerencia la valida y cada traslado entra recibido, moviendo el stock.
+   * (El caso «apartado para un pedido» ya no se prueba aquí: haría falta un
+   * pedido de prueba sobre la base real; la regla es la misma de «Nuevo
+   * traslado», registro.ts.)
+   */
+  const pallet = async (cod) => (await consultar(`
+    select v.lote_id, v.codigo_pallet, v.almacen_id, v.fisico_bultos b, v.fisico_kg::numeric kg from v_stock_lote v
+     where v.codigo_pallet = '${cod}' and v.fisico_kg > 0`))[0];
+  const A = await pallet(COD(1));    // Santa Mónica · Cámara 01
+  const B = await pallet(COD(9));    // Freeko (la fila corregida)
+  const C = await pallet(COD(10));   // Hayduk
+  const BQ = await pallet(COD(2));   // Exalmar: se bloquea por Calidad
+  const D = await pallet(COD(7));    // Peruvian (confirmado en la sección 3)
+  console.log(`  pallets de prueba: A ${A?.codigo_pallet}, B ${B?.codigo_pallet}, C ${C?.codigo_pallet}, bloqueado ${BQ?.codigo_pallet}, otra bodega ${D?.codigo_pallet}`);
+  const [dq] = await consultar(`insert into dictamenes_calidad (lote_id, tipo, estado, motivo_texto, vigente)
+    values (${BQ.lote_id}, 'calidad', 'inmovilizado', 'PRUEBA-IMP bloqueo', true) returning id`);
+  dictamenPrueba = dq.id;
+  const existAntes = await consultar(`select lote_id, almacen_id, bultos, peso_neto_kg::float kg from existencias where lote_id in (${[A, B, C, D].map((x) => x.lote_id)}) and peso_neto_kg > 0 order by 1, 2`);
 
   await a.goto(`${BASE}/almacenes/traslados`, { waitUntil: 'networkidle' });
   await a.click('[data-accion="importar-traslados"]');
@@ -400,34 +413,33 @@ async function seccionesRestantes({ g, a }) {
   ok(['Traslados', 'Listas', 'Pallets disponibles', 'Instrucciones'].every((h) => hojas.includes(h)), 'la plantilla de traslados trae Traslados, Listas, Pallets disponibles e Instrucciones', hojas.join(', '));
   const enc = [];
   libro.getWorksheet('Traslados').getRow(4).eachCell((c) => enc.push(String(c.value)));
-  ok(['Código de pallet *', 'Bodega de origen *', 'Bodega de destino *', 'Bultos (si es parcial)', 'Kilos (si es parcial)', 'Fecha programada', 'Observaciones'].every((t) => enc.includes(t)),
-    'con los campos de un traslado', enc.join(' | '));
+  ok(['Código de pallet *', 'Bodega de origen *', 'Bodega de destino *', 'Bultos (si es parcial)', 'Kilos (si es parcial)', 'Fecha de traslado *', 'N.º de guía', 'Observaciones'].every((t) => enc.includes(t)),
+    'con los campos de un traslado ya hecho (fecha de traslado y guía)', enc.join(' | '));
   const pd = libro.getWorksheet('Pallets disponibles');
   const encPd = [];
   pd.getRow(2).eachCell((c) => encPd.push(String(c.value)));
-  let filaA = null, hayBloq = false, hayAp = false;
+  let filaA = null, hayBloq = false;
   pd.eachRow((f, r) => {
     if (r < 3) return;
     if (f.getCell(1).value === A.codigo_pallet) filaA = [f.getCell(3).value, f.getCell(4).value, f.getCell(5).value];
-    if (BQ && f.getCell(1).value === BQ.codigo_pallet) hayBloq = true;
-    if (AP && f.getCell(1).value === AP.codigo_pallet) hayAp = true;
+    if (f.getCell(1).value === BQ.codigo_pallet) hayBloq = true;
   });
   ok(encPd.join('|') === 'Código de pallet|Producto|Bodega|Bultos disponibles|Kilos disponibles|Meses en cámara', 'la hoja de pallets disponibles: código, producto, bodega, bultos y kilos', encPd.join('|'));
-  ok(filaA && filaA[0] === 'Santa Mónica · Cámara 02' && filaA[1] === A.b && Math.abs(filaA[2] - Number(A.kg)) < 0.1, 'trae cada pallet libre con su bodega y lo disponible', JSON.stringify(filaA));
-  ok(!hayBloq && !hayAp, 'y no trae los bloqueados ni los apartados enteros');
+  ok(filaA && filaA[0] === 'Santa Mónica · Cámara 01' && filaA[1] === A.b && Math.abs(filaA[2] - Number(A.kg)) < 0.1, 'trae cada pallet libre con su bodega y lo disponible', JSON.stringify(filaA));
+  ok(!hayBloq, 'y no trae los bloqueados por Calidad');
   ok(libro.getWorksheet('Traslados').getCell(6, 2).dataValidation?.type === 'list', 'las bodegas con lista desplegable');
 
-  const ORI = 'Santa Mónica · Cámara 02';
+  const C1 = 'Santa Mónica · Cámara 01';
   const obs = 'PRUEBA-IMP traslado';
+  const comun = { 'Fecha de traslado': dma(hoy), 'N.º de guía': `T009-${SELLO}`, 'Observaciones': obs };
   const ruta = await llenar(libro, 'Traslados', [
-    /* 6 */ { 'Código de pallet': A.codigo_pallet, 'Bodega de origen': ORI, 'Bodega de destino': 'Freeko', 'Observaciones': obs },
-    /* 7 */ { 'Código de pallet': B.codigo_pallet, 'Bodega de origen': ORI, 'Bodega de destino': 'Freeko', 'Bultos (si es parcial)': 5, 'Observaciones': obs },
-    /* 8 */ { 'Código de pallet': C.codigo_pallet, 'Bodega de origen': 'Santa Mónica · Cámara 03', 'Bodega de destino': 'Freeko', 'Observaciones': obs },
-    /* 9 */ { 'Código de pallet': AP.codigo_pallet, 'Bodega de origen': ORI, 'Bodega de destino': 'Freeko', 'Observaciones': obs },
-    /* 10 */ { 'Código de pallet': BQ.codigo_pallet, 'Bodega de origen': ORI, 'Bodega de destino': 'Freeko', 'Observaciones': obs },
-    /* 11 */ { 'Código de pallet': D.codigo_pallet, 'Bodega de origen': ORI, 'Bodega de destino': 'Freeko', 'Observaciones': obs },
-    /* 12 */ { 'Código de pallet': A.codigo_pallet, 'Bodega de origen': ORI, 'Bodega de destino': 'Depsa', 'Observaciones': obs },
-    /* 13 */ { 'Código de pallet': B.codigo_pallet + 'X', 'Bodega de origen': ORI, 'Bodega de destino': ORI, 'Observaciones': obs },
+    /* 6 */ { ...comun, 'Código de pallet': A.codigo_pallet, 'Bodega de origen': C1, 'Bodega de destino': 'Freeko' },
+    /* 7 */ { ...comun, 'Código de pallet': B.codigo_pallet, 'Bodega de origen': 'Freeko', 'Bodega de destino': 'Depsa', 'Bultos (si es parcial)': 5 },
+    /* 8 */ { ...comun, 'Código de pallet': C.codigo_pallet, 'Bodega de origen': 'Hayduk', 'Bodega de destino': 'Freeko' },
+    /* 9 */ { ...comun, 'Código de pallet': BQ.codigo_pallet, 'Bodega de origen': 'Exalmar', 'Bodega de destino': 'Freeko' },
+    /* 10 */ { ...comun, 'Código de pallet': D.codigo_pallet, 'Bodega de origen': C1, 'Bodega de destino': 'Freeko' },
+    /* 11 */ { ...comun, 'Código de pallet': A.codigo_pallet, 'Bodega de origen': C1, 'Bodega de destino': 'Depsa' },
+    /* 12 */ { ...comun, 'Código de pallet': A.codigo_pallet + 'X', 'Bodega de origen': C1, 'Bodega de destino': C1 },
   ], `traslados-${SELLO}.xlsx`);
   await a.setInputFiles('input[type="file"][name="archivo"]', ruta);
   await a.click('[data-accion="subir-archivo"]');
@@ -437,41 +449,55 @@ async function seccionesRestantes({ g, a }) {
   await captura(a, '05-revision-traslados');
   const det = async (n) => (await filaDe(a, n).locator('[data-detalle="fila"]').innerText()).replace(/\s+/g, ' ');
   const est = (n) => filaDe(a, n).getAttribute('data-estado');
-  ok(await est(6) === 'valida' && await est(7) === 'valida' && await est(8) === 'valida', 'las filas buenas quedan listas (entera, parcial y de otra cámara)');
-  ok(/apartado entero para pedidos/.test(await det(9)), 'pallet apartado', (await det(9)).slice(0, 100));
-  ok(/bloqueado por Calidad/.test(await det(10)), 'pallet bloqueado por Calidad', (await det(10)).slice(0, 100));
-  ok(new RegExp(`no está en ${ORI}: está en Elamar`).test(await det(11)), 'pallet de otra bodega (dice dónde está)', (await det(11)).slice(0, 100));
-  ok(/ya aparece en la fila 6/.test(await det(12)), 'pallet repetido en el archivo');
-  ok(/No existe ningún pallet/.test(await det(13)) && /misma bodega/.test(await det(13)), 'pallet inexistente y origen igual al destino', (await det(13)).slice(0, 140));
-  const boton = a.locator('[data-accion="crear-traslados"]');
-  ok(/Crear 2 traslados en borrador \(3 pallets\)/.test(await boton.innerText()), 'agrupa por origen → destino: «Crear 2 traslados en borrador (3 pallets)»', await boton.innerText());
+  ok(await est(6) === 'valida' && await est(7) === 'valida' && await est(8) === 'valida', 'las filas buenas quedan listas (entera, parcial y de otra bodega)');
+  ok(/bloqueado por Calidad/.test(await det(9)), 'pallet bloqueado por Calidad', (await det(9)).slice(0, 100));
+  ok(new RegExp(`no está en ${C1}: está en Peruvian`).test(await det(10)), 'pallet de otra bodega (dice dónde está)', (await det(10)).slice(0, 100));
+  ok(/ya aparece en la fila 6/.test(await det(11)), 'pallet repetido en el archivo');
+  ok(/No existe ningún pallet/.test(await det(12)) && /misma bodega/.test(await det(12)), 'pallet inexistente y origen igual al destino', (await det(12)).slice(0, 140));
 
-  // Corregir en pantalla la fila 11: su origen real es Elamar.
-  await filaDe(a, 11).locator('[data-accion="corregir-fila"]').click();
-  await a.locator('[data-bloque="editor-fila"] select[name="origen"]').selectOption('Elamar');
+  // Corregir en pantalla la fila 10: su origen real es Peruvian.
+  await filaDe(a, 10).locator('[data-accion="corregir-fila"]').click();
+  await a.locator('[data-bloque="editor-fila"] select[name="origen"]').selectOption('Peruvian');
   await a.locator('[data-bloque="editor-fila"] [data-accion="guardar-fila"]').click();
-  ok(await esperarFila(a, 11, 'valida'), 'se corrige la bodega de origen en pantalla y la fila queda lista');
-  await filaDe(a, 13).locator('[data-accion="descartar-fila"]').click();
-  ok(await esperarFila(a, 13, 'descartada'), 'y se descarta la del pallet inexistente');
+  ok(await esperarFila(a, 10, 'valida'), 'se corrige la bodega de origen en pantalla y la fila queda lista');
+  for (const n of [9, 11, 12]) {
+    await filaDe(a, n).locator('[data-accion="descartar-fila"]').click();
+    await esperarFila(a, n, 'descartada');
+  }
+  ok(await esperarFila(a, 12, 'descartada'), 'y se descartan las que no van');
 
-  await a.locator('[data-accion="crear-traslados"]:has-text("Crear 3 traslados")').waitFor({ timeout: 20000 });
-  await a.click('[data-accion="crear-traslados"]');
-  await a.waitForFunction(() => /creado/.test(document.querySelector('[data-aviso="importacion"]')?.textContent ?? ''), null, { timeout: 60000 });
-  ok(/3 traslados creados en borrador/.test(await a.locator('[data-aviso="importacion"]').innerText()), 'crea 3 traslados en borrador', (await a.locator('[data-aviso="importacion"]').innerText()).slice(0, 100));
-  const tras = await consultar(`select t.id, t.numero, t.estado::text, t.almacen_origen_id o, t.almacen_destino_id d, t.observaciones,
+  // Almacén la deja lista; Gerencia valida.
+  ok(await a.locator('[data-accion="validar-registrar"]').count() === 0, 'Almacén no ve «Validar y registrar»: deja la importación lista');
+  await a.click('[data-accion="dejar-lista"]');
+  await a.waitForFunction(() => /lista para validar/i.test(document.querySelector('[data-aviso="importacion"]')?.textContent ?? ''), null, { timeout: 30000 });
+  const existLista = await consultar(`select lote_id, almacen_id, bultos, peso_neto_kg::float kg from existencias where lote_id in (${[A, B, C, D].map((x) => x.lote_id)}) and peso_neto_kg > 0 order by 1, 2`);
+  ok(JSON.stringify(existAntes) === JSON.stringify(existLista), 'dejarla lista no mueve stock');
+  await g.goto(`${BASE}/almacenes/traslados/importar/${impTraslados}`, { waitUntil: 'networkidle' });
+  const boton = g.locator('[data-accion="validar-registrar"]');
+  ok(/Validar y registrar 4 traslados \(4 pallets\)/.test(await boton.innerText()), 'Gerencia: «Validar y registrar 4 traslados (4 pallets)», uno por origen → destino', await boton.innerText());
+  await boton.click();
+  await g.waitForFunction(() => /Importación validada/.test(document.querySelector('[data-aviso="importacion"]')?.textContent ?? ''), null, { timeout: 120000 });
+  ok(/4 traslados registrados ya recibidos/.test(await g.locator('[data-aviso="importacion"]').innerText()), 'registra 4 traslados ya recibidos', (await g.locator('[data-aviso="importacion"]').innerText()).slice(0, 100));
+  const tras = await consultar(`select t.id, t.numero, t.estado::text, t.almacen_origen_id o, t.almacen_destino_id d, t.guia_numero, t.fecha_traslado::text fecha,
                                        json_agg(json_build_object('lote', tl.lote_id, 'b', tl.bultos_enviados, 'kg', tl.peso_enviado_kg)) lineas
                                   from traslados t join traslado_lineas tl on tl.traslado_id = t.id
-                                 where t.id > ${prev.tr} and t.observaciones like 'PRUEBA-IMP%' group by t.id order by t.id`);
-  ok(tras.length === 3 && tras.every((t) => t.estado === 'borrador' && t.d === 4), 'en la base: 3 traslados en borrador hacia Freeko', tras.map((t) => t.numero).join(', '));
-  const t2 = tras.find((t) => t.o === 2);
-  ok(t2?.lineas?.length === 2, 'los dos pallets de la Cámara 02 van en un mismo traslado');
-  const lb = t2?.lineas?.find((l) => l.lote === B.lote_id);
+                                 where t.id > ${prev.tr} and t.id in (select traslado_id from importaciones_excel_filas where importacion_id = ${impTraslados})
+                                 group by t.id order by t.id`);
+  ok(tras.length === 4 && tras.every((t) => t.estado === 'aceptado' && t.guia_numero === `T009-${SELLO}` && t.fecha === hoy),
+    'en la base: 4 traslados aceptados, con su guía y su fecha', tras.map((t) => `${t.numero} ${t.estado}`).join(', '));
+  const t2 = tras.find((t) => t.o === A.almacen_id);
+  const tB = tras.find((t) => t.lineas.some((l) => l.lote === B.lote_id));
+  const lb = tB?.lineas?.[0];
   ok(lb?.b === 5 && Math.abs(Number(lb.kg) - 5 * Number(B.kg) / B.b) < 0.01, 'el parcial lleva 5 bultos con sus kilos reales');
   const la = t2?.lineas?.find((l) => l.lote === A.lote_id);
   ok(la?.b === A.b && Math.abs(Number(la.kg) - Number(A.kg)) < 0.01, 'el entero lleva todo lo disponible');
-  ok(await esperarFila(a, 6, 'registrada') && await filaDe(a, 6).locator('[data-enlace="traslado"]').count() === 1, 'cada fila enlaza a su traslado');
-  const existDespues = await consultar(`select lote_id, almacen_id, bultos, peso_neto_kg from existencias where lote_id in (${[A, B, C].map((x) => x.lote_id)}) order by 1, 2`);
-  ok(JSON.stringify(existAntes) === JSON.stringify(existDespues), 'el borrador no mueve stock');
+  ok(await esperarFila(g, 6, 'registrada') && await filaDe(g, 6).locator('[data-enlace="traslado"]').count() === 1, 'cada fila enlaza a su traslado');
+  const existDespues = await consultar(`select lote_id, almacen_id, bultos, peso_neto_kg::float kg from existencias where lote_id in (${[A, B, C, D].map((x) => x.lote_id)}) and peso_neto_kg > 0 order by 1, 2`);
+  const enA = existDespues.filter((x) => x.lote_id === A.lote_id).map((x) => x.almacen_id);
+  const enB = existDespues.filter((x) => x.lote_id === B.lote_id).map((x) => `${x.almacen_id}:${x.bultos}`).join(' ');
+  ok(enA.join() === '4' && enB === `4:${B.b - 5} 7:5`, 'el stock se movió: el entero está en Freeko y el parcial quedó repartido', `${enA} · ${enB}`);
+  const suma = (xs) => Math.round(xs.reduce((s, x) => s + x.kg, 0) * 1000) / 1000;
+  ok(suma(existAntes) === suma(existDespues), 'sin crear ni perder kilos');
 
   /* ======================================================================
      5 · FALLAS: ficha del traslado, historial, mensajes, red
@@ -525,7 +551,7 @@ async function seccionesRestantes({ g, a }) {
   const op = await sesion('operaciones');
   await op.goto(`${BASE}/configuracion?t=maestros&m=almacenes`, { waitUntil: 'networkidle' });
   await op.locator('[data-bloque="almacenes"]').waitFor();
-  ok((await op.locator('tr[data-almacen="ELAMAR"] [data-recibe="compras"]').innerText()).toLowerCase().includes('sí'), 'el catálogo dice qué recibe cada almacén (Elamar: compras)');
+  ok((await op.locator('tr[data-almacen="EXALMAR"] [data-recibe="compras"]').innerText()).toLowerCase().includes('sí'), 'el catálogo dice qué recibe cada almacén (Exalmar: compras)');
   await captura(op, '07-maestro-almacenes');
   // Editar uno existente: Coinrefri también recibe compras.
   await op.locator('tr[data-almacen="COINRE"] [data-accion="editar-almacen"]').click();
@@ -585,10 +611,15 @@ async function limpiar() {
     const misTras = impTraslados
       ? (await consultar(`select distinct traslado_id id from importaciones_excel_filas where importacion_id = ${impTraslados} and traslado_id is not null`)).map((x) => x.id)
       : [];
+    const misDic = [...new Set([
+      ...(dictamenPrueba ? [dictamenPrueba] : []),
+      ...(misLotes.length ? (await consultar(`select id from dictamenes_calidad where lote_id in (${misLotes})`)).map((x) => x.id) : []),
+    ])];
     const lista = (xs) => xs.map((x) => `'${x}'`).join(',') || "''";
-    console.log(`  limpieza: ${misLotes.length} pallets, ${misMov.length} movimientos, ${misImp.length} importaciones, ${misProg.length} programados, ${misTras.length} traslados (correlativo ${prev.corr})`);
+    console.log(`  limpieza: ${misDic.length} dictámenes, ${misLotes.length} pallets, ${misMov.length} movimientos, ${misImp.length} importaciones, ${misProg.length} programados, ${misTras.length} traslados (correlativo ${prev.corr})`);
     await ejecutarSQL(`
-      ${misTras.length ? `delete from traslados where id in (${misTras});` : ''}
+      ${misTras.length ? `delete from traslado_lineas where traslado_id in (${misTras}); delete from traslados where id in (${misTras});` : ''}
+      ${misDic.length ? `delete from dictamenes_calidad where id in (${misDic});` : ''}
       alter table movimientos disable trigger trg_kardex_no_delete;
       ${misMov.length ? `delete from movimientos where id in (${misMov});` : ''}
       alter table movimientos enable trigger trg_kardex_no_delete;
@@ -599,14 +630,19 @@ async function limpiar() {
       delete from eventos where id > ${prev.ev} and (
         (entidad = 'lotes' and entidad_id = any(array[${misLotes.join(',') || 0}]::bigint[]))
         or (entidad = 'ingresos_programados' and entidad_id = any(array[${misProg.join(',') || 0}]::bigint[]))
-        or (entidad in ('traslados','traslado') and entidad_id = any(array[${misTras.join(',') || 0}]::bigint[])));
-      delete from alertas where id > ${prev.al} and entidad = 'importacion' and entidad_id = any(array[${misImp.join(',') || 0}]::bigint[]);
+        or (entidad in ('traslados','traslado') and entidad_id = any(array[${misTras.join(',') || 0}]::bigint[]))
+        or (entidad = 'dictamenes_calidad' and entidad_id = any(array[${misDic.join(',') || 0}]::bigint[])));
+      delete from alertas where id > ${prev.al} and (
+        (entidad = 'importacion' and entidad_id = any(array[${misImp.join(',') || 0}]::bigint[]))
+        or (entidad in ('lote','lotes') and entidad_id = any(array[${misLotes.join(',') || 0}]::bigint[]))
+        or (entidad in ('traslado','traslados') and entidad_id = any(array[${misTras.join(',') || 0}]::bigint[])));
       delete from auditoria where id > ${prev.au} and (
         (tabla = 'lotes' and registro_id = any(array[${lista(misLotes)}]))
         or (tabla = 'movimientos' and registro_id = any(array[${lista(misMov)}]))
         or (tabla = 'importaciones_excel' and registro_id = any(array[${lista(misImp)}]))
         or (tabla = 'ingresos_programados' and registro_id = any(array[${lista(misProg)}]))
         or (tabla = 'traslados' and registro_id = any(array[${lista(misTras)}]))
+        or (tabla = 'dictamenes_calidad' and registro_id = any(array[${lista(misDic)}]))
         or (tabla = 'traslado_lineas' and (datos_despues->>'traslado_id' = any(array[${lista(misTras)}]) or datos_antes->>'traslado_id' = any(array[${lista(misTras)}])))
         or (tabla = 'almacenes' and registro_id = any(array[${lista(almacenNuevo ? [almacenNuevo] : [])}])));
       ${almacenNuevo ? `delete from almacenes where id = ${almacenNuevo};` : ''}

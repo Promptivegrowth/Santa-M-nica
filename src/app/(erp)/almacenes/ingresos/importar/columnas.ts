@@ -2,10 +2,16 @@
  * ============================================================================
  *  LAS COLUMNAS DE LA PLANTILLA DE INGRESOS
  * ============================================================================
- *  Son los mismos campos que pide el formulario «Registrar ingreso», en el
- *  mismo orden en que se leen, más uno: «Llega el», para los ingresos
- *  programados. Se declaran una vez y las usan la plantilla, la lectura del
- *  archivo y la pantalla de revisión (para nombrar la columna de cada error).
+ *  Son los mismos campos que pide el formulario «Registrar ingreso», más uno:
+ *  «Llega el», para los ingresos programados. Se declaran una vez y las usan
+ *  la plantilla, la lectura del archivo y la pantalla de revisión (para
+ *  nombrar la columna de cada error).
+ *
+ *  EL ORDEN es el que dejó Operaciones al acomodar la plantilla a su forma de
+ *  trabajar (079): Origen, Fecha de producción, Código de pallet, Producto,
+ *  Bodega, Cámara, Kg por bulto, Bultos, Peso neto total… El lector busca cada
+ *  columna por su TÍTULO, no por su posición: un archivo con el orden antiguo
+ *  (o con columnas cambiadas de sitio a mano) se sigue leyendo igual.
  *
  *  Archivo sin código de servidor: lo importa también la pantalla.
  * ============================================================================
@@ -15,34 +21,37 @@ import type { ColumnaPlantilla } from '@/lib/importacionExcel';
 export const HOJA_INGRESOS = 'Ingresos';
 
 export const COLUMNAS_INGRESO: ColumnaPlantilla[] = [
-  { clave: 'codigo_pallet', titulo: 'Código de pallet', obligatoria: true, ancho: 17, tipo: 'texto',
-    alias: ['Pallet', 'Código', 'Codigo pallet'],
-    ayuda: 'La matrícula del pallet, p. ej. «SM 26 10 0168». No se puede repetir: ni en el archivo ni con un pallet que ya exista.' },
-  { clave: 'producto', titulo: 'Producto', obligatoria: true, ancho: 44, tipo: 'texto',
-    ayuda: 'Elíjalo de la lista o copie el texto de la hoja «Listas» (columna Producto). También vale «código SKU · presentación», p. ej. «01 · 4 X 7 KG».' },
   { clave: 'origen', titulo: 'Origen', obligatoria: true, ancho: 12, tipo: 'texto',
     ayuda: 'Producción (lo procesó la planta, propia o maquila) o Compras (producto terminado comprado a un tercero).' },
-  { clave: 'proveedor', titulo: 'Proveedor (si es compra)', ancho: 24, tipo: 'texto',
-    ayuda: 'Obligatorio si el origen es Compras: razón social de a quién se compró.' },
+  { clave: 'fecha_produccion', titulo: 'Fecha de producción', obligatoria: true, ancho: 13, tipo: 'fecha',
+    ayuda: 'DD/MM/AAAA. No puede ser futura: con ella se calcula la antigüedad y la vida útil.' },
+  { clave: 'codigo_pallet', titulo: 'Código de pallet', obligatoria: true, ancho: 17, tipo: 'texto',
+    //  N°PALLET, PESO NETO, TOTAL, PESO BULTO y OPERACIÓN INGRESO son los títulos
+    //  de su base (hoja GENERAL): si pegan su tabla con sus títulos, se leen igual.
+    alias: ['Pallet', 'Código', 'Codigo pallet', 'N°PALLET', 'N° PALLET', 'Nº PALLET'],
+    ayuda: 'La matrícula del pallet, p. ej. «SM 26 10 0168». No se puede repetir: ni en el archivo ni con un pallet que ya exista.' },
+  { clave: 'producto', titulo: 'Producto', obligatoria: true, ancho: 44, tipo: 'texto', alias: ['Operación ingreso'],
+    ayuda: 'Elíjalo de la lista o copie el texto de la hoja «Productos». También vale «código SKU · presentación», p. ej. «01 · 4 X 7 KG», ' +
+      'o el nombre que usan en su base (columna «Nombre en su base»), p. ej. «FILETE-"B" 0-500 X 20 KG».' },
   { clave: 'bodega', titulo: 'Bodega', obligatoria: true, ancho: 24, tipo: 'texto',
     ayuda: 'A qué bodega entra. La producción solo entra por las bodegas que reciben producción y las compras por las que reciben compras (hoja «Bodegas»).' },
   { clave: 'camara', titulo: 'Cámara', ancho: 14, tipo: 'texto',
     ayuda: 'Tiene que ser una cámara de esa bodega.' },
-  { clave: 'bultos', titulo: 'Bultos', obligatoria: true, ancho: 9, tipo: 'numero',
+  { clave: 'kg_bulto', titulo: 'Kg por bulto', ancho: 10, tipo: 'numero', alias: ['Peso bulto'],
+    ayuda: 'Solo si no escribe el peso total. Se multiplica por los bultos.' },
+  { clave: 'bultos', titulo: 'Bultos', obligatoria: true, ancho: 9, tipo: 'numero', alias: ['Total'],
     ayuda: 'Número entero mayor que cero.' },
   { clave: 'peso_kg', titulo: 'Peso neto total (kg)', obligatoria: true, ancho: 13, tipo: 'numero',
-    alias: ['Peso neto (kg)', 'Kilos', 'Peso (kg)'],
+    alias: ['Peso neto (kg)', 'Kilos', 'Peso (kg)', 'Peso neto'],
     ayuda: 'El peso neto de todo el pallet, en kilos. Si lo deja vacío y pone «Kg por bulto», se multiplica.' },
-  { clave: 'kg_bulto', titulo: 'Kg por bulto', ancho: 10, tipo: 'numero',
-    ayuda: 'Solo si no escribe el peso total. Se multiplica por los bultos.' },
-  { clave: 'fecha_produccion', titulo: 'Fecha de producción', obligatoria: true, ancho: 13, tipo: 'fecha',
-    ayuda: 'DD/MM/AAAA. No puede ser futura: con ella se calcula la antigüedad y la vida útil.' },
   { clave: 'turno', titulo: 'Turno', ancho: 8, tipo: 'texto',
     ayuda: 'Día o Noche. Vacío: Día.' },
   { clave: 'proceso', titulo: 'Proceso', ancho: 16, tipo: 'texto',
     ayuda: 'Producción propia o Maquila. Vacío: Producción propia.' },
   { clave: 'planta', titulo: 'Planta', ancho: 16, tipo: 'texto',
     ayuda: 'De la lista.' },
+  { clave: 'proveedor', titulo: 'Proveedor (si es compra)', ancho: 24, tipo: 'texto',
+    ayuda: 'Obligatorio si el origen es Compras: razón social de a quién se compró.' },
   { clave: 'linea', titulo: 'Línea procesadora', ancho: 16, tipo: 'texto',
     ayuda: 'De la lista. Sirve para rastrear un problema hasta la línea que lo produjo.' },
   { clave: 'costo', titulo: 'Costo por kg (US$)', ancho: 11, tipo: 'numero',
@@ -50,6 +59,11 @@ export const COLUMNAS_INGRESO: ColumnaPlantilla[] = [
   { clave: 'llega_el', titulo: 'Llega el (si es programado)', ancho: 14, tipo: 'fecha',
     alias: ['Llega el', 'Fecha de llegada'],
     ayuda: 'Solo si el pallet TODAVÍA NO LLEGA: la fecha en que se espera. Queda como ingreso programado y no mueve stock hasta que se confirme su llegada. Vacío o una fecha de hoy o anterior: entra al stock al registrar.' },
+  //  No sale en la plantilla (el orden acordado no cambia): se lee si viene,
+  //  p. ej. al pegar su tabla con su columna TIPO DE CONGELAMIENTO. Sirve para
+  //  elegir entre dos presentaciones iguales en placas y en túnel.
+  { clave: 'congelamiento', titulo: 'Tipo de congelamiento', ancho: 14, tipo: 'texto', soloLectura: true, alias: ['Congelamiento'],
+    ayuda: 'Placas o Túnel. Opcional: solo hace falta si el producto tiene la misma presentación en placas y en túnel.' },
   { clave: 'observaciones', titulo: 'Observaciones', ancho: 30, tipo: 'texto',
     ayuda: 'Algo fuera de lo normal en este pallet (máximo 200 caracteres).' },
 ];

@@ -8,6 +8,9 @@
  *
  *  Lo bloqueado por Calidad y lo apartado entero para pedidos no aparece en
  *  «Pallets disponibles»: no se puede trasladar.
+ *
+ *  079 · Es para traslados YA HECHOS: «Fecha de traslado» (obligatoria, de hoy
+ *  hacia atrás) y «N.º de guía» antes de «Observaciones».
  * ============================================================================
  */
 import { NextResponse } from 'next/server';
@@ -63,6 +66,7 @@ export async function GET() {
       a.st.codigo_pallet.localeCompare(z.st.codigo_pallet, 'es', { numeric: true }));
 
   const hoy = hoyEnLima();
+  const [a, m, d] = hoy.split('-');
   const ej = filas[0];
   const otra = (bodegas ?? []).find((b) => Number(b.id) !== ej?.st.almacen_id);
 
@@ -77,6 +81,8 @@ export async function GET() {
       codigo_pallet: 'EJEMPLO 0001',
       origen: ej ? nombreBodega.get(ej.st.almacen_id) ?? '' : '',
       destino: String(otra?.nombre ?? ''),
+      fecha: `${d}/${m}/${a}`,
+      guia: 'T001-000123',
       observaciones: 'FILA DE EJEMPLO: escriba encima o bórrela',
     },
     listas: [
@@ -94,12 +100,15 @@ export async function GET() {
       ]),
     }],
     instrucciones: [
+      'Esta plantilla es para registrar traslados que YA OCURRIERON (el camión ya salió y llegó). Un traslado que todavía no sale se pide desde Stock › Traslados › Nuevo traslado.',
       'Una fila por pallet. Copie el código desde la hoja «Pallets disponibles» (donde también ve su bodega y cuánto tiene disponible).',
       'Bodega de origen es donde está hoy el pallet; bodega de destino, a dónde va. No pueden ser la misma.',
       'Si va el pallet entero, deje vacíos Bultos y Kilos: va todo lo disponible. Si va una parte, ponga los bultos (y, si quiere, los kilos exactos).',
       'No se puede trasladar lo bloqueado por Calidad, lo apartado para un pedido, ni un pallet que ya va en otro traslado que todavía no sale.',
+      'Fecha de traslado: el día en que salió el camión, de hoy hacia atrás (no puede ser futura ni anterior a la producción del pallet). N.º de guía: la guía de remisión con que viajó.',
       'Al subir, el sistema revisa cada fila y le dice qué está bien y qué no, y por qué. Las filas con error se corrigen en la misma pantalla.',
-      'Con «Crear traslados en borrador», las filas con el mismo origen, destino y fecha programada forman un traslado. Nace en borrador: sigue su circuito normal (Gerencia u Operaciones lo autoriza, Almacén lo despacha con la guía y el destino lo recibe).',
+      'Las filas con el mismo origen, destino, fecha y guía forman un traslado (un viaje).',
+      'Almacén deja la importación «Lista para validar» y se avisa a Gerencia y Operaciones. Al pulsar «Validar y registrar», cada traslado queda registrado ya despachado y recibido en destino, con su fecha y su guía: el stock pasa a la bodega de destino en ese momento. Si la sube Gerencia u Operaciones, la registra en el mismo paso.',
     ],
     usuario: String(usuario.nombre ?? usuario.email ?? ''),
   });

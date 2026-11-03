@@ -28,6 +28,12 @@ import { COLUMNA_DE_CAMPO, type ErrorColumna, type EstadoFila } from './columnas
    ========================================================================== */
 export type ProductoCatalogo = {
   id: number; etiqueta: string; codigo: string; presentacion: string; especie: string; corte: string; kg_bulto: number;
+  /** placas o túnel: distingue dos presentaciones con la misma descripción. */
+  congelamiento: string;
+  /** La clasificación del producto en su base (FILETE, LAMINADO, ALETAS…) = formatos.nombre. */
+  formato: string;
+  /** El nombre con que lo ven en su base: «CLASIFICACIÓN-CORTE X PESO BULTO», p. ej. «FILETE-"B" 0-500 X 20 KG». */
+  nombre_base: string;
 };
 export type BodegaCatalogo = {
   id: number; nombre: string; codigo: string; activo: boolean; recibe_produccion: boolean; recibe_compras: boolean;
@@ -44,11 +50,55 @@ export type CatalogoIngresos = {
 export const etiquetaProducto = (codigo: string, presentacion: string, especie: string, corte: string) =>
   [codigo, presentacion, especie, corte].filter(Boolean).join(' · ');
 
+const TEXTO_CONGELAMIENTO: Record<string, string> = { placas: 'Placas', tunel: 'Túnel' };
+
+/** Kilos sin ceros de más: 20 → «20», 22.5 → «22.5», 6.25 → «6.25». */
+const kgTexto = (n: number) => String(Math.round(n * 1000) / 1000);
+
+/**
+ * El nombre que usan en su base (la columna OPERACIÓN INGRESO de su Excel):
+ * «CLASIFICACIÓN-CORTE X PESO BULTO», p. ej. «FILETE-"B" 0-500 X 20 KG».
+ * CLASIFICACIÓN-CORTE es su FULL_TEXT; su CLASIFICACIÓN es nuestro formato.
+ */
+export const nombreEnSuBase = (formato: string, corte: string, kgBulto: number) =>
+  formato && corte && kgBulto > 0 ? `${formato}-${corte} X ${kgTexto(kgBulto)} KG` : '';
+
+/** Para comparar nombres de su base: sin tildes, mayúsculas ni espacios (sus textos traen espacios dobles o de más). */
+const claveNombre = (t: string) => normalizarTexto(t).replace(/\s/g, '');
+
+/** «FILETE-"B" 0-500 X 20 KG» → { texto: 'FILETE-"B" 0-500', kg: 20 }, o null si no tiene esa forma. */
+function partirNombreBase(t: string): { texto: string; kg: number } | null {
+  //  «KG», «KGS» o «KS» (así viene escrito alguna vez en su base).
+  const x = /^(.+?)\s*X\s*(\d+(?:[.,]\d+)?)\s*K(?:G|S)S?\.?$/i.exec(String(t ?? '').trim());
+  if (!x) return null;
+  const kg = Number(x[2].replace(',', '.'));
+  return kg > 0 ? { texto: x[1].trim(), kg } : null;
+}
+
+/**
+ * Los nombres de su base que apuntan a UNA sola presentación: esos van en la
+ * lista desplegable. Los que apuntan a varias (mismo producto y mismo peso
+ * por bulto, p. ej. «4 X 5 KG» y «2 X 10 KG», o placas y túnel) no van: el
+ * importador los acepta igual y, si no puede decidir, lo dice y propone las
+ * opciones.
+ */
+export function nombresBaseUnicos(productos: ProductoCatalogo[]): Map<string, ProductoCatalogo> {
+  const grupos = new Map<string, ProductoCatalogo[]>();
+  for (const p of productos) {
+    if (!p.nombre_base) continue;
+    const k = claveNombre(p.nombre_base);
+    grupos.set(k, [...(grupos.get(k) ?? []), p]);
+  }
+  const unicos = new Map<string, ProductoCatalogo>();
+  for (const lista of grupos.values()) if (lista.length === 1) unicos.set(lista[0].nombre_base, lista[0]);
+  return unicos;
+}
+
 export async function cargarCatalogoIngresos(supabase: ClienteBase): Promise<CatalogoIngresos> {
   const [{ data: unidades }, { data: bodegas }, { data: camaras }, { data: plantas }, { data: lineas }] = await Promise.all([
     supabase
       .from('sku_presentaciones')
-      .select('id, activo, skus(codigo, corte, activo, especies(nombre)), presentaciones(descripcion, peso_bulto_kg)')
+      .select('id, activo, skus(codigo, corte, activo, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg, congelamiento)')
       .eq('activo', true)
       .limit(1000),
     supabase.from('almacenes').select('id, nombre, codigo, activo, recibe_produccion, recibe_compras').order('nombre'),
@@ -69,13 +119,29 @@ export async function cargarCatalogoIngresos(supabase: ClienteBase): Promise<Cat
     const presentacion = String(pres?.descripcion ?? '');
     const especie = String(esp?.nombre ?? '');
     const corte = String(sku.corte ?? '');
+    const formato = String(uno(sku.formatos)?.nombre ?? '');
+    const kg = Number(pres?.peso_bulto_kg ?? 0);
     productos.push({
-      id: Number(u.id), codigo, presentacion, especie, corte,
+      id: Number(u.id), codigo, presentacion, especie, corte, formato,
+      congelamiento: String(pres?.congelamiento ?? ''),
       etiqueta: etiquetaProducto(codigo, presentacion, especie, corte),
-      kg_bulto: Number(pres?.peso_bulto_kg ?? 0),
+      kg_bulto: kg,
+      nombre_base: nombreEnSuBase(formato, corte, kg),
     });
   }
-  productos.sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }) || a.presentacion.localeCompare(b.presentacion, 'es'));
+  productos.sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }) || a.presentacion.localeCompare(b.presentacion, 'es')
+    || a.congelamiento.localeCompare(b.congelamiento));
+
+  /* Dos presentaciones del mismo SKU con la misma descripción («2 X 10 KG»)
+     solo se distinguen por el congelamiento: a esas se les agrega al final
+     («… · Túnel»), para que cada texto de la lista sea UN solo producto. */
+  const repetidas = new Map<string, number>();
+  for (const p of productos) repetidas.set(p.etiqueta, (repetidas.get(p.etiqueta) ?? 0) + 1);
+  for (const p of productos) {
+    if ((repetidas.get(p.etiqueta) ?? 0) > 1 && p.congelamiento) {
+      p.etiqueta = `${p.etiqueta} · ${TEXTO_CONGELAMIENTO[p.congelamiento] ?? p.congelamiento}`;
+    }
+  }
 
   return {
     productos,
@@ -94,12 +160,67 @@ export async function cargarCatalogoIngresos(supabase: ClienteBase): Promise<Cat
    ========================================================================== */
 const sinCeros = (c: string) => c.replace(/^0+(?=\d)/, '');
 
-function buscarProducto(texto: string, cat: CatalogoIngresos): { id: number } | { error: string } {
+/**
+ * Por el nombre de su base: «FILETE-"B" 0-500 X 20 KG» → su CLASIFICACIÓN-CORTE
+ * (formato y corte del SKU) más el peso del bulto (la presentación). null si
+ * el texto no es un nombre de su base que exista.
+ */
+/** «Placas» / «Túnel» (o vacío) como en la base: 'placas' | 'tunel' | ''. */
+const leerCongelamiento = (t: string) => {
+  const x = normalizarTexto(t);
+  return /^plac/.test(x) ? 'placas' : /^tun/.test(x) ? 'tunel' : '';
+};
+
+/** Si con el congelamiento escrito queda una sola opción, esa. */
+function porCongelamiento(candidatos: ProductoCatalogo[], congelamiento: string): ProductoCatalogo | null {
+  const c = leerCongelamiento(congelamiento);
+  if (!c) return null;
+  const con = candidatos.filter((p) => p.congelamiento === c);
+  return con.length === 1 ? con[0] : null;
+}
+
+function buscarPorNombreBase(texto: string, cat: CatalogoIngresos, congelamiento = ''): { id: number } | { error: string } | null {
+  const partes = partirNombreBase(texto);
+  if (!partes) return null;
+  const clave = claveNombre(partes.texto);
+  const delProducto = cat.productos.filter((p) => p.formato && claveNombre(`${p.formato}-${p.corte}`) === clave);
+  if (!delProducto.length) return null;
+  const conPeso = delProducto.filter((p) => Math.abs(p.kg_bulto - partes.kg) < 0.0005);
+  if (conPeso.length === 1) return { id: conPeso[0].id };
+  const elegido = porCongelamiento(conPeso, congelamiento);
+  if (elegido) return { id: elegido.id };
+  if (conPeso.length === 0) {
+    const pesos = [...new Set(delProducto.map((p) => `${kgTexto(p.kg_bulto)} kg (${p.presentacion})`))];
+    return {
+      error: `«${texto}» es el producto ${delProducto[0].codigo} (${partes.texto}), pero no tiene una presentación de ${kgTexto(partes.kg)} kg por bulto: ` +
+        `tiene ${pesos.join(', ')}. Corrija el peso del bulto o elija el producto de la lista.`,
+    };
+  }
+  //  El congelamiento se dice solo si es lo que las distingue (y la etiqueta no lo trae ya).
+  const difiereCong = conPeso.some((p) => p.congelamiento !== conPeso[0].congelamiento);
+  const cong = (p: ProductoCatalogo) => {
+    const t = TEXTO_CONGELAMIENTO[p.congelamiento] ?? p.congelamiento;
+    return difiereCong && t && !p.etiqueta.endsWith(t) ? ` (${t})` : '';
+  };
+  return {
+    error: `«${texto}» puede ser ${conPeso.length} presentaciones del producto ${conPeso[0].codigo} con ${kgTexto(partes.kg)} kg por bulto: ` +
+      `${conPeso.map((p) => `«${p.etiqueta}»${cong(p)}`).join(' o ')}. ` +
+      'Escriba en «Producto» una de esas opciones (están en la lista desplegable)' +
+      (difiereCong ? ', o agregue la columna «Tipo de congelamiento» (Placas o Túnel).' : '.'),
+  };
+}
+
+function buscarProducto(texto: string, cat: CatalogoIngresos, congelamiento = ''): { id: number } | { error: string } {
   const t = normalizarTexto(texto);
   if (!t) return { error: 'Falta el producto.' };
 
   const exacto = cat.productos.find((p) => normalizarTexto(p.etiqueta) === t);
   if (exacto) return { id: exacto.id };
+
+  //  El nombre con que lo ven en su base («FILETE-"B" 0-500 X 20 KG»): así
+  //  pueden pegar su tabla tal cual.
+  const porNombre = buscarPorNombreBase(texto, cat, congelamiento);
+  if (porNombre) return porNombre;
 
   //  «01 · 4 X 7 KG …»: el código del SKU y la presentación bastan.
   const partes = t.split(' · ').map((x) => x.trim());
@@ -110,14 +231,19 @@ function buscarProducto(texto: string, cat: CatalogoIngresos): { id: number } | 
       error: `No existe el producto «${texto}». Elíjalo de la lista desplegable o copie el texto exacto de la hoja «Listas» (columna Producto).`,
     };
   }
+  let candidatos = delSku;
   if (partes[1]) {
     const pres = normalizarTexto(partes[1]).replace(/\s/g, '');
     const conPres = delSku.filter((p) => normalizarTexto(p.presentacion).replace(/\s/g, '') === pres);
     if (conPres.length === 1) return { id: conPres[0].id };
+    //  Misma descripción en placas y en túnel: se ofrecen solo esas.
+    if (conPres.length > 1) candidatos = conPres;
   }
   if (delSku.length === 1) return { id: delSku[0].id };
+  const elegido = porCongelamiento(candidatos, congelamiento);
+  if (elegido) return { id: elegido.id };
   return {
-    error: `El SKU ${delSku[0].codigo} tiene ${delSku.length} presentaciones (${delSku.map((p) => p.presentacion).join(', ')}): ` +
+    error: `El SKU ${delSku[0].codigo} tiene ${candidatos.length} presentaciones posibles (${candidatos.map((p) => `«${p.etiqueta}»`).join(', ')}): ` +
       'indique cuál, eligiendo el producto de la lista.',
   };
 }
@@ -163,7 +289,7 @@ export function interpretarFila(v: Record<string, string>, cat: CatalogoIngresos
   const errores: ErrorColumna[] = [];
   const mal = (columna: string, mensaje: string) => errores.push({ columna, mensaje });
 
-  const producto = buscarProducto(v.producto ?? '', cat);
+  const producto = buscarProducto(v.producto ?? '', cat, v.congelamiento ?? '');
   if ('error' in producto && v.producto?.trim()) mal('producto', producto.error);
 
   const o = normalizarTexto(v.origen);
@@ -341,7 +467,7 @@ export async function contextoDeFilas(supabase: ClienteBase, filas: { datos: Rec
   const hoy = hoyEnLima();
   const codigos = filas.map((f) => normalizarCodigo(f.datos.codigo_pallet ?? ''));
   const skus = filas.map((f) => {
-    const p = buscarProducto(f.datos.producto ?? '', cat);
+    const p = buscarProducto(f.datos.producto ?? '', cat, f.datos.congelamiento ?? '');
     return 'id' in p ? p.id : 0;
   });
   return cargarContexto(supabase, codigos, skus, hoy);

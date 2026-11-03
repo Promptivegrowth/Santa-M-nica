@@ -355,6 +355,7 @@ function EditorFila({
       case 'proceso': return elegir(k, ['Producción propia', 'Maquila'], 'Producción propia');
       case 'planta': return elegir(k, opciones.plantas);
       case 'linea': return elegir(k, opciones.lineas);
+      case 'congelamiento': return elegir(k, ['Placas', 'Túnel'], 'No hace falta');
       default:
         return (
           <input className={`campo${['codigo_pallet', 'bultos', 'peso_kg', 'kg_bulto', 'costo'].includes(k) ? ' mono' : ''}`}

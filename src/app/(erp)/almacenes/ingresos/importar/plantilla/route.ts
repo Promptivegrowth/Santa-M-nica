@@ -9,6 +9,12 @@
  *  Hojas: «Ingresos» (la que se llena), «Listas» (productos con su código,
  *  bodegas y qué admite cada una, cámaras, plantas, líneas…) e
  *  «Instrucciones».
+ *
+ *  079 · Las columnas van en el orden que dejó Operaciones (columnas.ts), con
+ *  todas sus listas desplegables. La hoja «Productos» trae además el Formato
+ *  (su CLASIFICACIÓN: FILETE, LAMINADO, ALETAS…) y el «Nombre en su base»
+ *  («FILETE-"B" 0-500 X 20 KG», su OPERACIÓN INGRESO): el importador acepta
+ *  ese nombre en «Producto», para que peguen su tabla tal cual.
  * ============================================================================
  */
 import { NextResponse } from 'next/server';
@@ -18,7 +24,7 @@ import { hoyEnLima } from '@/lib/fechas';
 import { rolNoPuede } from '@/lib/mensajesBase';
 import { PUEDEN_INGRESAR } from '../../tipos';
 import { COLUMNAS_INGRESO, HOJA_INGRESOS } from '../columnas';
-import { cargarCatalogoIngresos } from '../revision';
+import { cargarCatalogoIngresos, nombresBaseUnicos } from '../revision';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +44,10 @@ export async function GET() {
 
   const ejProducto = cat.productos[0];
   const ejBodega = activas.find((b) => b.recibe_produccion) ?? activas[0];
+  /* Los nombres de su base que apuntan a un solo producto también van en la
+     lista desplegable de «Producto» (los repetidos no: no bastan solos). */
+  const unicos = nombresBaseUnicos(cat.productos);
+  const repetido = new Set(cat.productos.filter((p) => p.nombre_base && !unicos.has(p.nombre_base)).map((p) => p.nombre_base));
 
   const buffer = await generarPlantilla({
     titulo: 'Plantilla de ingresos a cámara',
@@ -59,7 +69,7 @@ export async function GET() {
       observaciones: 'FILA DE EJEMPLO: escriba encima o bórrela',
     },
     listas: [
-      { clave: 'producto', titulo: 'Producto', valores: cat.productos.map((p) => p.etiqueta) },
+      { clave: 'producto', titulo: 'Producto', valores: [...cat.productos.map((p) => p.etiqueta), ...[...unicos.keys()].sort((a, b) => a.localeCompare(b, 'es'))] },
       { clave: 'origen', titulo: 'Origen', valores: ['Producción', 'Compras'] },
       { clave: 'bodega', titulo: 'Bodega', valores: activas.map((b) => b.nombre) },
       { clave: 'camara', titulo: 'Cámara', valores: [...new Set(cat.camaras.map((c) => c.nombre))] },
@@ -71,10 +81,15 @@ export async function GET() {
     referencias: [
       {
         hoja: 'Productos',
-        titulo: 'Productos activos: copie el texto de la primera columna en «Producto»',
-        encabezados: ['Producto (copie este texto)', 'Código SKU', 'Presentación', 'Especie', 'Corte', 'Kg por bulto'],
-        anchos: [52, 11, 16, 18, 30, 11],
-        filas: cat.productos.map((p) => [p.etiqueta, p.codigo, p.presentacion, p.especie, p.corte, p.kg_bulto]),
+        titulo: 'Productos activos: copie en «Producto» el texto de la primera columna, o el «Nombre en su base» cuando basta solo',
+        encabezados: ['Producto (copie este texto)', 'Código SKU', 'Presentación', 'Congelamiento', 'Especie', 'Formato', 'Corte', 'Kg por bulto', 'Nombre en su base', '¿Basta el nombre solo?'],
+        anchos: [56, 11, 15, 14, 14, 16, 30, 11, 44, 24],
+        filas: cat.productos.map((p) => [
+          p.etiqueta, p.codigo, p.presentacion, p.congelamiento === 'tunel' ? 'Túnel' : p.congelamiento === 'placas' ? 'Placas' : '',
+          p.especie, p.formato, p.corte, p.kg_bulto,
+          p.nombre_base,
+          !p.nombre_base ? '' : repetido.has(p.nombre_base) ? 'No: hay varias presentaciones con ese nombre' : 'Sí',
+        ]),
       },
       {
         hoja: 'Bodegas',
@@ -98,6 +113,7 @@ export async function GET() {
       'Una fila por pallet. Copie sus tablas debajo de los encabezados de la hoja «Ingresos» (pegado especial › valores, para no traer formatos raros).',
       'No cambie el nombre de los encabezados. Puede dejar vacías las columnas opcionales o incluso borrarlas.',
       'Producto, origen, bodega, cámara, turno, proceso, planta y línea tienen lista desplegable. Las listas completas están en las hojas «Listas», «Productos», «Bodegas» y «Cámaras».',
+      'En «Producto» vale el texto de la hoja «Productos» (primera columna) o el nombre que usan en su base, tal como sale en su columna OPERACIÓN INGRESO (p. ej. «FILETE-"B" 0-500 X 20 KG»): el sistema lo busca por la clasificación, el corte y el peso del bulto. Si con ese nombre hay más de una presentación posible (p. ej. «4 X 5 KG» y «2 X 10 KG», que pesan 20 kg las dos), el sistema se lo dice y le propone las opciones. Si pega su tabla con su columna «TIPO DE CONGELAMIENTO» (Placas o Túnel), el sistema la usa para elegir entre la misma presentación en placas y en túnel.',
       'Cada origen entra solo por ciertas bodegas: la producción por las que «Recibe producción» y las compras por las que «Recibe compras» (hoja «Bodegas»). Una compra necesita el proveedor.',
       'El código de pallet no se puede repetir: ni dentro del archivo ni con un pallet que ya exista en el sistema.',
       'Si un pallet TODAVÍA NO LLEGA, ponga en «Llega el» la fecha en que se espera: quedará como ingreso programado y no moverá stock hasta que se confirme su llegada en Stock › Ingresos › Ingresos programados.',

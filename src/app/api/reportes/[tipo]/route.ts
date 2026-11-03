@@ -136,6 +136,8 @@ function aColumnasPdf(columnas: ColumnaExcel[]): ColumnaPdf[] {
  */
 const NOMBRE_MOVIMIENTO: Record<string, string> = {
   ingreso: 'Ingreso de producción',
+  //  079b · Los saldos de la carga inicial (v_kardex.clase_movimiento).
+  inventario_inicial: 'Inventario inicial',
   traslado_ingreso: 'Entrada por traslado',
   ingreso_reproceso: 'Vuelta de reproceso',
   ajuste_positivo: 'Ajuste que suma',
@@ -237,7 +239,7 @@ const REPORTES: Record<string, DefinicionReporte> = {
     orden: 'fecha',
     columnas: [
       { titulo: 'Fecha y hora', clave: 'fecha', ancho: 16, tipoPdf: 'fechaHora' },
-      { titulo: 'Movimiento', clave: 'tipo', ancho: 21, mapa: NOMBRE_MOVIMIENTO },
+      { titulo: 'Movimiento', clave: 'clase_movimiento', ancho: 21, mapa: NOMBRE_MOVIMIENTO },
       { titulo: 'Pallet', clave: 'codigo_pallet', ancho: 16 },
       { titulo: 'SKU', clave: 'sku_codigo', ancho: 8 },
       { titulo: 'Especie', clave: 'especie', ancho: 12 },
@@ -261,7 +263,8 @@ const REPORTES: Record<string, DefinicionReporte> = {
       fecha: 'fecha',
       texto: ['codigo_pallet', 'sku_codigo', 'documento_ref', 'corte'],
       exactos: {
-        tipo: { columna: 'tipo', etiqueta: 'Tipo de movimiento' },
+        //  079b · Como la pantalla: por la clase, para separar el inventario inicial.
+        tipo: { columna: 'clase_movimiento', etiqueta: 'Tipo de movimiento' },
         almacen: {
           columna: 'almacen_id', etiqueta: 'Almacén', numerico: true,
           catalogo: { tabla: 'almacenes', columna: 'nombre' },
@@ -278,7 +281,7 @@ const REPORTES: Record<string, DefinicionReporte> = {
     orden: 'fecha',
     columnas: [
       { titulo: 'Fecha', clave: 'fecha', ancho: 16, tipoPdf: 'fechaHora' },
-      { titulo: 'Movimiento', clave: 'tipo', ancho: 21, mapa: NOMBRE_MOVIMIENTO },
+      { titulo: 'Movimiento', clave: 'clase_movimiento', ancho: 21, mapa: NOMBRE_MOVIMIENTO },
       { titulo: 'Pallet', clave: 'codigo_pallet', ancho: 18 },
       { titulo: 'SKU', clave: 'sku_codigo', ancho: 8 },
       { titulo: 'Producto', clave: 'formato', ancho: 16 },

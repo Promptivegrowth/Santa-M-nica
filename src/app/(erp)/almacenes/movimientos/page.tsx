@@ -23,6 +23,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { hoyEnLima } from '@/lib/fechas';
+import { traerTodo } from '@/lib/traerTodo';
 import { CabeceraPagina, RejillaKpi, Kpi, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { BotonesReporte } from '@/components/ui/BotonesReporte';
@@ -42,6 +43,9 @@ const POR_PAGINA = 60;
  */
 const TIPOS: Record<string, { texto: string; signo: 1 | -1; tono: 'ok' | 'atencion' | 'critico' | 'info' | 'neutro' }> = {
   ingreso:           { texto: 'Ingreso de producción', signo: 1,  tono: 'ok' },
+  //  079b · Los saldos de la carga inicial (documento INV-INICIAL-…): no son
+  //  ingresos del día. v_kardex los distingue en `clase_movimiento`.
+  inventario_inicial: { texto: 'Inventario inicial',   signo: 1,  tono: 'neutro' },
   traslado_ingreso:  { texto: 'Entrada por traslado',  signo: 1,  tono: 'info' },
   ingreso_reproceso: { texto: 'Vuelta de reproceso',   signo: 1,  tono: 'info' },
   ajuste_positivo:   { texto: 'Ajuste que suma',       signo: 1,  tono: 'atencion' },
@@ -83,7 +87,8 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
     let c = supabase.from('v_kardex').select('*', { count: 'exact' })
       .gte('fecha', desde)
       .lte('fecha', `${hasta}T23:59:59.999`);
-    if (tipo) c = c.eq('tipo', tipo);
+    //  Por la clase (079b): «Ingreso de producción» ya no incluye el inventario inicial.
+    if (tipo) c = c.eq('clase_movimiento', tipo);
     if (almacen) c = c.eq('almacen_id', Number(almacen));
     if (buscar) {
       const limpio = buscar.replace(/[%,()]/g, ' ');
@@ -100,16 +105,27 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
       base().order('fecha', { ascending: false }).range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1),
       // Los agregados del rango. Solo las columnas que se suman: traer el
       // detalle entero para calcular cuatro cifras sería tirar ancho de banda.
-      base().select('tipo, entrada_kg, salida_kg, entrada_bultos, salida_bultos, valor, lote_id, usuario'),
+      // Por tramos (traerTodo): la API corta en 1 000 filas, y un día grande
+      // (la carga inicial dejó 2 103 movimientos el 03/11/2026) salía con
+      // totales incompletos.
+      traerTodo((d, h) =>
+        base().select('tipo, clase_movimiento, entrada_kg, salida_kg, entrada_bultos, salida_bultos, valor, lote_id, usuario')
+          .order('id').range(d, h)
+      ).then((data) => ({ data })),
       supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
       // Por si el rango elegido sale vacío: cuál fue el último día con vida.
       supabase.from('v_kardex').select('fecha').order('fecha', { ascending: false }).limit(1).maybeSingle(),
     ]);
 
   const universo = todo ?? [];
-  const entradaKg = universo.reduce((s, m) => s + Number(m.entrada_kg ?? 0), 0);
+  /* El inventario inicial no «entró» a cámara ese día: es el saldo con que
+     arrancó el sistema. Se cuenta aparte y no suma a «Entró» ni al saldo. */
+  const esInicial = (m: Record<string, unknown>) => m.clase_movimiento === 'inventario_inicial';
+  const inicialKg = universo.filter(esInicial).reduce((s, m) => s + Number(m.entrada_kg ?? 0), 0);
+  const inicialLotes = universo.filter(esInicial).length;
+  const entradaKg = universo.reduce((s, m) => s + (esInicial(m) ? 0 : Number(m.entrada_kg ?? 0)), 0);
   const salidaKg = universo.reduce((s, m) => s + Number(m.salida_kg ?? 0), 0);
-  const entradaBultos = universo.reduce((s, m) => s + Number(m.entrada_bultos ?? 0), 0);
+  const entradaBultos = universo.reduce((s, m) => s + (esInicial(m) ? 0 : Number(m.entrada_bultos ?? 0)), 0);
   const salidaBultos = universo.reduce((s, m) => s + Number(m.salida_bultos ?? 0), 0);
   const lotesTocados = new Set(universo.map((m) => m.lote_id)).size;
   const personas = new Set(universo.map((m) => m.usuario).filter(Boolean)).size;
@@ -117,7 +133,7 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
 
   /* ---- Desglose por tipo: la lectura rápida del parte del día ---- */
   const porTipo = [...universo.reduce((mapa, m) => {
-    const t = String(m.tipo);
+    const t = String(m.clase_movimiento ?? m.tipo);
     const acc = mapa.get(t) ?? { movimientos: 0, kg: 0, bultos: 0 };
     acc.movimientos += 1;
     acc.kg += Number(m.entrada_kg ?? 0) + Number(m.salida_kg ?? 0);
@@ -181,7 +197,8 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
           valor={tm(entradaKg)}
           sufijo="TM"
           tono="ok"
-          nota={`${num(entradaBultos)} bultos`}
+          nota={`${num(entradaBultos)} bultos` +
+            (inicialKg > 0 ? ` · sin contar el inventario inicial (${tm(inicialKg)} TM, ${num(inicialLotes)} saldos)` : '')}
           href={porTipo.length > 0 ? '#por-tipo' : '#detalle'}
         />
         <Kpi
@@ -219,7 +236,8 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
               <tbody>
                 {porTipo.map(([t, d]) => {
                   const meta = TIPOS[t] ?? { texto: t, signo: -1 as const, tono: 'neutro' as const };
-                  const pct = entradaKg + salidaKg > 0 ? (d.kg / (entradaKg + salidaKg)) * 100 : 0;
+                  const total = entradaKg + salidaKg + inicialKg;
+                  const pct = total > 0 ? (d.kg / total) * 100 : 0;
                   return (
                     <tr key={t}>
                       <td>
@@ -230,8 +248,8 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
                       </td>
                       <td>
                         <Etiqueta
-                          texto={meta.signo === 1 ? 'Suma stock' : 'Resta stock'}
-                          tono={meta.signo === 1 ? 'ok' : 'neutro'}
+                          texto={t === 'inventario_inicial' ? 'Saldo de partida' : meta.signo === 1 ? 'Suma stock' : 'Resta stock'}
+                          tono={t === 'inventario_inicial' ? 'neutro' : meta.signo === 1 ? 'ok' : 'neutro'}
                         />
                       </td>
                       <td className="num">{num(d.movimientos)}</td>
@@ -299,7 +317,7 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
                 </thead>
                 <tbody>
                   {(filas ?? []).map((m) => {
-                    const meta = TIPOS[String(m.tipo)] ?? {
+                    const meta = TIPOS[String(m.clase_movimiento ?? m.tipo)] ?? {
                       texto: String(m.tipo), signo: -1 as const, tono: 'neutro' as const,
                     };
                     const entra = meta.signo === 1;

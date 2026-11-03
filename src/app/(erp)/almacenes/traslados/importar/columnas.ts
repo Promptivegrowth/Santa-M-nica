@@ -3,7 +3,12 @@
  *  LAS COLUMNAS DE LA PLANTILLA DE TRASLADOS
  * ============================================================================
  *  Lo que pide «Nuevo traslado» de cada pallet: cuál, de dónde a dónde, y
- *  cuánto si no va entero. Más la fecha y las observaciones del traslado.
+ *  cuánto si no va entero. Más la fecha, la guía y las observaciones.
+ *
+ *  079 · Lo que se importa son traslados YA HECHOS (con su guía y su fecha),
+ *  no pedidos de traslado: «Fecha programada» pasó a «Fecha de traslado»
+ *  (obligatoria, de hoy hacia atrás) y se agregó «N.º de guía».
+ *
  *  Archivo sin código de servidor: lo usa también la pantalla de revisión.
  * ============================================================================
  */
@@ -22,8 +27,12 @@ export const COLUMNAS_TRASLADO: ColumnaPlantilla[] = [
     ayuda: 'Vacío: va todo lo disponible del pallet. Si solo va una parte, cuántos bultos.' },
   { clave: 'kilos', titulo: 'Kilos (si es parcial)', ancho: 12, tipo: 'numero', alias: ['Kilos', 'Kg'],
     ayuda: 'Vacío: se calculan con los kilos por bulto reales del pallet. No puede pasar de lo disponible.' },
-  { clave: 'fecha', titulo: 'Fecha programada', ancho: 13, tipo: 'fecha',
-    ayuda: 'DD/MM/AAAA, de hoy en adelante. Los pallets con el mismo origen, destino y fecha van en un mismo traslado.' },
+  { clave: 'fecha', titulo: 'Fecha de traslado', obligatoria: true, ancho: 13, tipo: 'fecha',
+    alias: ['Fecha del traslado', 'Fecha'],
+    ayuda: 'DD/MM/AAAA: el día en que salió el camión. De hoy hacia atrás (el traslado ya ocurrió), y no antes de la fecha de producción del pallet.' },
+  { clave: 'guia', titulo: 'N.º de guía', ancho: 16, tipo: 'texto',
+    alias: ['N° de guía', 'Nº de guía', 'No. de guía', 'Nro. de guía', 'Número de guía', 'Guía', 'Guía de remisión'],
+    ayuda: 'La guía de remisión con que viajó. Los pallets con el mismo origen, destino, fecha y guía forman un mismo traslado.' },
   { clave: 'observaciones', titulo: 'Observaciones', ancho: 34, tipo: 'texto',
     ayuda: 'Por qué se traslada (liberar espacio, acercarlo a la planta…).' },
 ];

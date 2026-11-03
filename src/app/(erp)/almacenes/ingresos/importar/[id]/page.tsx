@@ -20,7 +20,7 @@ import { fechaHora } from '@/lib/formato';
 import { hoyEnLima } from '@/lib/fechas';
 import { leerFecha } from '@/lib/importacionExcel';
 import { PUEDEN_INGRESAR, PUEDEN_VALIDAR_IMPORTACION } from '../../tipos';
-import { cargarCatalogoIngresos } from '../revision';
+import { cargarCatalogoIngresos, nombresBaseUnicos } from '../revision';
 import type { ErrorColumna, EstadoFila } from '../columnas';
 import { RevisionIngresos, type FilaRevision } from './RevisionIngresos';
 
@@ -49,6 +49,9 @@ export default async function PaginaRevisionIngresos(props: PageProps<'/almacene
       .limit(2000),
     cargarCatalogoIngresos(supabase),
   ]);
+  //  Los avisos de Alertas apuntan aquí para cualquier importación: una de
+  //  traslados se abre en su propia pantalla.
+  if (imp?.tipo === 'traslados') redirect(`/almacenes/traslados/importar/${imp.id}`);
   if (!imp || imp.tipo !== 'ingresos') notFound();
 
   const hoy = hoyEnLima();
@@ -87,7 +90,8 @@ export default async function PaginaRevisionIngresos(props: PageProps<'/almacene
         recienSubida={q.subida === '1'}
         puedeValidar={(PUEDEN_VALIDAR_IMPORTACION as readonly string[]).includes(rol)}
         opciones={{
-          productos: cat.productos.map((p) => p.etiqueta),
+          //  También los nombres de su base que bastan solos (079).
+          productos: [...cat.productos.map((p) => p.etiqueta), ...nombresBaseUnicos(cat.productos).keys()],
           bodegas: cat.bodegas.filter((b) => b.activo).map((b) => ({
             nombre: b.nombre, produccion: b.recibe_produccion, compras: b.recibe_compras,
           })),

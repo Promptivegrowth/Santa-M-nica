@@ -37,6 +37,12 @@ export type ColumnaPlantilla = {
   tipo?: 'texto' | 'numero' | 'fecha';
   /** Otros títulos con que se acepta la columna al leer. */
   alias?: string[];
+  /**
+   * Se acepta al LEER pero no sale en la plantilla (079): una columna que
+   * traen sus propias tablas y que ayuda a decidir algo (p. ej. el tipo de
+   * congelamiento), sin cambiar el orden de columnas acordado.
+   */
+  soloLectura?: boolean;
 };
 
 /** Una lista desplegable: a qué columna va y de dónde salen sus valores. */
@@ -96,7 +102,9 @@ export async function generarPlantilla(op: {
     views: [{ state: 'frozen', ySplit: FILA_ENCABEZADOS, xSplit: 1 }],
     properties: { tabColor: { argb: MARCA.azulProfundo } },
   });
-  const nCol = op.columnas.length;
+  //  Las columnas «solo lectura» no salen en la plantilla.
+  const columnas = op.columnas.filter((c) => !c.soloLectura);
+  const nCol = columnas.length;
 
   /* ─────────── Cabecera ─────────── */
   try {
@@ -120,7 +128,7 @@ export async function generarPlantilla(op: {
   hoja.getRow(3).height = 6;
 
   /* ─────────── Encabezados ─────────── */
-  op.columnas.forEach((c, k) => {
+  columnas.forEach((c, k) => {
     const celda = hoja.getCell(FILA_ENCABEZADOS, k + 1);
     celda.value = c.obligatoria ? `${c.titulo} *` : c.titulo;
     estiloEncabezado(celda, Boolean(c.obligatoria));
@@ -131,7 +139,7 @@ export async function generarPlantilla(op: {
 
   /* ─────────── Fila de ejemplo ─────────── */
   const filaEj = FILA_ENCABEZADOS + 1;
-  op.columnas.forEach((c, k) => {
+  columnas.forEach((c, k) => {
     const celda = hoja.getCell(filaEj, k + 1);
     const v = op.ejemplo[c.clave];
     celda.value = v === undefined ? null : v;
@@ -142,7 +150,7 @@ export async function generarPlantilla(op: {
   /* ─────────── Formato de las filas para llenar ─────────── */
   const desde = filaEj;
   const hasta = filaEj + FILAS_PREPARADAS;
-  op.columnas.forEach((c, k) => {
+  columnas.forEach((c, k) => {
     for (let r = desde + 1; r <= hasta; r++) {
       const celda = hoja.getCell(r, k + 1);
       if (c.tipo === 'fecha') celda.numFmt = 'dd/mm/yyyy';
@@ -163,7 +171,7 @@ export async function generarPlantilla(op: {
       hl.getColumn(col).width = Math.min(60, Math.max(14, ...l.valores.map((v) => v.length + 2)));
       l.valores.forEach((v, i) => { hl.getCell(i + 2, col).value = v; });
 
-      const k2 = op.columnas.findIndex((c) => c.clave === l.clave);
+      const k2 = columnas.findIndex((c) => c.clave === l.clave);
       if (k2 < 0 || l.valores.length === 0) return;
       const rango = `Listas!$${letra(col)}$2:$${letra(col)}$${l.valores.length + 1}`;
       for (let r = desde; r <= hasta; r++) {
@@ -218,7 +226,7 @@ export async function generarPlantilla(op: {
   estiloEncabezado(hi.getCell(r, 1), true);
   estiloEncabezado(hi.getCell(r, 2), true);
   r++;
-  for (const c of op.columnas) {
+  for (const c of columnas) {
     hi.getCell(r, 1).value = c.obligatoria ? `${c.titulo} *` : c.titulo;
     hi.getCell(r, 1).font = { name: 'Calibri', size: 10, bold: Boolean(c.obligatoria) };
     hi.getCell(r, 2).value = `${c.obligatoria ? 'Obligatoria. ' : 'Opcional. '}${c.ayuda}`;

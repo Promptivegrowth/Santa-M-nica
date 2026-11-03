@@ -9,6 +9,9 @@
  *  origen, ni apartado ni bloqueado por Calidad, que no vaya ya en otro
  *  traslado. Además, que el pallet no se repita en el archivo.
  *
+ *  079 · Son traslados YA HECHOS: la fecha es obligatoria, de hoy hacia
+ *  atrás y no antes de que el pallet se produjera; la guía va con su fila.
+ *
  *  No es una acción del servidor: la llaman las acciones de importación.
  * ============================================================================
  */
@@ -27,6 +30,8 @@ export type ContextoImportTraslado = ContextoTraslado & {
   bodegas: BodegaT[];
   /** Código de pallet (normalizado) → lotes con ese código. */
   lotes: Map<string, number[]>;
+  /** Lote → su fecha de producción (AAAA-MM-DD): un traslado no puede ser anterior. */
+  produccion: Map<number, string>;
 };
 
 export const normalizarCodigo = (c: string) => String(c ?? '').trim().toUpperCase();
@@ -34,11 +39,13 @@ export const normalizarCodigo = (c: string) => String(c ?? '').trim().toUpperCas
 export async function cargarContextoImport(supabase: ClienteBase, codigos: string[]): Promise<ContextoImportTraslado> {
   const unicos = [...new Set(codigos.map(normalizarCodigo).filter(Boolean))];
   const lotes = new Map<string, number[]>();
+  const produccion = new Map<number, string>();
   for (let i = 0; i < unicos.length; i += 150) {
-    const { data } = await supabase.from('lotes').select('id, codigo_pallet').in('codigo_pallet', unicos.slice(i, i + 150));
+    const { data } = await supabase.from('lotes').select('id, codigo_pallet, fecha_produccion').in('codigo_pallet', unicos.slice(i, i + 150));
     for (const l of data ?? []) {
       const c = normalizarCodigo(String(l.codigo_pallet));
       lotes.set(c, [...(lotes.get(c) ?? []), Number(l.id)]);
+      if (l.fecha_produccion) produccion.set(Number(l.id), String(l.fecha_produccion).slice(0, 10));
     }
   }
   const [{ data: bodegas }, ctx] = await Promise.all([
@@ -49,6 +56,7 @@ export async function cargarContextoImport(supabase: ClienteBase, codigos: strin
     ...ctx,
     hoy: hoyEnLima(),
     lotes,
+    produccion,
     bodegas: (bodegas ?? []).map((b) => ({ id: Number(b.id), nombre: String(b.nombre), codigo: String(b.codigo), activo: Boolean(b.activo) })),
   };
 }
@@ -57,6 +65,7 @@ export type FilaTrasladoInterpretada = {
   origen_id: number;
   destino_id: number;
   fecha: string | null;
+  guia: string | null;
   observaciones: string | null;
   linea: LineaTraslado | null;
   errores: ErrorColumna[];
@@ -81,12 +90,19 @@ export function interpretarFilaTraslado(v: Record<string, string>, ctx: Contexto
   const destino = bodega(v.destino ?? '', 'destino', 'destino');
   if (origen && destino && origen === destino) mal('destino', 'El origen y el destino no pueden ser la misma bodega.');
 
+  /* La fecha en que ocurrió: obligatoria y de hoy hacia atrás. */
   let fecha: string | null = null;
-  if (v.fecha?.trim()) {
+  if (!v.fecha?.trim()) mal('fecha', 'Falta la fecha de traslado: el día en que salió el camión (DD/MM/AAAA).');
+  else {
     fecha = leerFecha(v.fecha);
     if (!fecha) mal('fecha', `«${v.fecha}» no es una fecha: escríbala como DD/MM/AAAA.`);
-    else if (fecha < ctx.hoy) mal('fecha', 'La fecha programada ya pasó: déjela vacía o ponga una de hoy en adelante.');
+    else if (fecha > ctx.hoy) {
+      mal('fecha', `La fecha de traslado (${v.fecha}) es futura. Aquí se registran traslados que ya ocurrieron: ponga la de hoy o una anterior. ` +
+        'Un traslado que todavía no sale se pide desde «Nuevo traslado».');
+    }
   }
+  const guia = (v.guia ?? '').trim();
+  if (guia.length > 40) mal('guia', 'El número de guía pasa de 40 caracteres: revíselo.');
   if ((v.observaciones ?? '').length > 200) mal('observaciones', 'Las observaciones pasan de 200 caracteres: acórtelas.');
 
   /* ---- El pallet ---- */
@@ -126,6 +142,11 @@ export function interpretarFilaTraslado(v: Record<string, string>, ctx: Contexto
         } else if (!v.bultos?.trim() && v.kilos?.trim() && !Number.isNaN(kilos)) {
           bultos = Math.max(1, Math.round(kilos / (porBulto || 1)));
         }
+        //  No pudo trasladarse antes de existir.
+        const fp = ctx.produccion.get(s.lote_id);
+        if (fecha && fp && fecha < fp) {
+          mal('fecha', `El pallet ${codigo} se produjo el ${fp.split('-').reverse().join('/')}: no pudo trasladarse antes (${v.fecha}).`);
+        }
         if (!Number.isNaN(bultos) && !Number.isNaN(kilos)) {
           linea = { lote_id: s.lote_id, bultos, peso_kg: Math.round(kilos * 1000) / 1000 };
           const p = problemaLinea(linea, origen, ctx, nombre(origen));
@@ -138,7 +159,7 @@ export function interpretarFilaTraslado(v: Record<string, string>, ctx: Contexto
     }
   }
 
-  return { origen_id: origen, destino_id: destino, fecha, observaciones: v.observaciones?.trim() || null, linea, errores };
+  return { origen_id: origen, destino_id: destino, fecha, guia: guia || null, observaciones: v.observaciones?.trim() || null, linea, errores };
 }
 
 export type FilaGuardadaT = {

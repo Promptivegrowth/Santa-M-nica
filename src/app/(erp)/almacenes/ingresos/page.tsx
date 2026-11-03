@@ -76,14 +76,17 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
         filtros={[
           { tipo: 'texto', clave: 'buscar', etiqueta: 'Pallet o documento', ancho: '13rem' },
           //  Observaciones de octubre, punto 11: consultar por origen.
+          //  079b · El inventario inicial (saldos de la carga inicial) es otro
+          //  «origen»: no son ingresos de producción de ese día.
           { tipo: 'select', clave: 'origen', etiqueta: 'Origen',
-            opciones: [{ valor: 'produccion', texto: 'Producción' }, { valor: 'compras', texto: 'Compras' }] },
+            opciones: [{ valor: 'produccion', texto: 'Producción' }, { valor: 'compras', texto: 'Compras' },
+              { valor: 'inventario_inicial', texto: 'Inventario inicial' }] },
           { tipo: 'fecha', clave: 'desde', etiqueta: 'Desde' },
         ]}
         filtrosAplicados={[
           { clave: 'buscar', columna: 'codigo_pallet', operador: 'contiene',
             columnas: ['codigo_pallet', 'documento_ref', 'sku_codigo'] },
-          { clave: 'origen', columna: 'origen_ingreso', operador: 'igual' },
+          { clave: 'origen', columna: 'origen_registro', operador: 'igual' },
           { clave: 'desde', columna: 'fecha', operador: 'desde' },
         ]}
         columnas={[
@@ -104,7 +107,10 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
               </>
             ) },
           { clave: 'origen_ingreso', titulo: 'Origen',
-            render: (f) => f.origen_ingreso === 'compras'
+            render: (f) => f.origen_registro === 'inventario_inicial'
+              ? <span data-origen="inventario_inicial" title="Saldo con que arrancó el sistema (carga inicial): no es un ingreso de ese día">
+                  <Etiqueta texto="Inventario inicial" tono="neutro" /></span>
+              : f.origen_ingreso === 'compras'
               ? <span data-origen="compras"><Etiqueta texto="Compras" tono="info" />{f.proveedor ? <><br /><small style={{ color: 'var(--tinta-3)' }}>{String(f.proveedor)}</small></> : null}</span>
               : f.origen_ingreso === 'produccion'
                 ? <span data-origen="produccion"><Etiqueta texto="Producción" tono="ok" /></span>

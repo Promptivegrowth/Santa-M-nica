@@ -291,7 +291,12 @@ async function CuerpoTraslado({ trasId, t }: { trasId: number; t: Record<string,
             <div><dt>Número</dt><dd className="mono">{t.numero as string}</dd></div>
             <div><dt>Origen</dt><dd>{campo(t.origen, 'nombre')}</dd></div>
             <div><dt>Destino</dt><dd>{campo(t.destino, 'nombre')}</dd></div>
-            <div><dt>Programado para</dt><dd>{t.fecha_programada ? fecha(t.fecha_programada as string) : '—'}</dd></div>
+            {/* 079 · Un traslado ya hecho, importado de Excel: la fecha en que ocurrió. */}
+            {t.fecha_traslado ? (
+              <div><dt>Fecha del traslado</dt><dd>{fecha(t.fecha_traslado as string)} <small style={{ color: 'var(--tinta-3)' }}>(registrado después de hecho)</small></dd></div>
+            ) : (
+              <div><dt>Programado para</dt><dd>{t.fecha_programada ? fecha(t.fecha_programada as string) : '—'}</dd></div>
+            )}
             <div><dt>Guía de remisión</dt><dd className="mono">{(t.guia_numero as string) ?? '—'}</dd></div>
             {t.observaciones ? (
               <div><dt>Observaciones</dt><dd>{t.observaciones as string}</dd></div>
