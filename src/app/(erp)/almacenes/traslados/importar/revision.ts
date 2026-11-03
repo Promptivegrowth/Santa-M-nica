@@ -49,7 +49,7 @@ export async function cargarContextoImport(supabase: ClienteBase, codigos: strin
     }
   }
   const [{ data: bodegas }, ctx] = await Promise.all([
-    supabase.from('almacenes').select('id, nombre, codigo, activo').order('nombre'),
+    supabase.from('almacenes').select('id, nombre, codigo, activo').order('orden').order('nombre'),
     cargarContextoTraslado(supabase, [...lotes.values()].flat()),
   ]);
   return {

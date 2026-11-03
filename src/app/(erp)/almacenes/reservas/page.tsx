@@ -143,7 +143,7 @@ export default async function PaginaReservas(props: PageProps<'/almacenes/reserv
   ]);
 
   const { data: almacenes } = await supabase
-    .from('almacenes').select('id, nombre').eq('activo', true).order('nombre');
+    .from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre');
 
   /* Fechas para los atajos, en el huso de la operación. */
   const hoy = hoyEnLima();

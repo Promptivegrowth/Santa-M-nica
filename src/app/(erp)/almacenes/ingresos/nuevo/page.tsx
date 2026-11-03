@@ -36,7 +36,7 @@ export default async function PaginaNuevoIngreso() {
         .select('id, activo, skus(codigo, corte, activo, especies(nombre)), presentaciones(descripcion, peso_bulto_kg)')
         .eq('activo', true)
         .limit(1000),
-      supabase.from('almacenes').select('id, nombre, recibe_produccion, recibe_compras').eq('activo', true).order('nombre'),
+      supabase.from('almacenes').select('id, nombre, recibe_produccion, recibe_compras').eq('activo', true).order('orden').order('nombre'),
       supabase.from('plantas').select('id, nombre').eq('activo', true).order('nombre'),
       supabase.from('lineas_procesadoras').select('id, nombre').eq('activo', true).order('nombre'),
     ]);

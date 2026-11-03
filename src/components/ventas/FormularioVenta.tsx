@@ -270,7 +270,8 @@ export function FormularioVenta({
   );
   const [tipoCambio, setTipoCambio] = useState(edicion?.tipo_cambio ?? tipoCambioDefecto);
   const [incoterm, setIncoterm] = useState<'EXW' | 'FOB' | 'CFR' | 'CIF' | 'DAP'>(
-    edicion?.incoterm ?? (deEntrada?.moneda === 'PEN' ? 'EXW' : 'FOB')
+    //  081 · Por el país y no por la moneda: ahora todos los clientes están en dólares.
+    edicion?.incoterm ?? (deEntrada?.pais === 'Perú' ? 'EXW' : 'FOB')
   );
   const [observaciones, setObservaciones] = useState(edicion?.observaciones ?? '');
 
@@ -738,7 +739,7 @@ export function FormularioVenta({
     const c = clientes.find((x) => x.id === id);
     if (c) {
       setMoneda(c.moneda as 'USD' | 'PEN');
-      setIncoterm(c.moneda === 'PEN' ? 'EXW' : 'FOB');
+      setIncoterm(c.pais === 'Perú' ? 'EXW' : 'FOB');
       /*
        * La forma de pago habitual del cliente (lista de Comex): se
        * propone al crear, no al reabrir una cotización ya hecha.

@@ -88,7 +88,7 @@ export default async function PaginaAjustes(props: PageProps<'/almacenes/ajustes
         return u.range(d, h);
       }
     ),
-    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre'),
   ]);
 
   /* Lo que escribió quien registró: está en el movimiento, no en la vista. */

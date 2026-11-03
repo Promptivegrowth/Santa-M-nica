@@ -246,7 +246,11 @@ export function RevisionIngresos({
                   <td className="num mono">{f.fila}</td>
                   <td><span className={`pill ${TONO[f.estado]}`}>{f.estado === 'valida' && f.programar ? 'Lista · programada' : TEXTO_ESTADO_FILA[f.estado]}</span></td>
                   <td className="mono" style={{ whiteSpace: 'nowrap' }}>{f.datos.codigo_pallet || '—'}</td>
-                  <td style={{ fontSize: '.76rem' }}>{f.datos.producto || '—'}</td>
+                  <td style={{ fontSize: '.76rem' }}>
+                    {f.datos.producto || '—'}
+                    {/* 081 · El tipo de congelamiento, si vino: ayuda a elegir la presentación. */}
+                    {f.datos.congelamiento ? <><br /><small style={{ color: 'var(--tinta-3)' }} data-campo="congelamiento">Congelamiento: {f.datos.congelamiento}</small></> : null}
+                  </td>
                   <td style={{ fontSize: '.78rem' }}>{f.datos.origen || '—'}{f.datos.proveedor ? <><br /><small style={{ color: 'var(--tinta-3)' }}>{f.datos.proveedor}</small></> : null}</td>
                   <td style={{ fontSize: '.78rem' }}>{f.datos.bodega || '—'}{f.datos.camara ? ` · ${f.datos.camara}` : ''}</td>
                   <td className="num">{f.datos.bultos || '—'}</td>

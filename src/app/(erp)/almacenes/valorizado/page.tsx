@@ -107,7 +107,7 @@ export default async function PaginaValorizado(props: PageProps<'/almacenes/valo
       traerTodo<{ fisico_kg: number; valor: number; almacen: string; rango: string; lote_id: number }>(
         (d, h) => base().select('fisico_kg, valor, almacen, rango, lote_id').range(d, h)
       ),
-      supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+      supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre'),
       supabase.from('especies').select('nombre').eq('activo', true).order('nombre'),
     ]);
 

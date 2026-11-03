@@ -59,13 +59,16 @@ export const COLUMNAS_INGRESO: ColumnaPlantilla[] = [
   { clave: 'llega_el', titulo: 'Llega el (si es programado)', ancho: 14, tipo: 'fecha',
     alias: ['Llega el', 'Fecha de llegada'],
     ayuda: 'Solo si el pallet TODAVÍA NO LLEGA: la fecha en que se espera. Queda como ingreso programado y no mueve stock hasta que se confirme su llegada. Vacío o una fecha de hoy o anterior: entra al stock al registrar.' },
-  //  No sale en la plantilla (el orden acordado no cambia): se lee si viene,
-  //  p. ej. al pegar su tabla con su columna TIPO DE CONGELAMIENTO. Sirve para
-  //  elegir entre dos presentaciones iguales en placas y en túnel.
-  { clave: 'congelamiento', titulo: 'Tipo de congelamiento', ancho: 14, tipo: 'texto', soloLectura: true, alias: ['Congelamiento'],
-    ayuda: 'Placas o Túnel. Opcional: solo hace falta si el producto tiene la misma presentación en placas y en túnel.' },
   { clave: 'observaciones', titulo: 'Observaciones', ancho: 30, tipo: 'texto',
     ayuda: 'Algo fuera de lo normal en este pallet (máximo 200 caracteres).' },
+  //  081 · Pedido de Oliver: la columna sale en la plantilla, AL FINAL (después
+  //  de Observaciones), para no mover el orden que él acordó. Es su columna
+  //  TIPO DE CONGELAMIENTO: si pegan su tabla con ella, se lee igual. Sirve
+  //  para elegir la presentación cuando el producto (o el nombre de su base)
+  //  tiene la misma presentación —o el mismo peso por bulto— en placas y en
+  //  túnel. Si el producto ya queda claro, no cambia nada.
+  { clave: 'congelamiento', titulo: 'Tipo de congelamiento', ancho: 14, tipo: 'texto', alias: ['Congelamiento'],
+    ayuda: 'Placas o Túnel (de la lista). Opcional: el sistema lo usa para elegir la presentación cuando con el producto o el nombre de su base no basta (p. ej. «2 X 10 KG» en placas y en túnel).' },
 ];
 
 export const TITULO_COLUMNA: Record<string, string> = Object.fromEntries(

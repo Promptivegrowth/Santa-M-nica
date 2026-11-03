@@ -112,7 +112,7 @@ export default async function PaginaMovimientos(props: PageProps<'/almacenes/mov
         base().select('tipo, clase_movimiento, entrada_kg, salida_kg, entrada_bultos, salida_bultos, valor, lote_id, usuario')
           .order('id').range(d, h)
       ).then((data) => ({ data })),
-      supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+      supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre'),
       // Por si el rango elegido sale vacío: cuál fue el último día con vida.
       supabase.from('v_kardex').select('fecha').order('fecha', { ascending: false }).limit(1).maybeSingle(),
     ]);

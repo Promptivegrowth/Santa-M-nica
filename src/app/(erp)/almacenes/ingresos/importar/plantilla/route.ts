@@ -77,6 +77,8 @@ export async function GET() {
       { clave: 'proceso', titulo: 'Proceso', valores: ['Producción propia', 'Maquila'] },
       { clave: 'planta', titulo: 'Planta', valores: cat.plantas.map((p) => p.nombre) },
       { clave: 'linea', titulo: 'Línea procesadora', valores: cat.lineas.map((l) => l.nombre) },
+      //  081 · Al final, como la columna.
+      { clave: 'congelamiento', titulo: 'Tipo de congelamiento', valores: ['Placas', 'Túnel'] },
     ],
     referencias: [
       {
@@ -112,8 +114,9 @@ export async function GET() {
     instrucciones: [
       'Una fila por pallet. Copie sus tablas debajo de los encabezados de la hoja «Ingresos» (pegado especial › valores, para no traer formatos raros).',
       'No cambie el nombre de los encabezados. Puede dejar vacías las columnas opcionales o incluso borrarlas.',
-      'Producto, origen, bodega, cámara, turno, proceso, planta y línea tienen lista desplegable. Las listas completas están en las hojas «Listas», «Productos», «Bodegas» y «Cámaras».',
-      'En «Producto» vale el texto de la hoja «Productos» (primera columna) o el nombre que usan en su base, tal como sale en su columna OPERACIÓN INGRESO (p. ej. «FILETE-"B" 0-500 X 20 KG»): el sistema lo busca por la clasificación, el corte y el peso del bulto. Si con ese nombre hay más de una presentación posible (p. ej. «4 X 5 KG» y «2 X 10 KG», que pesan 20 kg las dos), el sistema se lo dice y le propone las opciones. Si pega su tabla con su columna «TIPO DE CONGELAMIENTO» (Placas o Túnel), el sistema la usa para elegir entre la misma presentación en placas y en túnel.',
+      'Producto, origen, bodega, cámara, turno, proceso, planta, línea y tipo de congelamiento tienen lista desplegable. Las listas completas están en las hojas «Listas», «Productos», «Bodegas» y «Cámaras».',
+      'En «Producto» vale el texto de la hoja «Productos» (primera columna) o el nombre que usan en su base, tal como sale en su columna OPERACIÓN INGRESO (p. ej. «FILETE-"B" 0-500 X 20 KG»): el sistema lo busca por la clasificación, el corte y el peso del bulto. Si con ese nombre hay más de una presentación posible (p. ej. «4 X 5 KG» y «2 X 10 KG», que pesan 20 kg las dos), el sistema se lo dice y le propone las opciones.',
+      'La última columna, «Tipo de congelamiento» (Placas o Túnel, con lista desplegable), es opcional: el sistema la usa para elegir la presentación cuando el producto o el nombre de su base no basta, p. ej. cuando hay «2 X 10 KG» en placas y en túnel. Si pega su tabla con su columna «TIPO DE CONGELAMIENTO», se lee igual.',
       'Cada origen entra solo por ciertas bodegas: la producción por las que «Recibe producción» y las compras por las que «Recibe compras» (hoja «Bodegas»). Una compra necesita el proveedor.',
       'El código de pallet no se puede repetir: ni dentro del archivo ni con un pallet que ya exista en el sistema.',
       'Si un pallet TODAVÍA NO LLEGA, ponga en «Llega el» la fecha en que se espera: quedará como ingreso programado y no moverá stock hasta que se confirme su llegada en Stock › Ingresos › Ingresos programados.',

@@ -71,7 +71,9 @@ export default async function PaginaPanel(props: PageProps<'/panel'>) {
   ] = await Promise.all([
     supabase.from('v_resumen_inventario').select('*').single(),
     supabase.from('v_kpi_ventas').select('*').single(),
-    supabase.from('v_ocupabilidad').select('*').order('ocupado_tm', { ascending: false }),
+    //  081 · En el orden del maestro de Almacenes (Santa Mónica C1, C2, C3, Freeko, Depsa, Perufrost…);
+    //  los de tránsito (Exalmar, Peruvian) no salen: la vista los excluye.
+    supabase.from('v_ocupabilidad').select('*').order('orden').order('almacen'),
     supabase.from('v_movimiento_mensual').select('*').order('mes'),
     // Usamos la vista RESUMIDA: la detallada trae una fila por lote y la API
     // corta en 1.000 filas, lo que daría un total incompleto.

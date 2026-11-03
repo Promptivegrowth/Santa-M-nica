@@ -46,7 +46,8 @@ export default async function PaginaNuevoCliente() {
       <Panel>
         <FormularioCliente
           codigoPropuesto={codigo}
-          gestionaCredito={PUEDEN_GESTIONAR_CREDITO.includes((usuario?.rol ?? 'consulta') as Rol)}
+          gestionaBloqueo={PUEDEN_GESTIONAR_CREDITO.includes((usuario?.rol ?? 'consulta') as Rol)}
+          fijaCredito={usuario?.fija_credito === true}
           paises={paises}
           vendedores={(vendedores ?? []).map((v) => ({ id: v.id as number, nombre: v.nombre as string }))}
         />

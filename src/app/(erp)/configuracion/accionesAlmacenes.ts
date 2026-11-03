@@ -18,6 +18,13 @@
  *     movimientos y traslados lo necesitan. Solo se borra uno recién creado
  *     por error, que nunca se usó.
  *
+ *   · DE TRÁNSITO (081): Exalmar y Peruvian «son los de compra y venta, no
+ *     tienen una capacidad específica». Un almacén de tránsito no tiene
+ *     capacidad (la base lo exige) y no se le calcula ocupación: no sale en
+ *     «Ocupabilidad por almacén» del panel ni en el reporte de ocupabilidad.
+ *   · EL ORDEN (081): la posición del almacén en todas las listas y
+ *     desplegables (menor primero; a igual orden, por nombre).
+ *
  *  Cada cambio queda en Auditoría con quién y cuándo (disparador
  *  audit_almacenes). La base exige además el rol (política escritura_maestros).
  * ============================================================================
@@ -39,6 +46,10 @@ export type DatosAlmacen = {
   recibe_produccion: boolean;
   recibe_compras: boolean;
   activo: boolean;
+  /** De tránsito (compra y venta): sin capacidad y sin ocupación (081). */
+  es_transito: boolean;
+  /** Posición en las listas y desplegables de almacenes (081). */
+  orden: number;
 };
 
 const PUEDEN = ['gerencia', 'operaciones'] as const;
@@ -55,6 +66,7 @@ function refrescar() {
   revalidatePath('/almacenes/ingresos/nuevo');
   revalidatePath('/almacenes/existencias');
   revalidatePath('/almacenes/traslados/nuevo');
+  revalidatePath('/panel');
 }
 
 type Cliente = Awaited<ReturnType<typeof crearClienteServidor>>;
@@ -70,6 +82,9 @@ async function validar(supabase: Cliente, d: DatosAlmacen, exceptoId?: number): 
   if (nombre.length > 80) return 'El nombre es demasiado largo (máximo 80 caracteres).';
   if (!['propio', 'externo'].includes(d.tipo)) return 'Elija si el almacén es propio o externo (de un tercero).';
   if (d.capacidad_tm !== null && (!(d.capacidad_tm >= 0) || d.capacidad_tm > 100000)) return 'La capacidad tiene que ser un número de toneladas, cero o más.';
+  if (!Number.isInteger(d.orden) || d.orden < 0 || d.orden > 999) {
+    return 'El orden es un número entero de 0 a 999 (menor sale primero en las listas; p. ej. 10, 20, 30).';
+  }
   if (!Number.isInteger(d.despachos_dia_max) || d.despachos_dia_max < 1 || d.despachos_dia_max > 50) {
     return 'Los despachos por día tienen que ser un número entero entre 1 y 50.';
   }
@@ -116,11 +131,14 @@ export async function crearAlmacen(d: DatosAlmacen): Promise<Resultado> {
     tipo: d.tipo,
     operador: d.operador?.trim() || d.nombre.trim(),
     ciudad: d.ciudad?.trim() || null,
-    capacidad_tm: d.capacidad_tm,
+    //  De tránsito: sin capacidad (la base lo exige también).
+    capacidad_tm: d.es_transito ? null : d.capacidad_tm,
     despachos_dia_max: d.despachos_dia_max,
     recibe_produccion: d.recibe_produccion,
     recibe_compras: d.recibe_compras,
     activo: d.activo,
+    es_transito: d.es_transito,
+    orden: d.orden,
   }).select('id');
   if (error) return { ok: false, mensaje: traducirErrorBase(error, { que: 'dar de alta el almacén', quien: PUEDEN }) };
   if (!data?.length) return { ok: false, mensaje: rolNoPuede(permiso.usuario!.rol, 'dar de alta almacenes', PUEDEN) };
@@ -131,6 +149,7 @@ export async function crearAlmacen(d: DatosAlmacen): Promise<Resultado> {
     ok: true,
     mensaje: `Almacén «${d.nombre.trim()}» (${codigo}) dado de alta. ` +
       (recibe ? `Recibe ingresos de ${recibe}.` : 'No recibe ingresos directos: le llega stock por traslado.') +
+      (d.es_transito ? ' Es de tránsito: no tiene capacidad ni se le calcula ocupación.' : '') +
       ' Si va a tener cámaras, pida que se carguen.',
   };
 }
@@ -161,11 +180,13 @@ export async function actualizarAlmacen(id: number, d: DatosAlmacen): Promise<Re
     tipo: d.tipo,
     operador: d.operador?.trim() || d.nombre.trim(),
     ciudad: d.ciudad?.trim() || null,
-    capacidad_tm: d.capacidad_tm,
+    capacidad_tm: d.es_transito ? null : d.capacidad_tm,
     despachos_dia_max: d.despachos_dia_max,
     recibe_produccion: d.recibe_produccion,
     recibe_compras: d.recibe_compras,
     activo: d.activo,
+    es_transito: d.es_transito,
+    orden: d.orden,
   }).eq('id', id).select('id');
   if (error) return { ok: false, mensaje: traducirErrorBase(error, { que: 'guardar el almacén', quien: PUEDEN }) };
   if (!data?.length) return { ok: false, mensaje: 'Ese almacén ya no existe o su rol no puede modificarlo.' };

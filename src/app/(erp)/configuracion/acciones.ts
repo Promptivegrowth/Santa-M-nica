@@ -308,3 +308,40 @@ export async function alternarCargaCostos(usuarioId: string, carga: boolean): Pr
   revalidatePath('/finanzas/costos');
   return { ok: true, mensaje: carga ? `${destino.nombre} ya puede cargar costos.` : `${destino.nombre} ya no carga costos.` };
 }
+
+/* ==========================================================================
+   QUIÉN FIJA LA LÍNEA DE CRÉDITO DE LOS CLIENTES (081)
+   Permiso de persona, como cargar costos: pedido de Oliver, la línea de
+   crédito la llena solo Cathy Lee. Lo da o lo quita Gerencia; la base lo
+   impone también (usuarios_proteger_permisos), y solo quien lo tiene puede
+   cambiar una línea (clientes_proteger_credito).
+   ========================================================================== */
+export async function alternarFijaCredito(usuarioId: string, fija: boolean): Promise<ResultadoAccion> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (usuario.rol !== 'gerencia') {
+    return { ok: false, mensaje: 'Solo Gerencia decide quién tiene el permiso «Línea de crédito».' };
+  }
+
+  const supabase = await crearClienteServidor();
+  const { data: destino } = await supabase
+    .from('usuarios').select('nombre, activo').eq('id', usuarioId).maybeSingle();
+  if (!destino) return { ok: false, mensaje: 'Ese usuario ya no existe.' };
+  if (fija && !destino.activo) return { ok: false, mensaje: `${destino.nombre} está inactivo: reactívelo antes.` };
+
+  const { error } = await supabase.from('usuarios').update({ fija_credito: fija }).eq('id', usuarioId);
+  if (error) return { ok: false, mensaje: 'No se pudo guardar el permiso. Vuelva a intentarlo; si se repite, avise a Sistemas.' };
+
+  const { data: verif } = await supabase.from('usuarios').select('fija_credito').eq('id', usuarioId).maybeSingle();
+  if (verif?.fija_credito !== fija) {
+    return { ok: false, mensaje: 'El cambio no llegó a guardarse. Es un problema de permisos: avise a Sistemas.' };
+  }
+  revalidatePath('/configuracion');
+  revalidatePath('/ventas/clientes');
+  return {
+    ok: true,
+    mensaje: fija
+      ? `${destino.nombre} ya puede fijar la línea de crédito de los clientes.`
+      : `${destino.nombre} ya no fija la línea de crédito.`,
+  };
+}

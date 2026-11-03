@@ -333,6 +333,8 @@ export const CAMPOS: Record<string, string> = {
   aprueba_cotizaciones: 'aprueba cotizaciones',
   ve_objetivos: 've objetivos',
   carga_costos: 'carga costos',
+  fija_credito: 'permiso «Línea de crédito»',
+  es_transito: 'almacén de tránsito',
   debe_cambiar_clave: 'debe cambiar la contraseña',
   valor: 'valor',
   clave: 'clave',

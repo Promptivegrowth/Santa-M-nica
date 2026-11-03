@@ -29,7 +29,7 @@ export default async function PaginaNuevoTraslado() {
   const supabase = await crearClienteServidor();
   const [{ data: almacenes }, { data: transportistas }, { data: vehiculos }, { data: conductores }] =
     await Promise.all([
-      supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+      supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre'),
       supabase.from('transportistas').select('id, razon_social').eq('activo', true).order('razon_social'),
       supabase.from('vehiculos').select('id, placa, transportista_id').eq('activo', true).order('placa'),
       supabase.from('conductores').select('id, nombre, transportista_id').eq('activo', true).order('nombre'),

@@ -48,7 +48,7 @@ export default async function PaginaDisponibilidad(props: PageProps<'/ventas/dis
 
   /* ---- Catálogos para los desplegables de filtro ---- */
   const [{ data: almacenes }, { data: especies }, { data: resumen }, { data: nacionales }] = await Promise.all([
-    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre'),
     supabase.from('especies').select('id, nombre').order('nombre'),
     supabase.from('v_resumen_inventario').select('*').single(),
     //  Lo «Solo mercado nacional» (061): está disponible, pero no para exportar.

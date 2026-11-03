@@ -42,12 +42,20 @@ export const TONO_ESTADO_FACTURA: Record<string, 'ok' | 'atencion' | 'critico' |
 };
 
 /**
- * Bloquean o desbloquean un cliente y cambian su línea de crédito (076).
- * Es control financiero, no comercial: Comercial vende, pero no decide
- * cuánto se le fía al cliente ni lo destraba. La base lo exige también
- * (disparador clientes_proteger_credito).
+ * Bloquean o desbloquean un cliente (076). Es control financiero, no
+ * comercial: Comercial vende, pero no destraba al cliente. La base lo exige
+ * también (disparador clientes_proteger_credito).
+ *
+ * La LÍNEA DE CRÉDITO ya no va por rol (081): la fija solo quien tiene el
+ * permiso personal «Línea de crédito» (usuarios.fija_credito; hoy, Cathy
+ * Lee), que da o quita Gerencia en Configuración › Usuarios y roles.
  */
 export const PUEDEN_GESTIONAR_CREDITO: Rol[] = ['gerencia', 'operaciones'];
+
+/** Por qué el campo de la línea de crédito se ve apagado (081). */
+export const AVISO_LINEA_CREDITO =
+  'La línea de crédito la fija quien tiene el permiso «Línea de crédito» (lo asigna Gerencia en Configuración › Usuarios y roles). ' +
+  'Pídaselo a esa persona; el resto de la ficha sí lo puede guardar.';
 
 /**
  * Los ciclos del pedido desde los que se emite el comprobante (076). Un

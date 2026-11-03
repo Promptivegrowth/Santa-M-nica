@@ -95,8 +95,10 @@ export default async function PaginaClientes(props: PageProps<'/ventas/clientes'
           { clave: 'moneda', titulo: 'Moneda', mono: true },
           ...(puedeVerCostos ? [{
             clave: 'linea_credito', titulo: 'Línea de crédito', numerica: true,
-            render: (f: Record<string, unknown>) =>
-              dinero(f.linea_credito as number, f.moneda as 'USD' | 'PEN', 0),
+            //  081 · Vacía = «sin definir» (la fija quien tiene el permiso «Línea de crédito»).
+            render: (f: Record<string, unknown>) => f.linea_credito === null || f.linea_credito === undefined
+              ? <span data-linea="sin-definir" style={{ fontSize: '.72rem', color: 'var(--tinta-3)' }}>Sin definir</span>
+              : dinero(f.linea_credito as number, f.moneda as 'USD' | 'PEN', 0),
           }] : []),
           { clave: 'dias_credito', titulo: 'Días crédito', numerica: true,
             render: (f) => Number(f.dias_credito) > 0 ? `${num(Number(f.dias_credito))} días` : 'Contado' },

@@ -35,7 +35,7 @@ export default async function PaginaRevisionTraslados(props: PageProps<'/almacen
     supabase.from('importaciones_excel_filas')
       .select('id, fila, datos, errores, estado, resultado, traslado_id, traslados(numero, estado)')
       .eq('importacion_id', Number(id)).order('fila').limit(2000),
-    supabase.from('almacenes').select('nombre').eq('activo', true).order('nombre'),
+    supabase.from('almacenes').select('nombre').eq('activo', true).order('orden').order('nombre'),
   ]);
   if (!imp || imp.tipo !== 'traslados') notFound();
   const nombre = (x: unknown) => String((Array.isArray(x) ? x[0] : x as { nombre?: string } | null)?.nombre ?? '—');

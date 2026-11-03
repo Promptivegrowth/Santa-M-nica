@@ -54,8 +54,9 @@ export default async function PaginaEditarCliente(
     email: (cliente.email as string) ?? '',
     telefono: (cliente.telefono as string) ?? '',
     vendedor_id: (cliente.vendedor_id as number) ?? null,
-    moneda: (cliente.moneda as 'USD' | 'PEN') ?? 'PEN',
-    linea_credito: Number(cliente.linea_credito ?? 0),
+    moneda: (cliente.moneda as 'USD' | 'PEN') ?? 'USD',
+    //  null = sin definir (081).
+    linea_credito: cliente.linea_credito === null || cliente.linea_credito === undefined ? null : Number(cliente.linea_credito),
     dias_credito: Number(cliente.dias_credito ?? 0),
     bloqueado: Boolean(cliente.bloqueado),
     motivo_bloqueo: (cliente.motivo_bloqueo as string) ?? '',
@@ -69,7 +70,8 @@ export default async function PaginaEditarCliente(
       />
       <Panel>
         <FormularioCliente cliente={datos} paises={paises}
-          gestionaCredito={PUEDEN_GESTIONAR_CREDITO.includes((usuario?.rol ?? 'consulta') as Rol)}
+          gestionaBloqueo={PUEDEN_GESTIONAR_CREDITO.includes((usuario?.rol ?? 'consulta') as Rol)}
+          fijaCredito={usuario?.fija_credito === true}
           vendedores={(vendedores ?? []).map((v) => ({ id: v.id as number, nombre: v.nombre as string }))} />
       </Panel>
     </>

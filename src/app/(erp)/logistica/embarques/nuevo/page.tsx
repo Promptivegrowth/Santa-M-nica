@@ -24,7 +24,7 @@ export default async function PaginaNuevoEmbarque() {
     { data: almacenes }, { data: destinos }, { data: transportistas },
     { data: vehiculos }, { data: conductores },
   ] = await Promise.all([
-    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre'),
     supabase.from('destinos').select('id, puerto, pais').eq('activo', true).order('puerto'),
     supabase.from('transportistas').select('id, razon_social').eq('activo', true).order('razon_social'),
     supabase.from('vehiculos').select('id, placa, soat_vence, revision_vence').eq('activo', true).order('placa'),

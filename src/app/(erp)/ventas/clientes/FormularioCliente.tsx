@@ -25,6 +25,7 @@ import Link from 'next/link';
 import { Icono } from '@/components/estructura/Icono';
 import { crearCliente, actualizarCliente, type DatosCliente } from './acciones';
 import { accionSegura } from '@/lib/accionSegura';
+import { AVISO_LINEA_CREDITO } from '@/lib/permisosFinanzas';
 
 export type ClienteExistente = DatosCliente & { id: number; activo: boolean };
 
@@ -38,14 +39,18 @@ function rucCorrecto(ruc: string): boolean {
   return esperado === Number(ruc[10]);
 }
 
-/** Por qué Comercial ve apagados el bloqueo y la línea de crédito. */
-const AVISO_CREDITO =
-  'Bloquear, desbloquear y cambiar la línea de crédito lo hacen Gerencia u Operaciones: es control financiero.';
+/** Por qué quien no es Gerencia ni Operaciones ve apagado el bloqueo. */
+const AVISO_BLOQUEO = 'Bloquear y desbloquear al cliente lo hacen Gerencia u Operaciones: es control financiero.';
 
+/*
+ * 081 · Todo en dólares (pedido de Oliver): el cliente nuevo nace en USD, sea
+ * del país que sea. La línea de crédito nace sin definir: la fija después
+ * quien tiene el permiso «Línea de crédito».
+ */
 const VACIO: DatosCliente = {
   codigo: '', razon_social: '', nombre_corto: '', tipo: 'final', pais: 'Perú',
   ruc_tax_id: '', contacto: '', email: '', telefono: '', vendedor_id: null,
-  moneda: 'PEN', linea_credito: 0, dias_credito: 30, bloqueado: false, motivo_bloqueo: '',
+  moneda: 'USD', linea_credito: null, dias_credito: 30, bloqueado: false, motivo_bloqueo: '',
 };
 
 export function FormularioCliente({
@@ -53,18 +58,23 @@ export function FormularioCliente({
   codigoPropuesto,
   paises,
   vendedores,
-  gestionaCredito = false,
+  gestionaBloqueo = false,
+  fijaCredito = false,
 }: {
   cliente?: ClienteExistente;
   codigoPropuesto?: string;
   paises: string[];
   vendedores: { id: number; nombre: string }[];
   /**
-   * ¿Puede bloquear, desbloquear y cambiar la línea de crédito? Gerencia y
-   * Operaciones (076). Para Comercial esos campos se ven, apagados y con el
-   * porqué: es control financiero.
+   * ¿Puede bloquear y desbloquear? Gerencia y Operaciones (076). Para los
+   * demás el campo se ve, apagado y con el porqué: es control financiero.
    */
-  gestionaCredito?: boolean;
+  gestionaBloqueo?: boolean;
+  /**
+   * ¿Tiene el permiso personal «Línea de crédito» (081)? Solo quien lo tiene
+   * fija o cambia la línea; los demás la ven apagada, con el porqué.
+   */
+  fijaCredito?: boolean;
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
@@ -81,13 +91,7 @@ export function FormularioCliente({
   function campo<K extends keyof DatosCliente>(k: K, v: DatosCliente[K]) {
     setD((previo) => {
       const siguiente = { ...previo, [k]: v };
-      /*
-       * Al cambiar el país se propone la moneda que corresponde. Se propone,
-       * no se impone: hay clientes peruanos que pagan en dólares.
-       */
-      if (k === 'pais') {
-        siguiente.moneda = String(v).trim() === 'Perú' ? 'PEN' : 'USD';
-      }
+      //  081 · Ya no se propone soles al elegir Perú: todo se vende en dólares.
       return siguiente;
     });
     setProblema(null);
@@ -195,9 +199,10 @@ export function FormularioCliente({
             <span>Moneda</span>
             <select className="campo" value={d.moneda}
                     onChange={(e) => campo('moneda', e.target.value as DatosCliente['moneda'])}>
-              <option value="PEN">Soles (PEN)</option>
               <option value="USD">Dólares (USD)</option>
+              <option value="PEN">Soles (PEN)</option>
             </select>
+            <small>Se vende en dólares. Soles solo si un cliente nacional lo exige.</small>
           </label>
         </div>
 
@@ -265,16 +270,16 @@ export function FormularioCliente({
             <small>Es el responsable de la cuenta. Al cotizar se elige el vendedor de cada oferta: no se llena solo.</small>
           </label>
 
-          <label className="form-campo" title={gestionaCredito ? undefined : AVISO_CREDITO}>
-            <span>Línea de crédito</span>
+          <label className="form-campo" title={fijaCredito ? undefined : AVISO_LINEA_CREDITO}>
+            <span>Línea de crédito ({d.moneda})</span>
             <input className="campo mono" type="number" min={0} step={100}
-                   value={d.linea_credito} data-error={error('linea_credito')}
-                   disabled={!gestionaCredito} name="linea_credito"
-                   onChange={(e) => campo('linea_credito', Number(e.target.value))} />
-            <small>
-              {gestionaCredito
-                ? 'Cuánto se le puede deber. 0 = sin límite definido.'
-                : 'La fijan Gerencia u Operaciones (control financiero).'}
+                   value={d.linea_credito ?? ''} data-error={error('linea_credito')}
+                   disabled={!fijaCredito} name="linea_credito" placeholder="Sin definir"
+                   onChange={(e) => campo('linea_credito', e.target.value === '' ? null : Number(e.target.value))} />
+            <small data-aviso="linea-credito">
+              {fijaCredito
+                ? 'Cuánto se le puede deber. Vacía = sin definir; 0 = no se le fía.'
+                : AVISO_LINEA_CREDITO}
             </small>
           </label>
 
@@ -287,14 +292,14 @@ export function FormularioCliente({
           </label>
         </div>
 
-        <label className="form-check" title={gestionaCredito ? undefined : AVISO_CREDITO}>
-          <input type="checkbox" checked={d.bloqueado} disabled={!gestionaCredito} name="bloqueado"
+        <label className="form-check" title={gestionaBloqueo ? undefined : AVISO_BLOQUEO}>
+          <input type="checkbox" checked={d.bloqueado} disabled={!gestionaBloqueo} name="bloqueado"
                  onChange={(e) => campo('bloqueado', e.target.checked)} />
           <span>
             <b>Bloquear al cliente</b>
             <small>
               Un cliente bloqueado no se puede elegir al cotizar. Se usa por deuda vencida o por una disputa abierta.
-              {!gestionaCredito && <> Bloquear y desbloquear lo hacen Gerencia u Operaciones.</>}
+              {!gestionaBloqueo && <> Bloquear y desbloquear lo hacen Gerencia u Operaciones.</>}
             </small>
           </span>
         </label>
@@ -303,7 +308,7 @@ export function FormularioCliente({
           <label className="form-campo form-campo-ancho">
             <span>Motivo del bloqueo <b className="req">*</b></span>
             <input className="campo" value={d.motivo_bloqueo ?? ''} data-error={error('motivo_bloqueo')}
-                   disabled={!gestionaCredito}
+                   disabled={!gestionaBloqueo}
                    onChange={(e) => campo('motivo_bloqueo', e.target.value)}
                    placeholder="Por qué está bloqueado" maxLength={200} />
             <small>Quien intente cotizarle va a ver este texto.</small>

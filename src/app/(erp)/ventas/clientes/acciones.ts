@@ -27,7 +27,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
-import { PUEDEN_GESTIONAR_CREDITO } from '@/lib/permisosFinanzas';
+import { PUEDEN_GESTIONAR_CREDITO, AVISO_LINEA_CREDITO } from '@/lib/permisosFinanzas';
 import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 import type { Rol } from '@/lib/navegacion';
 
@@ -52,7 +52,8 @@ export type DatosCliente = {
   telefono: string | null;
   vendedor_id: number | null;
   moneda: 'USD' | 'PEN';
-  linea_credito: number;
+  /** null = sin definir (081). La fija solo quien tiene el permiso «Línea de crédito». */
+  linea_credito: number | null;
   dias_credito: number;
   bloqueado: boolean;
   motivo_bloqueo: string | null;
@@ -122,7 +123,9 @@ function validar(d: DatosCliente): { mensaje: string; campo: string } | null {
   if (d.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) {
     return { mensaje: `«${d.email}» no parece un correo válido.`, campo: 'email' };
   }
-  if (d.linea_credito < 0) return { mensaje: 'La línea de crédito no puede ser negativa.', campo: 'linea_credito' };
+  if (d.linea_credito !== null && !(Number(d.linea_credito) >= 0)) {
+    return { mensaje: 'La línea de crédito es un importe de cero o más (o vacía: sin definir).', campo: 'linea_credito' };
+  }
   if (d.dias_credito < 0 || d.dias_credito > 365) {
     return { mensaje: 'Los días de crédito van de 0 a 365.', campo: 'dias_credito' };
   }
@@ -150,7 +153,7 @@ function limpiar(d: DatosCliente) {
     telefono: texto(d.telefono),
     vendedor_id: d.vendedor_id ?? null,
     moneda: d.moneda,
-    linea_credito: d.linea_credito,
+    linea_credito: d.linea_credito === null ? null : Number(d.linea_credito),
     dias_credito: d.dias_credito,
     bloqueado: d.bloqueado,
     motivo_bloqueo: d.bloqueado ? texto(d.motivo_bloqueo) : null,
@@ -171,16 +174,23 @@ async function autorizar(permitidos: string[]) {
 }
 
 /**
- * BLOQUEO Y LÍNEA DE CRÉDITO (076): son de Gerencia y Operaciones, que llevan
- * el control financiero. Comercial edita el resto de la ficha. Si quien guarda
- * no los gestiona, esos campos NO se envían (se quedan como estaban), y si
- * intentó cambiarlos se le dice. La base lo exige también
+ * BLOQUEO Y LÍNEA DE CRÉDITO
+ *  · El BLOQUEO es de Gerencia y Operaciones (076), que llevan el control
+ *    financiero.
+ *  · La LÍNEA DE CRÉDITO (081, pedido de Oliver): la fija solo quien tiene el
+ *    permiso personal «Línea de crédito» (hoy, Cathy Lee), que da Gerencia en
+ *    Configuración › Usuarios y roles. Vacía = «sin definir»: nada la controla
+ *    (no hay alertas ni bloqueos automáticos por crédito).
+ * Si quien guarda no gestiona alguno de los dos, ese campo NO se envía (queda
+ * como estaba), y si intentó cambiarlo se le dice. La base lo exige también
  * (clientes_proteger_credito).
  */
-const gestionaCredito = (rol: string) => PUEDEN_GESTIONAR_CREDITO.includes(rol as Rol);
-const MENSAJE_CREDITO =
-  `El bloqueo y la línea de crédito los cambian ${listaDeRoles(PUEDEN_GESTIONAR_CREDITO)}: ` +
+const gestionaBloqueo = (rol: string) => PUEDEN_GESTIONAR_CREDITO.includes(rol as Rol);
+const fijaCredito = (u: { fija_credito?: boolean | null }) => u.fija_credito === true;
+const MENSAJE_BLOQUEO =
+  `Bloquear y desbloquear al cliente lo hacen ${listaDeRoles(PUEDEN_GESTIONAR_CREDITO)}: ` +
   'es control financiero. Pídaselo a ellos; el resto de la ficha sí lo puede guardar.';
+const MENSAJE_LINEA = AVISO_LINEA_CREDITO;
 
 /** El rechazo de la base, sin lo técnico. */
 function motivoDeLaBase(mensaje: string | undefined, que: string): string {
@@ -204,9 +214,13 @@ export async function crearCliente(d: DatosCliente): Promise<Resultado> {
   const problema = validar(d);
   if (problema) return { ok: false, ...problema };
 
-  //  Un cliente nuevo de Comercial nace sin línea y sin bloqueo: los fijan Gerencia u Operaciones.
-  if (!gestionaCredito(permiso.usuario!.rol) && (Number(d.linea_credito) !== 0 || d.bloqueado)) {
-    return { ok: false, mensaje: MENSAJE_CREDITO, campo: d.bloqueado ? 'bloqueado' : 'linea_credito' };
+  //  Un cliente nuevo nace con la línea sin definir (salvo que lo cree quien
+  //  tiene el permiso «Línea de crédito») y sin bloqueo (salvo Gerencia u Operaciones).
+  if (!fijaCredito(permiso.usuario!) && d.linea_credito !== null) {
+    return { ok: false, mensaje: MENSAJE_LINEA, campo: 'linea_credito' };
+  }
+  if (!gestionaBloqueo(permiso.usuario!.rol) && d.bloqueado) {
+    return { ok: false, mensaje: MENSAJE_BLOQUEO, campo: 'bloqueado' };
   }
 
   const supabase = await crearClienteServidor();
@@ -264,16 +278,19 @@ export async function actualizarCliente(id: number, d: DatosCliente): Promise<Re
   if (!antes) return { ok: false, mensaje: 'Ese cliente ya no existe.' };
 
   const cambios_ = limpiar(d) as Partial<ReturnType<typeof limpiar>>;
-  if (!gestionaCredito(permiso.usuario!.rol)) {
-    const tocaCredito = Number(antes.linea_credito ?? 0) !== Number(d.linea_credito)
-      || Boolean(antes.bloqueado) !== Boolean(d.bloqueado);
-    if (tocaCredito) return { ok: false, mensaje: MENSAJE_CREDITO, campo: 'linea_credito' };
-    //  No se envían: quedan exactamente como estaban.
+  const lineaAntes = antes.linea_credito === null || antes.linea_credito === undefined ? null : Number(antes.linea_credito);
+  const lineaNueva = d.linea_credito === null ? null : Number(d.linea_credito);
+  if (!fijaCredito(permiso.usuario!)) {
+    if (lineaAntes !== lineaNueva) return { ok: false, mensaje: MENSAJE_LINEA, campo: 'linea_credito' };
+    //  No se envía: queda exactamente como estaba.
     delete cambios_.linea_credito;
+  }
+  if (!gestionaBloqueo(permiso.usuario!.rol)) {
+    if (Boolean(antes.bloqueado) !== Boolean(d.bloqueado)) return { ok: false, mensaje: MENSAJE_BLOQUEO, campo: 'bloqueado' };
     delete cambios_.bloqueado;
     delete cambios_.motivo_bloqueo;
     //  Lo que sigue en la bitácora compara con lo de antes.
-    d = { ...d, linea_credito: Number(antes.linea_credito ?? 0), bloqueado: Boolean(antes.bloqueado) };
+    d = { ...d, bloqueado: Boolean(antes.bloqueado) };
   }
 
   const { error } = await supabase.from('clientes').update(cambios_).eq('id', id);
@@ -288,7 +305,9 @@ export async function actualizarCliente(id: number, d: DatosCliente): Promise<Re
   const cambios: string[] = [];
   if (antes.razon_social !== d.razon_social.trim()) cambios.push(`razón social: «${antes.razon_social}» → «${d.razon_social.trim()}»`);
   if ((antes.ruc_tax_id ?? '') !== (d.ruc_tax_id?.trim() ?? '')) cambios.push(`RUC: ${antes.ruc_tax_id ?? 'sin RUC'} → ${d.ruc_tax_id?.trim() ?? 'sin RUC'}`);
-  if (Number(antes.linea_credito) !== d.linea_credito) cambios.push(`línea de crédito: ${antes.linea_credito} → ${d.linea_credito}`);
+  if (lineaAntes !== lineaNueva && 'linea_credito' in cambios_) {
+    cambios.push(`línea de crédito: ${lineaAntes ?? 'sin definir'} → ${lineaNueva ?? 'sin definir'}`);
+  }
   if (antes.dias_credito !== d.dias_credito) cambios.push(`días de crédito: ${antes.dias_credito} → ${d.dias_credito}`);
   if (antes.bloqueado !== d.bloqueado) cambios.push(d.bloqueado ? 'se bloqueó' : 'se desbloqueó');
   if (antes.pais !== d.pais.trim()) cambios.push(`país: ${antes.pais} → ${d.pais.trim()} (cambia el IGV)`);

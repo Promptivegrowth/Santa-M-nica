@@ -101,7 +101,7 @@ export async function cargarCatalogoIngresos(supabase: ClienteBase): Promise<Cat
       .select('id, activo, skus(codigo, corte, activo, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg, congelamiento)')
       .eq('activo', true)
       .limit(1000),
-    supabase.from('almacenes').select('id, nombre, codigo, activo, recibe_produccion, recibe_compras').order('nombre'),
+    supabase.from('almacenes').select('id, nombre, codigo, activo, recibe_produccion, recibe_compras').order('orden').order('nombre'),
     supabase.from('camaras').select('id, nombre, almacen_id').eq('activo', true).order('nombre'),
     supabase.from('plantas').select('id, nombre').eq('activo', true).order('nombre'),
     supabase.from('lineas_procesadoras').select('id, nombre').eq('activo', true).order('nombre'),
@@ -206,7 +206,8 @@ function buscarPorNombreBase(texto: string, cat: CatalogoIngresos, congelamiento
     error: `«${texto}» puede ser ${conPeso.length} presentaciones del producto ${conPeso[0].codigo} con ${kgTexto(partes.kg)} kg por bulto: ` +
       `${conPeso.map((p) => `«${p.etiqueta}»${cong(p)}`).join(' o ')}. ` +
       'Escriba en «Producto» una de esas opciones (están en la lista desplegable)' +
-      (difiereCong ? ', o agregue la columna «Tipo de congelamiento» (Placas o Túnel).' : '.'),
+      //  081 · La columna ya viene en la plantilla (la última).
+      (difiereCong ? ', o elija Placas o Túnel en la columna «Tipo de congelamiento» (la última de la plantilla).' : '.'),
   };
 }
 

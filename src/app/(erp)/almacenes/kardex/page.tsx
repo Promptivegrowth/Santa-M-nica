@@ -54,7 +54,7 @@ export default async function PaginaKardex(props: PageProps<'/almacenes/kardex'>
   const desde = (q.desde as string) ?? '';
 
   const { data: almacenes } = await supabase
-    .from('almacenes').select('id, nombre').eq('activo', true).order('nombre');
+    .from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre');
 
   let consulta = supabase.from('v_kardex').select('*', { count: 'exact' });
   if (buscar) {

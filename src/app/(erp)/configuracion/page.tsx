@@ -24,6 +24,7 @@ import { SubirFirma } from './SubirFirma';
 import { InterruptorAprobador } from './InterruptorAprobador';
 import { InterruptorObjetivos } from './InterruptorObjetivos';
 import { InterruptorCostos } from './InterruptorCostos';
+import { InterruptorCredito } from './InterruptorCredito';
 import { InterruptorRegla } from './InterruptorRegla';
 import { ContactosYCuentas } from './ContactosYCuentas';
 import { NuevoUsuario, SelectorRol, AccesoUsuario } from './GestionUsuarios';
@@ -202,7 +203,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
       supabase.from('parametros').select('*').order('grupo').order('etiqueta'),
       supabase.from('reglas').select('*').order('severidad', { ascending: false }).order('nombre'),
       supabase.from('motivos').select('*').order('ambito').order('nombre'),
-      supabase.from('usuarios').select('id, nombre, email, rol, almacen_id, activo, aprueba_cotizaciones, ve_objetivos, carga_costos, debe_cambiar_clave, creado_en').order('activo', { ascending: false }).order('rol').order('nombre'),
+      supabase.from('usuarios').select('id, nombre, email, rol, almacen_id, activo, aprueba_cotizaciones, ve_objetivos, carga_costos, fija_credito, debe_cambiar_clave, creado_en').order('activo', { ascending: false }).order('rol').order('nombre'),
       Promise.all([
         supabase.from('almacenes').select('id', { count: 'exact', head: true }),
         supabase.from('skus').select('id', { count: 'exact', head: true }),
@@ -229,7 +230,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
       ? supabase.from('reglas_evaluacion').select('regla_id, evaluada_en, abiertas, medible')
       : Promise.resolve({ data: null }),
     pestana === 'usuarios'
-      ? supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre')
+      ? supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre')
       : Promise.resolve({ data: null }),
   ]);
   const evalPorRegla = new Map(
@@ -674,7 +675,7 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
           ) : (
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
               <table className="datos">
-                <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acceso</th><th>Aprueba cotizaciones</th><th>Carga costos</th>{usuario?.ve_objetivos === true && <th>Objetivos</th>}<th>Alta</th></tr></thead>
+                <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acceso</th><th>Aprueba cotizaciones</th><th>Carga costos</th><th>Línea de crédito</th>{usuario?.ve_objetivos === true && <th>Objetivos</th>}<th>Alta</th></tr></thead>
                 <tbody>
                   {(usuarios ?? []).map((u) => (
                     <tr key={u.id as string} data-usuario={u.email as string}>
@@ -730,6 +731,10 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
                       <td>
                         <InterruptorCostos id={u.id as string} carga={u.carga_costos === true} editable={rol === 'gerencia'} />
                       </td>
+                      <td>
+                        {/* 081 · Permiso personal: quién fija la línea de crédito de los clientes (hoy, Cathy Lee). */}
+                        <InterruptorCredito id={u.id as string} fija={u.fija_credito === true} editable={rol === 'gerencia'} />
+                      </td>
                       {usuario?.ve_objetivos === true && (
                         <td>
                           <InterruptorObjetivos id={u.id as string} nombre={u.nombre as string} ve={u.ve_objetivos === true} />
@@ -749,6 +754,9 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
             pierde sus sesiones abiertas y deja de aparecer en las listas para elegir responsables;
             sus registros y su historial se conservan. Las contraseñas temporales las comunica
             Gerencia en persona y el sistema obliga a cambiarlas al entrar.
+            {' '}<strong>Aprueba cotizaciones</strong>, <strong>Carga costos</strong> y <strong>Línea de crédito</strong> son
+            permisos de la persona, no del rol: solo Gerencia los da o los quita. Solo quien tiene <strong>Línea de crédito</strong> fija
+            o cambia la línea de crédito de un cliente.
           </p>
         </Panel>
       )}

@@ -14,8 +14,8 @@ import type { FilaAlmacen } from './GestionAlmacenes';
 export async function cargarAlmacenes(supabase: Awaited<ReturnType<typeof crearClienteServidor>>): Promise<FilaAlmacen[]> {
   const [{ data: almacenes }, { data: camaras }, existencias] = await Promise.all([
     supabase.from('almacenes')
-      .select('id, codigo, nombre, tipo, operador, ciudad, capacidad_tm, despachos_dia_max, recibe_produccion, recibe_compras, activo')
-      .order('activo', { ascending: false }).order('nombre'),
+      .select('id, codigo, nombre, tipo, operador, ciudad, capacidad_tm, despachos_dia_max, recibe_produccion, recibe_compras, activo, es_transito, orden')
+      .order('activo', { ascending: false }).order('orden').order('nombre'),
     supabase.from('camaras').select('almacen_id, nombre').eq('activo', true),
     traerTodo<{ almacen_id: number; peso_neto_kg: number }>((d, h) =>
       supabase.from('existencias').select('almacen_id, peso_neto_kg').gt('peso_neto_kg', 0).order('lote_id').range(d, h)),
@@ -36,6 +36,8 @@ export async function cargarAlmacenes(supabase: Awaited<ReturnType<typeof crearC
       recibe_produccion: Boolean(a.recibe_produccion),
       recibe_compras: Boolean(a.recibe_compras),
       activo: Boolean(a.activo),
+      es_transito: Boolean(a.es_transito),
+      orden: Number(a.orden ?? 100),
       camaras: (camaras ?? []).filter((c) => Number(c.almacen_id) === id).map((c) => String(c.nombre)),
       stock_kg: existencias.filter((e) => Number(e.almacen_id) === id).reduce((s, e) => s + Number(e.peso_neto_kg), 0),
       movimientos: count ?? 0,

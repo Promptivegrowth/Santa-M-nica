@@ -32,7 +32,7 @@ export async function GET() {
 
   const supabase = await crearClienteServidor();
   const [{ data: bodegas }, stock] = await Promise.all([
-    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre'),
     palletsDisponibles(supabase),
   ]);
   const nombreBodega = new Map((bodegas ?? []).map((b) => [Number(b.id), String(b.nombre)]));

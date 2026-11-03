@@ -46,7 +46,7 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
   const eje = (q.eje as string) || 'formato';
 
   const [{ data: almacenes }, { data: catalogo }, { data: coberturaDatos }] = await Promise.all([
-    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('nombre'),
+    supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre'),
     /*
      * Solo lo que TIENE STOCK. Ofrecer los 179 cortes del maestro llenaría el
      * desplegable de opciones que devuelven una pantalla vacía, y ante una

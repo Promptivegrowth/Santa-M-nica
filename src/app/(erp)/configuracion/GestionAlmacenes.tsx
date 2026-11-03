@@ -10,6 +10,10 @@
  *  formulario de ingreso según el origen, qué acepta la importación desde
  *  Excel y qué deja pasar la base.
  *
+ *  081 · Dos campos más: «De tránsito» (Exalmar, Peruvian: compra y venta,
+ *  sin capacidad ni ocupación) y «Orden en las listas» (la posición del
+ *  almacén en todos los desplegables y en «Ocupabilidad por almacén»).
+ *
  *  Lo editan Gerencia y Operaciones; los demás lo ven (si llegan aquí) sin
  *  botones. Desactivar exige que no tenga stock; borrar, que nunca se haya
  *  usado. Cuando no se puede, el botón se apaga y dice por qué.
@@ -33,6 +37,7 @@ type Aviso = { ok: boolean; texto: string } | null;
 const VACIO: DatosAlmacen = {
   codigo: '', nombre: '', tipo: 'externo', operador: '', ciudad: '', capacidad_tm: null,
   despachos_dia_max: 4, recibe_produccion: false, recibe_compras: true, activo: true,
+  es_transito: false, orden: 100,
 };
 
 const tmTexto = (kg: number) => (kg / 1000).toLocaleString('es-PE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -76,10 +81,18 @@ function Formulario({
           <span>Ciudad</span>
           <input className="campo" name="ciudad" value={d.ciudad} maxLength={60} onChange={(e) => campo('ciudad', e.target.value)} />
         </label>
-        <label className="form-campo">
+        <label className="form-campo" title={d.es_transito ? 'Un almacén de tránsito no tiene capacidad' : undefined}>
           <span>Capacidad (TM)</span>
-          <input className="campo mono" name="capacidad_tm" type="number" min={0} step={1} value={d.capacidad_tm ?? ''}
+          <input className="campo mono" name="capacidad_tm" type="number" min={0} step={1}
+                 value={d.es_transito ? '' : d.capacidad_tm ?? ''} disabled={d.es_transito}
+                 placeholder={d.es_transito ? 'De tránsito: sin capacidad' : undefined}
                  onChange={(e) => campo('capacidad_tm', e.target.value === '' ? null : Number(e.target.value))} />
+        </label>
+        <label className="form-campo">
+          <span>Orden en las listas</span>
+          <input className="campo mono" name="orden" type="number" min={0} max={999} step={1} value={d.orden}
+                 onChange={(e) => campo('orden', e.target.value === '' ? 100 : Number(e.target.value))} />
+          <small>Menor sale primero en los desplegables y en el panel. A igual orden, por nombre.</small>
         </label>
         <label className="form-campo">
           <span>Despachos por día (máx.)</span>
@@ -100,6 +113,11 @@ function Formulario({
         <small style={{ display: 'block', marginTop: '.4rem', color: 'var(--tinta-3)' }}>
           Sin ninguna marcada, el almacén solo recibe stock por traslado (como Depsa, Coinrefri o Emergent Cold).
         </small>
+        <label style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginTop: '.7rem' }}>
+          <input type="checkbox" name="es_transito" checked={d.es_transito}
+                 onChange={(e) => setD((p) => ({ ...p, es_transito: e.target.checked, capacidad_tm: e.target.checked ? null : p.capacidad_tm }))} />
+          <span><strong>De tránsito</strong> — de compra y venta (como Exalmar o Peruvian): no tiene capacidad y no se le calcula ocupación (no sale en «Ocupabilidad por almacén»).</span>
+        </label>
         <label style={{ display: 'flex', gap: '.5rem', alignItems: 'center', marginTop: '.7rem' }}
                title={conStock && d.activo ? 'Con stock no se puede desactivar: trasládelo primero' : undefined}>
           <input type="checkbox" name="activo" checked={d.activo} disabled={conStock && d.activo}
@@ -134,7 +152,7 @@ export function GestionAlmacenes({ filas, editable }: { filas: FilaAlmacen[]; ed
     });
   }
 
-  const columnas = editable ? 10 : 9;
+  const columnas = editable ? 11 : 10;
 
   return (
     <section className="panel" data-bloque="almacenes">
@@ -151,7 +169,8 @@ export function GestionAlmacenes({ filas, editable }: { filas: FilaAlmacen[]; ed
       <p className="pie-explicativo" style={{ padding: '.8rem 1rem 0', margin: 0 }}>
         <strong>Recibe producción</strong> y <strong>Recibe compras</strong> deciden por dónde puede entrar un ingreso a cámara: el
         formulario de ingreso solo ofrece las bodegas que reciben el origen elegido, y la importación desde Excel y la base
-        rechazan las demás. Un almacén sin ninguna de las dos recibe stock solo por traslado.
+        rechazan las demás. Un almacén sin ninguna de las dos recibe stock solo por traslado. Uno <strong>de tránsito</strong> (compra
+        y venta) no tiene capacidad ni ocupación. El <strong>orden</strong> decide en qué posición sale cada almacén en las listas.
         {editable ? ' Cada cambio queda en Auditoría.' : ' Los editan Gerencia y Operaciones.'}
       </p>
 
@@ -174,6 +193,7 @@ export function GestionAlmacenes({ filas, editable }: { filas: FilaAlmacen[]; ed
         <table className="datos">
           <thead>
             <tr>
+              <th className="num" title="Posición en las listas y desplegables">Orden</th>
               <th>Código</th><th>Nombre</th><th>Tipo</th><th>Ciudad</th><th className="num">Capacidad</th>
               <th>Recibe producción</th><th>Recibe compras</th><th className="num">Stock</th><th>Estado</th>
               {editable && <th>Acciones</th>}
@@ -190,6 +210,7 @@ export function GestionAlmacenes({ filas, editable }: { filas: FilaAlmacen[]; ed
               </tr>
             ) : (
               <tr key={a.id} data-almacen={a.codigo} data-activo={a.activo ? 'si' : 'no'}>
+                <td className="num mono" data-campo="orden">{a.orden}</td>
                 <td className="mono">{a.codigo}</td>
                 <td>
                   <strong>{a.nombre}</strong>
@@ -197,7 +218,11 @@ export function GestionAlmacenes({ filas, editable }: { filas: FilaAlmacen[]; ed
                 </td>
                 <td>{a.tipo === 'propio' ? 'Propio' : 'Externo'}</td>
                 <td>{a.ciudad || '—'}</td>
-                <td className="num">{a.capacidad_tm === null ? '—' : `${a.capacidad_tm.toLocaleString('es-PE')} TM`}</td>
+                <td className="num" data-campo="capacidad">
+                  {a.es_transito
+                    ? <span className="pill pill-neutro" title="Compra y venta: sin capacidad ni ocupación">De tránsito</span>
+                    : a.capacidad_tm === null ? '—' : `${a.capacidad_tm.toLocaleString('es-PE')} TM`}
+                </td>
                 <td data-recibe="produccion">{a.recibe_produccion ? <span className="pill pill-ok">Sí</span> : <span className="pill pill-neutro">No</span>}</td>
                 <td data-recibe="compras">{a.recibe_compras ? <span className="pill pill-ok">Sí</span> : <span className="pill pill-neutro">No</span>}</td>
                 <td className="num">{a.stock_kg > 0 ? `${tmTexto(a.stock_kg)} TM` : '—'}</td>

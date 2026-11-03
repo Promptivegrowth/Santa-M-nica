@@ -208,6 +208,8 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
     .reduce((s, f) => s + aMonedaDelCliente(f, saldoDe(f)), 0);
 
   const linea = Number(c.linea_credito ?? 0);
+  //  081 · Vacía = sin definir: no hay control de crédito (ni alertas ni bloqueos).
+  const lineaSinDefinir = c.linea_credito === null || c.linea_credito === undefined;
   const disponible = Math.max(0, linea - deuda);
   const usoPct = linea > 0 ? Math.min(100, (deuda / linea) * 100) : 0;
 
@@ -228,7 +230,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
             <strong>Cliente bloqueado.</strong>{' '}
             {(c.motivo_bloqueo as string) ?? 'Sin motivo registrado.'} No se le pueden confirmar
             pedidos nuevos hasta que Gerencia u Operaciones lo desbloqueen (Editar → «Bloquear al
-            cliente»): el bloqueo y la línea de crédito son control financiero.
+            cliente»): el bloqueo es control financiero.
           </span>
         </div>
       )}
@@ -310,7 +312,7 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
             {puedeVerImportes && (
               <div data-campo="linea-credito">
                 <dt>Línea de crédito</dt>
-                <dd>{linea > 0 ? dinero(linea, c.moneda as 'USD' | 'PEN', 0) : 'Sin línea asignada'}</dd>
+                <dd>{lineaSinDefinir ? 'Sin definir' : linea > 0 ? dinero(linea, c.moneda as 'USD' | 'PEN', 0) : 'Sin línea asignada'}</dd>
               </div>
             )}
             <div><dt>Estado</dt>

@@ -348,7 +348,10 @@ const REPORTES: Record<string, DefinicionReporte> = {
     titulo: 'Ocupabilidad de almacenes',
     subtitulo: 'Capacidad utilizada por bodega',
     vista: 'v_ocupabilidad',
-    orden: 'ocupado_tm',
+    //  081 · En el orden del maestro de Almacenes; sin los de tránsito (la vista los excluye).
+    orden: 'orden',
+    ascendente: true,
+    desempate: ['almacen'],
     columnas: [
       { titulo: 'Código', clave: 'codigo', ancho: 12 },
       { titulo: 'Almacén', clave: 'almacen', ancho: 24 },

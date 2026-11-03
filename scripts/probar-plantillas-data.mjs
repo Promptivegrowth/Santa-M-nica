@@ -65,7 +65,9 @@ const ANIO = Number(hoy.slice(0, 4));
 /* El orden que dejó Oliver en «Plantilla importación de ingresos (para Oliver).xlsx» (sin el hueco de la columna O). */
 const ORDEN_OLIVER = ['Origen *', 'Fecha de producción *', 'Código de pallet *', 'Producto *', 'Bodega *', 'Cámara', 'Kg por bulto', 'Bultos *',
   'Peso neto total (kg) *', 'Turno', 'Proceso', 'Planta', 'Proveedor (si es compra)', 'Línea procesadora', 'Costo por kg (US$)',
-  'Llega el (si es programado)', 'Observaciones'];
+  'Llega el (si es programado)', 'Observaciones',
+  //  081 · Pedido de Oliver: «Tipo de congelamiento» al final, sin mover lo demás.
+  'Tipo de congelamiento'];
 
 /* ---- Lo que hay antes, para devolverlo todo ---- */
 const [prev] = await consultar(`
@@ -223,14 +225,14 @@ try {
     const tituloLista = {};
     listas.getRow(1).eachCell((c, k) => { tituloLista[String.fromCharCode(64 + k)] = String(c.value); });
     const desplegables = { 'Origen': 'Origen', 'Producto': 'Producto', 'Bodega': 'Bodega', 'Cámara': 'Cámara', 'Turno': 'Turno',
-      'Proceso': 'Proceso', 'Planta': 'Planta', 'Línea procesadora': 'Línea procesadora' };
+      'Proceso': 'Proceso', 'Planta': 'Planta', 'Línea procesadora': 'Línea procesadora', 'Tipo de congelamiento': 'Tipo de congelamiento' };
     const malas = Object.entries(desplegables).filter(([t, lista]) => {
       const dv = hi.getCell(6, col(t)).dataValidation;
       const letra = /Listas!\$([A-Z])\$/.exec(dv?.formulae?.[0] ?? '')?.[1];
       const dv500 = hi.getCell(505, col(t)).dataValidation;
       return dv?.type !== 'list' || tituloLista[letra] !== lista || dv500?.type !== 'list';
     }).map(([t]) => t);
-    ok(malas.length === 0, 'las 8 listas desplegables están en su columna y apuntan a su lista (filas 5 a 505)', malas.join(', ') || 'todas');
+    ok(malas.length === 0, 'las 9 listas desplegables están en su columna y apuntan a su lista (filas 5 a 505)', malas.join(', ') || 'todas');
     const hInst = libro.getWorksheet('Instrucciones');
     const enInst = [];
     hInst.eachRow((f) => { const v = String(f.getCell(1).value ?? ''); if (ORDEN_OLIVER.includes(v)) enInst.push(v); });
@@ -335,7 +337,7 @@ try {
     const [fv] = await consultar(`select estado, datos->>'codigo_pallet' c, datos->>'peso_kg' kg from importaciones_excel_filas where importacion_id = ${impViejo} and fila = 5`);
     ok(fv?.estado === 'valida' && fv.c === COD(20) && fv.kg === '200', 'un archivo con el orden antiguo de columnas se lee igual (por el título)', JSON.stringify(fv));
     const [f21, f22] = await consultar(`select estado, errores::text e from importaciones_excel_filas where importacion_id = ${impViejo} and fila in (6, 7) order by fila`);
-    ok(f21?.estado === 'valida' && f22?.estado === 'con_error' && /agregue la columna «Tipo de congelamiento»/.test(f22.e),
+    ok(f21?.estado === 'valida' && f22?.estado === 'con_error' && /columna «Tipo de congelamiento»/.test(f22.e),
       `misma presentación en placas y túnel («${nombreBase(pt)}»): con su columna TIPO DE CONGELAMIENTO se resuelve; sin ella, el error lo dice`, (f22?.e ?? '').slice(0, 160));
   }
   const P = globalThis.P;
