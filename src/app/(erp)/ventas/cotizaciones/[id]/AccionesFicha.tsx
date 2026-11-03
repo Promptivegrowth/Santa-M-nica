@@ -21,6 +21,8 @@ import {
 } from '../acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { accionSegura } from '@/lib/accionSegura';
+import { CampoNumeroProforma, usePropuestaProforma } from '@/components/ventas/CampoNumeroProforma';
+import { problemaNumeroProforma } from '@/lib/numeroProforma';
 
 export function AccionesFicha({
   cotizacionId,
@@ -53,7 +55,9 @@ export function AccionesFicha({
 }) {
   const router = useRouter();
   /* Las dos acciones que no se deshacen piden confirmación en el sitio. */
-  const [confirmando, setConfirmando] = useState<'eliminar' | 'rechazar' | null>(null);
+  const [confirmando, setConfirmando] = useState<'eliminar' | 'rechazar' | 'convertir' | null>(null);
+  /* 082 · Al convertir se pide el N.º de proforma: viene propuesto y se puede cambiar. */
+  const numero_pf = usePropuestaProforma();
   const [error, setError] = useState<string | null>(null);
   const [pendiente, iniciar] = useTransition();
 
@@ -79,7 +83,8 @@ export function AccionesFicha({
       } else {
         setError(r.mensaje ?? 'No se pudo completar la acción.');
       }
-      setConfirmando(null);
+      //  Si falla la conversión (p. ej. número repetido), el campo sigue abierto con lo escrito.
+      if (r.ok || !alPedido) setConfirmando(null);
     });
   }
 
@@ -245,20 +250,55 @@ export function AccionesFicha({
         </button>
       )}
 
-      {/* --- La acción principal: cerrar la venta --- */}
-      {convertible && (
+      {/*
+        --- La acción principal: cerrar la venta ---
+        Antes convertía de un clic y el número lo ponía el sistema sin más.
+        Ahora (082) pide el N.º de proforma, propuesto y editable, porque Santa
+        Mónica tiene su numeración real.
+      */}
+      {convertible && confirmando === 'convertir' ? (
+        <span className="accion-confirmar" data-confirmar="convertir">
+          <span>N.º de proforma</span>
+          <CampoNumeroProforma compacto valor={numero_pf.valor} onChange={numero_pf.setValor}
+                               propuesto={numero_pf.propuesto} disabled={pendiente || !numero_pf.propuesto} />
+          <button
+            type="button"
+            className="btn btn-primario"
+            style={{ padding: '.2rem .5rem', fontSize: '.75rem' }}
+            disabled={pendiente || !numero_pf.propuesto || !!problemaNumeroProforma(numero_pf.valor)}
+            data-accion="confirmar-conversion"
+            onClick={() => accion(() => convertirEnPedido(cotizacionId, numero_pf.valor, numero_pf.propuesto), true)}
+          >
+            {pendiente ? 'Creando el pedido…' : 'Crear el pedido'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sutil"
+            style={{ padding: '.2rem .5rem', fontSize: '.75rem' }}
+            disabled={pendiente}
+            onClick={() => setConfirmando(null)}
+          >
+            Cancelar
+          </button>
+        </span>
+      ) : convertible && (
         <button
           type="button"
           className="btn btn-primario"
           disabled={pendiente || !puedeConvertir}
-          title={puedeConvertir ? undefined : 'Primero tiene que aprobarse: solo una cotización aprobada se convierte en pedido'}
+          title={puedeConvertir ? 'Pide el N.º de proforma (propuesto por el sistema, se puede cambiar) y crea el pedido' : 'Primero tiene que aprobarse: solo una cotización aprobada se convierte en pedido'}
           data-accion="convertir"
-          onClick={() => accion(() => convertirEnPedido(cotizacionId), true)}
+          onClick={() => {
+            setError(null);
+            setConfirmando('convertir');
+            void numero_pf.pedir();
+          }}
         >
           <Icono nombre="pedido" tamano={15} />
-          {pendiente ? 'Convirtiendo…' : 'Convertir en pedido'}
+          Convertir en pedido
         </button>
       )}
+      {numero_pf.error && <span className="accion-error">{numero_pf.error}</span>}
 
       {error && <span className="accion-error">{error}</span>}
     </div>

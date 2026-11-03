@@ -516,6 +516,8 @@ async function principal() {
 
       /* Convertir, con el ratón */
       await pagina.locator('button', { hasText: 'Convertir en pedido' }).click();
+      //  082: ahora pide el N.º de proforma (viene propuesto); se acepta el propuesto.
+      await pagina.locator('[data-accion="confirmar-conversion"]').click();
       const llego = await pagina
         .waitForURL(/\/ventas\/pedidos\/\d+/, { timeout: 25000 })
         .then(() => true)

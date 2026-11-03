@@ -292,7 +292,7 @@ for (const r of filas) {
     siguiente += 1;
     const codigo = `CLI-${String(siguiente).padStart(4, '0')}`;
     const cols = ['codigo', 'tipo', 'moneda', ...Object.keys(datos)];
-    const vals = [q(codigo), q(r.tipo), q(r.pais === 'Perú' ? 'PEN' : 'USD'), ...Object.entries(datos).map(([k, v]) => (k === 'adelanto_pct' ? num(v) : q(v)))];
+    const vals = [q(codigo), q(r.tipo), q('USD') /* todo en dólares (Oliver, 03/11/2026) */, ...Object.entries(datos).map(([k, v]) => (k === 'adelanto_pct' ? num(v) : q(v)))];
     sentencias.push(`insert into clientes (${cols.join(', ')}${r.pagoErp.dias ? ', dias_credito' : ''}) values (${vals.join(', ')}${r.pagoErp.dias ? `, ${r.pagoErp.dias}` : ''});`);
   }
   //  El contacto de la lista, como principal (si no existe ya con ese nombre).

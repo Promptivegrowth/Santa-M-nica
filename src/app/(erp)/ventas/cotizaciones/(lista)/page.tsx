@@ -315,8 +315,9 @@ export default async function PaginaCotizaciones(props: PageProps<'/ventas/cotiz
 
       <p className="pie-explicativo">
         Al pulsar <strong>Convertir</strong>, el sistema crea el pedido heredando todos los datos de
-        la cotización y la marca como aceptada. Si el cliente tiene el crédito bloqueado, la
-        conversión se rechaza y explica por qué.
+        la cotización y la marca como aceptada. Antes pide el <strong>N.º de proforma</strong>: viene
+        propuesto (el siguiente de la numeración) y se puede cambiar por el que corresponda. Si el
+        cliente tiene el crédito bloqueado, la conversión se rechaza y explica por qué.
       </p>
     </>
   );

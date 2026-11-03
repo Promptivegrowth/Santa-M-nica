@@ -30,6 +30,10 @@ import { hoyEnLima } from '@/lib/fechas';
 import { puedeVender, type Rol } from '@/lib/navegacion';
 import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 import { obtenerTipoCambioSunat } from '@/lib/tipoCambioSunat';
+import {
+  elegirNumeroProforma, insertarConNumero, mensajeDelNumero, avisoNumeroTomado, proponerNumeroProforma,
+} from '@/lib/numeroProformaServidor';
+import { normalizarNumeroProforma, problemaNumeroProforma, motivoNoCambiarNumero } from '@/lib/numeroProforma';
 
 /** Quienes registran pedidos (puedeVender). */
 const VENDEN: Rol[] = ['gerencia', 'operaciones', 'comercial', 'comex'];
@@ -68,6 +72,15 @@ export type DatosPedido = {
   tipo_cambio_fecha?: string | null;
   tipo_cambio_fuente?: 'sunat' | 'manual' | null;
   tipo_cambio_clase?: 'compra' | 'venta' | null;
+  /**
+   * El número de proforma (082): viene propuesto —el siguiente de la
+   * numeración— y se puede cambiar por el número real de Santa Mónica.
+   * `numero_propuesto` es el que mostró la pantalla: si no se tocó y otro
+   * pedido lo toma mientras tanto, se usa el siguiente libre en vez de
+   * rechazar el guardado. Sin `numero_proforma`, el sistema pone el propuesto.
+   */
+  numero_proforma?: string;
+  numero_propuesto?: string | null;
 };
 
 export type Resultado =
@@ -169,30 +182,18 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
     };
   }
 
-  /* ---- Número de proforma ---- */
-  const anio = String(new Date().getFullYear()).slice(2);
-  /*
-   * El número lo da la base, no una cuenta de filas: contar fallaba en cuanto
-   * había huecos en la numeración, y dos personas guardando a la vez obtenían
-   * el mismo número.
-   */
-  const { data: correlativo, error: errNum } = await supabase.rpc('siguiente_correlativo', {
-    p_serie: 'SM',
-    p_anio: new Date().getFullYear(),
-  });
-  if (errNum || correlativo === null) {
-    return { ok: false, mensaje: 'No se pudo reservar el número de proforma. Vuelva a intentarlo.' };
-  }
-  const numeroProforma = `SM${anio}-${Number(correlativo)}`;
+  /* ---- Número de proforma (082) ----
+     El que escribió (o aceptó) la persona. Antes lo ponía siempre el
+     correlativo y no se podía cambiar; Santa Mónica tiene su numeración real. */
+  const eleccion = await elegirNumeroProforma(supabase, datos.numero_proforma, datos.numero_propuesto);
+  if (!eleccion.ok) return { ok: false, mensaje: eleccion.mensaje, campo: eleccion.campo };
 
   /* ---- Cabecera ----
      cotizacion_id queda en NULL a propósito: es lo que distingue un pedido
      directo de uno que vino de una oferta, y lo que permite que el indicador
      de conversión mida algo real. */
-  const { data: pedido, error: errCab } = await supabase
-    .from('pedidos')
-    .insert({
-      numero_proforma: numeroProforma,
+  const { data: pedido, error: errCab, numero: numeroProforma } = await insertarConNumero(supabase, eleccion, (numero_proforma) => ({
+      numero_proforma,
       cotizacion_id: null,
       cliente_id: datos.cliente_id,
       vendedor_id: datos.vendedor_id,
@@ -217,16 +218,16 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
       observaciones: datos.observaciones,
       ...columnasContacto(datos.contacto),
       creado_por: usuario.id,
-    })
-    .select('id, numero_proforma')
-    .single();
+    }));
 
   if (errCab || !pedido) {
+    const delNumero = mensajeDelNumero(errCab);
     return {
       ok: false,
-      mensaje: /policy/i.test(errCab?.message ?? '')
+      campo: delNumero ? 'numero_proforma' : undefined,
+      mensaje: delNumero ?? (/policy/i.test(errCab?.message ?? '')
         ? `${nombreRol(usuario.rol)} no tiene permiso para crear pedidos: lo hacen ${listaDeRoles(VENDEN)}.`
-        : `No se pudo guardar el pedido: ${errCab?.message}`,
+        : `No se pudo guardar el pedido: ${errCab?.message}`),
     };
   }
 
@@ -274,7 +275,8 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
     ok: true,
     id: pedido.id as number,
     numero: pedido.numero_proforma as string,
-    mensaje: `Pedido ${pedido.numero_proforma} registrado con ${datos.lineas.length} línea(s).`,
+    mensaje: `Pedido ${pedido.numero_proforma} registrado con ${datos.lineas.length} línea(s).` +
+      avisoNumeroTomado(eleccion.automatico, datos.numero_propuesto, numeroProforma),
   };
 }
 
@@ -378,5 +380,116 @@ export async function cancelarPedido(id: number, motivo: string): Promise<{ ok: 
   return {
     ok: true,
     mensaje: `${p.numero_proforma} cancelado.${(reservas ?? []).length ? ` Se soltaron ${(reservas ?? []).length} reserva(s): ese stock vuelve a estar disponible.` : ''}`,
+  };
+}
+
+/* ==========================================================================
+   EL NÚMERO DE PROFORMA (082)
+   --------------------------------------------------------------------------
+   Oliver: «poder modificar el número de Proforma». Santa Mónica tiene su
+   propia numeración real y el sistema ponía siempre la suya.
+
+   · Al crear, el número viene PROPUESTO (el siguiente de la numeración, sin
+     consumirlo) y se puede cambiar: numeroProformaPropuesto().
+   · Después, «Cambiar número» en la ficha: cambiarNumeroProforma().
+     Hasta cuándo: mientras no tenga un comprobante emitido y vigente (la
+     factura o la boleta lo llevan impreso). Lo cambian los mismos que crean
+     pedidos: Gerencia, Operaciones, Comercial y Comercio Exterior.
+   Las reglas (único, no vacío, largo…) son las de src/lib/numeroProforma.ts
+   y la base las vuelve a aplicar con los mismos textos.
+   ========================================================================== */
+export async function numeroProformaPropuesto(): Promise<{ ok: true; numero: string } | { ok: false; mensaje: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (!puedeVender(usuario.rol as Rol)) {
+    return { ok: false, mensaje: `${nombreRol(usuario.rol)} no crea pedidos: lo hacen ${listaDeRoles(VENDEN)}.` };
+  }
+  const numero = await proponerNumeroProforma(await crearClienteServidor());
+  return numero
+    ? { ok: true, numero }
+    : { ok: false, mensaje: 'No se pudo calcular el próximo número de proforma. Vuelva a intentarlo.' };
+}
+
+export async function cambiarNumeroProforma(
+  id: number,
+  nuevo: string,
+): Promise<{ ok: boolean; mensaje: string; numero?: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (!puedeVender(usuario.rol as Rol)) {
+    return {
+      ok: false,
+      mensaje: `${nombreRol(usuario.rol)} no cambia números de proforma: lo hacen ${listaDeRoles(VENDEN)}.`,
+    };
+  }
+
+  const numero = normalizarNumeroProforma(nuevo);
+  const forma = problemaNumeroProforma(numero);
+  if (forma) return { ok: false, mensaje: forma };
+
+  const supabase = await crearClienteServidor();
+  const { data: p } = await supabase.from('pedidos').select('numero_proforma').eq('id', id).maybeSingle();
+  if (!p) return { ok: false, mensaje: 'Ese pedido no existe.' };
+  const anterior = String(p.numero_proforma);
+  if (numero === normalizarNumeroProforma(anterior)) {
+    return { ok: false, mensaje: `${anterior} ya es el número de este pedido: escriba el número nuevo.` };
+  }
+
+  //  Hasta cuándo: mientras no haya un comprobante emitido y vigente.
+  const { data: fac } = await supabase
+    .from('facturas').select('numero').eq('pedido_id', id).neq('estado', 'anulada')
+    .order('fecha_emision').limit(1).maybeSingle();
+  const bloqueo = motivoNoCambiarNumero(fac?.numero as string | undefined);
+  if (bloqueo) return { ok: false, mensaje: bloqueo };
+
+  //  ¿Libre? La base contesta con el mismo texto que daría al guardar.
+  const { data: problema } = await supabase.rpc('problema_numero_proforma', { p_numero: numero, p_pedido_id: id });
+  if (problema) return { ok: false, mensaje: String(problema) };
+
+  const { data, error } = await supabase
+    .from('pedidos').update({ numero_proforma: numero }).eq('id', id).select('id, numero_proforma');
+  if (error) return { ok: false, mensaje: mensajeDelNumero(error) ?? `No se pudo cambiar el número: ${error.message}` };
+  if (!data?.length) {
+    return { ok: false, mensaje: `No tiene permiso para modificar este pedido: lo hacen ${listaDeRoles(VENDEN)}.` };
+  }
+  const final = String(data[0].numero_proforma);
+  //  El historial (de X a Y, quién y cuándo) lo escribe la base al guardar.
+
+  /*
+   * Lo que ya salió con el número anterior. El contrato es una copia firmada
+   * de la proforma (no se reescribe por debajo): hay que generarlo otra vez.
+   * Los PDF/Excel ya descargados, el packing o el reporte de carga impresos
+   * también lo llevan; lo que se genere desde ahora dirá el número nuevo.
+   */
+  const [{ data: contratos }, { count: descargas }, { count: embarques }] = await Promise.all([
+    supabase.from('contratos').select('numero').eq('pedido_id', id).order('revision', { ascending: false }),
+    supabase.from('eventos').select('id', { count: 'exact', head: true })
+      .eq('entidad', 'pedidos').eq('entidad_id', id).eq('tipo', 'documento_descargado'),
+    supabase.from('embarque_pedidos').select('pedido_id', { count: 'exact', head: true }).eq('pedido_id', id),
+  ]);
+  const avisos: string[] = [];
+  if ((contratos ?? []).length) {
+    avisos.push(
+      `Tiene ${(contratos ?? []).length === 1 ? 'un contrato generado' : `${(contratos ?? []).length} contratos generados`} con el número anterior ` +
+      `(${contratos![0].numero}): genere el contrato otra vez desde «Contrato» para que lleve ${final}.`
+    );
+  }
+  if ((descargas ?? 0) > 0 || (embarques ?? 0) > 0) {
+    avisos.push(
+      'Los documentos que ya se descargaron o imprimieron (PDF o Excel de la proforma, packing, reporte de carga) llevan el ' +
+      'número anterior: vuelva a descargarlos antes de enviarlos.'
+    );
+  }
+
+  revalidatePath('/ventas/pedidos');
+  revalidatePath(`/ventas/pedidos/${id}`);
+  revalidatePath(`/ventas/pedidos/${id}/contrato`);
+  revalidatePath('/ventas/control');
+  revalidatePath('/panel');
+  return {
+    ok: true,
+    numero: final,
+    mensaje: `Listo: la proforma ${anterior} ahora es ${final}. Queda en el historial del pedido.` +
+      (avisos.length ? ` ${avisos.join(' ')}` : ''),
   };
 }

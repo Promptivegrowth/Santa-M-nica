@@ -18,7 +18,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
-import { obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
+import { proponerNumeroProforma } from '@/lib/numeroProformaServidor';
 import { CabeceraPagina } from '@/components/ui/Pagina';
 import { FormularioVenta } from '@/components/ventas/FormularioVenta';
 import { cargarCatalogoVenta } from '@/lib/catalogoVenta';
@@ -38,13 +39,17 @@ export default async function PaginaNuevoPedido(props: PageProps<'/ventas/pedido
   // Quien no puede vender no debería llegar aquí ni escribiendo la dirección
   if (!puedeVender(rol)) redirect('/ventas/pedidos');
 
-  const cat = await cargarCatalogoVenta();
+  //  082 · El próximo número de proforma, propuesto en el formulario y editable.
+  const [cat, numeroPropuesto] = await Promise.all([
+    cargarCatalogoVenta(),
+    crearClienteServidor().then(proponerNumeroProforma),
+  ]);
 
   return (
     <>
       <CabeceraPagina
         titulo="Nuevo pedido"
-        descripcion="Registra directamente el compromiso de entrega, sin pasar por cotización. El pedido queda con su número de proforma y ya se le puede reservar stock."
+        descripcion="Registra directamente el compromiso de entrega, sin pasar por cotización. El número de proforma viene propuesto y se puede cambiar por el que corresponda; ya registrado, se le puede reservar stock."
         volver={{ href: '/ventas/pedidos', texto: 'Volver a pedidos' }}
       />
 
@@ -77,6 +82,7 @@ export default async function PaginaNuevoPedido(props: PageProps<'/ventas/pedido
         topeDescuento={cat.topeDescuento}
         puedeAutorizarDescuento={['gerencia', 'operaciones'].includes(rol)}
         clienteInicial={clienteInicial}
+        numeroPropuesto={numeroPropuesto}
       />
     </>
   );

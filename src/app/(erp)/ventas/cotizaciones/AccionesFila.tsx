@@ -11,7 +11,8 @@
  *              convertido en pedido. Los precios de una venta cerrada no
  *              se cambian. (Un cambio comercial en una aprobada anula la
  *              aprobación al guardar: lo decide el servidor.)
- *   CONVERTIR  cuando el cliente acepta. Crea el pedido heredando todo.
+ *   CONVERTIR  cuando el cliente acepta. Crea el pedido heredando todo, con
+ *              el N.º de proforma propuesto y editable (082).
  *   ELIMINAR   solo si no generó pedido. Si lo generó, borrarla dejaría el
  *              pedido huérfano y rompería la trazabilidad del precio.
  *
@@ -25,6 +26,8 @@ import Link from 'next/link';
 import { convertirEnPedido, eliminarCotizacion } from './acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { accionSegura } from '@/lib/accionSegura';
+import { CampoNumeroProforma, usePropuestaProforma } from '@/components/ventas/CampoNumeroProforma';
+import { problemaNumeroProforma } from '@/lib/numeroProforma';
 
 export function AccionesFila({
   cotizacionId,
@@ -58,6 +61,7 @@ export function AccionesFila({
   const [confirmando, setConfirmando] = useState<'convertir' | 'eliminar' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendiente, iniciar] = useTransition();
+  const numero_pf = usePropuestaProforma();
 
   const editable = puedeOperar && !yaConvertida && ['borrador', 'aprobada', 'enviada'].includes(estado);
   const convertible = puedeOperar && !yaConvertida && !sinAprobar && !['rechazada', 'vencida'].includes(estado);
@@ -66,9 +70,10 @@ export function AccionesFila({
   function convertir() {
     setError(null);
     iniciar(async () => {
-      const r = await accionSegura(() => convertirEnPedido(cotizacionId));
+      const r = await accionSegura(() => convertirEnPedido(cotizacionId, numero_pf.valor, numero_pf.propuesto));
       if (r.ok) router.push(`/ventas/pedidos/${r.id}`);
-      else { setError(r.mensaje); setConfirmando(null); }
+      //  Con el campo abierto y lo escrito, para corregir el número y reintentar.
+      else setError(r.mensaje);
     });
   }
 
@@ -87,13 +92,18 @@ export function AccionesFila({
     return (
       <div className="acciones-fila">
         <span className="accion-confirmar">
-          <span>{esBorrado ? '¿Eliminar?' : '¿Convertir?'}</span>
+          <span>{esBorrado ? '¿Eliminar?' : '¿Convertir? N.º'}</span>
+          {!esBorrado && (
+            <CampoNumeroProforma compacto valor={numero_pf.valor} onChange={numero_pf.setValor}
+                                 propuesto={numero_pf.propuesto} disabled={pendiente || !numero_pf.propuesto} />
+          )}
           <button
             type="button"
             className="btn btn-primario"
             style={{ padding: '.15rem .45rem', fontSize: '.72rem' }}
             onClick={esBorrado ? eliminar : convertir}
-            disabled={pendiente}
+            disabled={pendiente || (!esBorrado && (!numero_pf.propuesto || !!problemaNumeroProforma(numero_pf.valor)))}
+            data-accion={esBorrado ? 'confirmar-eliminar' : 'confirmar-conversion'}
           >
             {pendiente ? '…' : 'Sí'}
           </button>
@@ -101,12 +111,13 @@ export function AccionesFila({
             type="button"
             className="btn btn-sutil"
             style={{ padding: '.15rem .4rem', fontSize: '.72rem' }}
-            onClick={() => setConfirmando(null)}
+            onClick={() => { setConfirmando(null); setError(null); }}
             disabled={pendiente}
           >
             No
           </button>
         </span>
+        {(error || numero_pf.error) && <span className="accion-error">{error ?? numero_pf.error}</span>}
       </div>
     );
   }
@@ -151,8 +162,9 @@ export function AccionesFila({
           <button
             type="button"
             className="accion-btn"
-            onClick={() => setConfirmando('convertir')}
-            title={`Convertir ${numero} en pedido`}
+            onClick={() => { setError(null); setConfirmando('convertir'); void numero_pf.pedir(); }}
+            data-accion="convertir"
+            title={`Convertir ${numero} en pedido (pide el N.º de proforma)`}
             aria-label={`Convertir ${numero} en pedido`}
           >
             <Icono nombre="pedido" tamano={14} />

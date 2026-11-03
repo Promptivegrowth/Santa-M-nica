@@ -41,6 +41,8 @@ import { RestriccionPeso } from './RestriccionPeso';
 import { uno, campo } from '@/lib/relaciones';
 import { BotonFacturar } from './Facturar';
 import { CicloPedido } from './CicloPedido';
+import { CambiarNumero } from './CambiarNumero';
+import { motivoNoCambiarNumero } from '@/lib/numeroProforma';
 import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
 import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
 import { hoyEnLima } from '@/lib/fechas';
@@ -295,6 +297,18 @@ async function CuerpoPedido({
    */
   const hoy = hoyEnLima();
   const vigentes = (facturas ?? []).filter((f) => f.estado !== 'anulada');
+
+  /*
+   * 082 · «Cambiar número»: lo usan quienes crean pedidos, mientras no haya un
+   * comprobante emitido y vigente (lo lleva impreso). Si ya hay contrato, se
+   * avisa: el contrato es una copia firmada y hay que generarlo otra vez.
+   */
+  const puedeCambiarNumero = puedeVender((usuario?.rol ?? 'consulta') as Rol);
+  const comprobanteVigente = [...vigentes]
+    .sort((a, b) => String(a.fecha_emision ?? '').localeCompare(String(b.fecha_emision ?? '')))[0]?.numero as string | undefined;
+  const { count: contratosGenerados } = pestana === 'general' && puedeCambiarNumero
+    ? await supabase.from('contratos').select('id', { count: 'exact', head: true }).eq('pedido_id', pedidoId)
+    : { count: 0 };
   const { data: pagos } = pestana === 'cobranza' && vigentes.length
     ? await supabase
         .from('cobranzas')
@@ -358,7 +372,20 @@ async function CuerpoPedido({
         <div className="rejilla-2">
           <Panel titulo="Datos del pedido">
             <dl className="ficha">
-              <div><dt>Proforma</dt><dd className="mono">{pedido.numero_proforma}</dd></div>
+              <div>
+                <dt>Proforma</dt>
+                <dd>
+                  <span className="mono" data-numero-proforma>{pedido.numero_proforma}</span>
+                  {puedeCambiarNumero && (
+                    <CambiarNumero
+                      pedidoId={pedidoId}
+                      numero={String(pedido.numero_proforma)}
+                      bloqueo={motivoNoCambiarNumero(comprobanteVigente)}
+                      tieneContrato={(contratosGenerados ?? 0) > 0}
+                    />
+                  )}
+                </dd>
+              </div>
               <div><dt>Cliente</dt><dd>{pedido.cliente}</dd></div>
               <div><dt>País</dt><dd>{pedido.pais ?? '—'}</dd></div>
               <div><dt>Destino</dt><dd>{pedido.destino ?? '—'}{pedido.destino_pais ? `, ${pedido.destino_pais}` : ''}</dd></div>

@@ -21,6 +21,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { EditorParametro } from './EditorParametro';
 import { SubirFirma } from './SubirFirma';
+import { NumeracionProforma, type EstadoNumeracion } from './NumeracionProforma';
 import { InterruptorAprobador } from './InterruptorAprobador';
 import { InterruptorObjetivos } from './InterruptorObjetivos';
 import { InterruptorCostos } from './InterruptorCostos';
@@ -233,6 +234,11 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
       ? supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre')
       : Promise.resolve({ data: null }),
   ]);
+  /* 082 · La numeración de proformas, solo en su pestaña. */
+  const { data: numeracion } = pestana === 'parametros'
+    ? await supabase.rpc('estado_numeracion_proforma')
+    : { data: null };
+
   const evalPorRegla = new Map(
     ((evaluacion ?? []) as { regla_id: number; evaluada_en: string; abiertas: number; medible: boolean }[])
       .map((e) => [Number(e.regla_id), e])
@@ -362,6 +368,16 @@ export default async function PaginaConfiguracion(props: PageProps<'/configuraci
       {/* ══════ PARÁMETROS ══════ */}
       {pestana === 'parametros' && (
         <>
+          {/*
+            082 · Oliver: «poder modificar el número de Proforma». El próximo
+            número automático, para que el sistema siga la numeración real.
+          */}
+          {numeracion && (
+            <Panel titulo="Numeración de proformas" className="mb-espacio">
+              <NumeracionProforma estado={numeracion as EstadoNumeracion} editable={['gerencia', 'operaciones'].includes(rol)} />
+            </Panel>
+          )}
+
           {[...porGrupo.entries()].map(([grupo, lista]) => (
             <Panel key={grupo} titulo={NOMBRE_GRUPO[grupo] ?? grupo} className="mb-espacio">
               <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>

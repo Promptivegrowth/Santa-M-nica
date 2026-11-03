@@ -40,12 +40,21 @@ export default async function PaginaContrato(props: PageProps<'/ventas/pedidos/[
 
   const [{ data: generados }, armado] = await Promise.all([
     supabase.from('contratos')
-      .select('id, numero, revision, generado_en, usuarios!contratos_generado_por_fkey(nombre)')
+      .select('id, numero, revision, generado_en, proforma:datos->>proforma, usuarios!contratos_generado_por_fkey(nombre)')
       .eq('pedido_id', pedidoId).order('revision', { ascending: false }),
     armarDatosContrato(supabase, pedidoId),
   ]);
   const puede = puedeVender((usuario?.rol ?? 'consulta') as Rol);
   const cot = uno<Record<string, unknown>>(ped.cotizaciones);
+  /*
+   * 082 · El número de proforma se puede cambiar. El contrato es una copia
+   * firmada (con su número y su revisión) y no se reescribe por debajo: si el
+   * vigente se generó con el número anterior, se avisa que hay que generarlo
+   * otra vez.
+   */
+  const vigente = (generados ?? [])[0] as Record<string, unknown> | undefined;
+  const conNumeroViejo = vigente && vigente.proforma && String(vigente.proforma) !== String(ped.numero_proforma)
+    ? String(vigente.proforma) : null;
 
   /*
    * El contrato lleva precios (076): quien no descarga la proforma tampoco lo
@@ -71,6 +80,18 @@ export default async function PaginaContrato(props: PageProps<'/ventas/pedidos/[
         descripcion={`${uno<Record<string, unknown>>(ped.clientes)?.razon_social ?? ''} · modelo institucional de Santa Mónica, en inglés y castellano`}
         volver={{ href: `/ventas/pedidos/${pedidoId}`, texto: `Volver a ${ped.numero_proforma}` }}
       />
+
+      {conNumeroViejo && (
+        <div className="aviso-camino" data-aviso="contrato-numero-viejo" style={{ marginBottom: '1rem' }}>
+          <span aria-hidden style={{ fontSize: '1.1rem', lineHeight: 1 }}>⚠️</span>
+          <span>
+            <strong>El contrato {String(vigente!.numero)} se generó cuando la proforma era {conNumeroViejo}.</strong>{' '}
+            La proforma ahora es {String(ped.numero_proforma)}: {puede
+              ? <>genere el contrato otra vez abajo (<em>{armado.ok && armado.revision > 0 ? 'Generar una revisión' : 'Generar'}</em>) para que lleve el número vigente.</>
+              : <>pídale a {listaDeRoles(['gerencia', 'operaciones', 'comercial', 'comex'])} que lo genere otra vez.</>}
+          </span>
+        </div>
+      )}
 
       <Panel titulo={`Contratos generados · ${(generados ?? []).length}`} className="mb-espacio">
         {(generados ?? []).length === 0 ? (

@@ -345,3 +345,39 @@ export async function alternarFijaCredito(usuarioId: string, fija: boolean): Pro
       : `${destino.nombre} ya no fija la línea de crédito.`,
   };
 }
+
+/**
+ * NUMERACIÓN DE PROFORMAS (082) · el próximo número automático.
+ *
+ * Santa Mónica tiene su numeración real de proformas (la columna PROFORMA de
+ * su base anterior). Aquí Gerencia u Operaciones dicen por cuál va, y el
+ * sistema propone desde ahí. La base no acepta un número que ya use un pedido
+ * y deja constancia de quién lo fijó y cuándo; si más adelante hay números ya
+ * usados, la propuesta los salta.
+ */
+export async function fijarProximoNumeroProforma(proximo: number): Promise<ResultadoAccion> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (!['gerencia', 'operaciones'].includes(usuario.rol)) {
+    return { ok: false, mensaje: 'Fijar la numeración de proformas corresponde a Gerencia u Operaciones. Pídaselo a uno de ellos.' };
+  }
+  if (!Number.isInteger(proximo) || proximo < 1 || proximo > 999999) {
+    return { ok: false, mensaje: 'El próximo número tiene que ser un entero entre 1 y 999999 (por ejemplo 390).' };
+  }
+
+  const supabase = await crearClienteServidor();
+  const { data, error } = await supabase.rpc('fijar_proximo_numero_proforma', { p_proximo: proximo });
+  if (error) {
+    //  Los rechazos de la base (número ya usado, rol) ya vienen en castellano.
+    return {
+      ok: false,
+      mensaje: error.code === 'P0001'
+        ? error.message
+        : 'No se pudo guardar la numeración. Vuelva a intentarlo; si se repite, avise a soporte.',
+    };
+  }
+
+  revalidatePath('/configuracion');
+  revalidatePath('/ventas/pedidos/nuevo');
+  return { ok: true, mensaje: `Listo: el próximo pedido se propondrá como ${String(data)}.` };
+}

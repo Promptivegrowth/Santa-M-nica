@@ -380,6 +380,8 @@ try {
     await consultar(`update cotizaciones set estado = 'aprobada', aprobada_en = now(), aprobada_por = '${ger.id}' where id = ${cotB}`);
     await pg.goto(`${BASE}/ventas/cotizaciones/${cotB}`, { waitUntil: 'networkidle' });
     await pg.locator('button', { hasText: 'Convertir en pedido' }).click();
+    //  082: ahora pide el N.º de proforma (viene propuesto); se acepta el propuesto.
+    await pg.locator('[data-accion="confirmar-conversion"]').click();
     await pg.waitForURL(/\/ventas\/pedidos\/\d+/, { timeout: 60000 });
     const pedidoB = Number(pg.url().match(/pedidos\/(\d+)/)[1]);
     pedidosExtra.push(pedidoB);

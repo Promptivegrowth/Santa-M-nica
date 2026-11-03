@@ -219,6 +219,8 @@ try {
   {
     await p.goto(`${BASE}/ventas/cotizaciones/${cotId}`, { waitUntil: 'networkidle' });
     await p.locator('button', { hasText: 'Convertir en pedido' }).click();
+    //  082: ahora pide el N.º de proforma (viene propuesto); se acepta el propuesto.
+    await p.locator('[data-accion="confirmar-conversion"]').click();
     await p.waitForURL(/\/ventas\/pedidos\/\d+/, { timeout: 30000 });
     pedidoId = Number(p.url().match(/pedidos\/(\d+)/)[1]);
     const [pd] = await consultar(`select observaciones, fecha_comprometida::text fc, fecha_tentativa_despacho::text ft, forma_pago,

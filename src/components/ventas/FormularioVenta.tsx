@@ -43,6 +43,8 @@ import { Icono } from '@/components/estructura/Icono';
 import { num, dinero, tm } from '@/lib/formato';
 import { revisarTipoCambio, TIPO_CAMBIO_MINIMO, TIPO_CAMBIO_MAXIMO } from '@/lib/moneda';
 import { accionSegura } from '@/lib/accionSegura';
+import { problemaNumeroProforma } from '@/lib/numeroProforma';
+import { CampoNumeroProforma } from './CampoNumeroProforma';
 import type { ContactoDocumento } from '@/lib/contactoDocumento';
 import type { TipoCambioSunat } from '@/lib/tipoCambioSunat';
 import {
@@ -200,6 +202,7 @@ export function FormularioVenta({
   edicion,
   plazos = PLAZO_DIAS_DEFECTO,
   clienteInicial,
+  numeroPropuesto = null,
 }: {
   modo: Modo;
   clientes: (Opcion & { pais: string; moneda: string; bloqueado: boolean; forma_pago?: FormaPago | null; adelanto_pct?: number | null })[];
@@ -220,6 +223,8 @@ export function FormularioVenta({
   plazos?: Record<Prioridad, number>;
   /** Cliente ya elegido al llegar desde su ficha («Cotizar» / «Nuevo pedido» con ?cliente=). */
   clienteInicial?: number;
+  /** Pedido directo (082): el próximo número de proforma, que se puede cambiar. */
+  numeroPropuesto?: string | null;
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
@@ -336,6 +341,10 @@ export function FormularioVenta({
   );
 
   /* ---- Solo pedido ---- */
+  //  082 · El número de proforma viene propuesto y se puede cambiar por el real.
+  const [numeroProforma, setNumeroProforma] = useState(numeroPropuesto ?? '');
+  //  Lo que dijo el servidor del número (repetido…), junto al campo; se borra al escribir.
+  const [errorNumero, setErrorNumero] = useState<string | null>(null);
   const [ocCliente, setOcCliente] = useState('');
   const [prioridad, setPrioridad] =
     useState<'baja' | 'normal' | 'alta' | 'urgente'>(edicion?.prioridad ?? 'normal');
@@ -617,6 +626,10 @@ export function FormularioVenta({
       setMensaje({ ok: false, texto: `La cantidad de la línea ${sinCantidad + 1} debe ser mayor que cero.` });
       return;
     }
+    if (esPedido && problemaNumeroProforma(numeroProforma)) {
+      setMensaje({ ok: false, texto: problemaNumeroProforma(numeroProforma)! });
+      return;
+    }
     if (esPedido && fechaComprometida < fechaSolicitada) {
       setMensaje({ ok: false, texto: 'La fecha comprometida no puede ser anterior a la de solicitud.' });
       return;
@@ -683,6 +696,8 @@ export function FormularioVenta({
             tipo_cambio_fecha: condiciones.tipo_cambio_fecha,
             tipo_cambio_fuente: condiciones.tipo_cambio_fuente,
             tipo_cambio_clase: condiciones.tipo_cambio_clase,
+            numero_proforma: numeroProforma,
+            numero_propuesto: numeroPropuesto,
           })
         : await crearCotizacion({
             cliente_id: Number(clienteId),
@@ -713,6 +728,7 @@ export function FormularioVenta({
         }, 900);
       } else {
         setMensaje({ ok: false, texto: r.mensaje });
+        if ('campo' in r && r.campo === 'numero_proforma') setErrorNumero(r.mensaje);
       }
     });
   }
@@ -769,6 +785,12 @@ export function FormularioVenta({
           </span>
         </div>
         <div className="form-rejilla">
+          {/* 082 · Primero el número: es como Santa Mónica nombra la proforma. */}
+          {esPedido && (
+            <CampoNumeroProforma valor={numeroProforma} onChange={(v) => { setNumeroProforma(v); setErrorNumero(null); }}
+                                 propuesto={numeroPropuesto} disabled={guardando} error={errorNumero} />
+          )}
+
           <label className="form-campo form-ancho">
             <span className="etiqueta">Cliente *</span>
             <select

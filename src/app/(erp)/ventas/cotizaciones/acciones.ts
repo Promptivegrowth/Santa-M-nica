@@ -26,6 +26,9 @@ import {
 } from '@/lib/permisosVentas';
 import { obtenerTipoCambioSunat, type TipoCambioSunat } from '@/lib/tipoCambioSunat';
 import {
+  elegirNumeroProforma, insertarConNumero, mensajeDelNumero, avisoNumeroTomado,
+} from '@/lib/numeroProformaServidor';
+import {
   plazoReferencia, diasDePlazos, textoCondicionPago, type FormaPago, type Prioridad,
 } from '@/lib/condicionesVenta';
 
@@ -634,7 +637,17 @@ export async function cambiarEstadoCotizacion(
    Esta es la función que materializa el principio de reuso: el pedido nace de
    la cotización sin que nadie vuelva a escribir un solo dato.
    ========================================================================== */
-export async function convertirEnPedido(cotizacionId: number): Promise<Resultado> {
+export async function convertirEnPedido(
+  cotizacionId: number,
+  /**
+   * El número de proforma (082): el que propuso el sistema o el que escribió
+   * la persona. `numeroPropuesto` es el que vio en pantalla: si no lo tocó y
+   * otro pedido lo toma mientras tanto, se usa el siguiente libre. Sin número
+   * (llamadas antiguas), el sistema pone el propuesto.
+   */
+  numeroProforma?: string,
+  numeroPropuesto?: string | null,
+): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (!usuario) return { ok: false, mensaje: 'Su sesión expiró.' };
 
@@ -692,13 +705,11 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
     };
   }
 
-  /* ---- Número de proforma ---- */
-  const anio = String(new Date().getFullYear()).slice(2);
-  const correlativo = await siguienteNumero(supabase, 'SM');
-  if (correlativo === null) {
-    return { ok: false, mensaje: 'No se pudo reservar el número de proforma. Vuelva a intentarlo.' };
-  }
-  const numeroProforma = `SM${anio}-${correlativo}`;
+  /* ---- Número de proforma (082) ----
+     Antes lo ponía siempre el correlativo; ahora viene propuesto y se puede
+     cambiar por el número real de Santa Mónica. */
+  const eleccion = await elegirNumeroProforma(supabase, numeroProforma, numeroPropuesto);
+  if (!eleccion.ok) return { ok: false, mensaje: eleccion.mensaje, campo: eleccion.campo };
 
   /*
    * En Lima, no en UTC. Un pedido creado de noche nacía con fecha de mañana
@@ -720,10 +731,8 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
   const comprometida = plazo.fecha < hoy ? desplazarDias(hoy, 7) : plazo.fecha;
 
   /* ---- El pedido HEREDA todo de la cotización ---- */
-  const { data: pedido, error: errPed } = await supabase
-    .from('pedidos')
-    .insert({
-      numero_proforma: numeroProforma,
+  const { data: pedido, error: errPed, numero: numeroFinal } = await insertarConNumero(supabase, eleccion, (numero_proforma) => ({
+      numero_proforma,
       cotizacion_id: cotizacionId,
       cliente_id: cot.cliente_id,
       vendedor_id: cot.vendedor_id,
@@ -775,12 +784,15 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
        */
       observaciones: (cot.observaciones as string | null)?.trim() || null,
       creado_por: usuario.id,
-    })
-    .select('id, numero_proforma')
-    .single();
+    }));
 
   if (errPed || !pedido) {
-    return { ok: false, mensaje: `No se pudo crear el pedido: ${errPed?.message}` };
+    const delNumero = mensajeDelNumero(errPed);
+    return {
+      ok: false,
+      campo: delNumero ? 'numero_proforma' : undefined,
+      mensaje: delNumero ?? `No se pudo crear el pedido: ${errPed?.message}`,
+    };
   }
 
   /* ---- Las líneas también se heredan ---- */
@@ -832,7 +844,8 @@ export async function convertirEnPedido(cotizacionId: number): Promise<Resultado
     ok: true,
     id: pedido.id as number,
     numero: pedido.numero_proforma as string,
-    mensaje: `Pedido ${pedido.numero_proforma} creado a partir de la cotización ${cot.numero}.`,
+    mensaje: `Pedido ${pedido.numero_proforma} creado a partir de la cotización ${cot.numero}.` +
+      avisoNumeroTomado(eleccion.automatico, numeroPropuesto, numeroFinal),
   };
 }
 
