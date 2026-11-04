@@ -95,6 +95,8 @@ export type DatosCotizacion = {
   adelanto_pct?: number;
   adelanto_abonado?: number | null;
   adelanto_abonado_en?: string | null;
+  /** 083 · Si incluye certificado de captura (costo adicional). Sin el campo, no se toca. */
+  certificado_captura?: boolean | null;
 };
 
 const FORMAS_VALIDAS: FormaPago[] = ['contado', 'adelanto_saldo', 'credito', 'carta_credito', 'cad'];
@@ -135,6 +137,8 @@ function revisarCondiciones(d: DatosCotizacion):
       adelanto_pct: pct,
       adelanto_abonado: abonado,
       adelanto_abonado_en: abonado === null ? null : (d.adelanto_abonado_en || hoyEnLima()),
+      //  083 · El certificado de captura, solo si la pantalla lo decidió.
+      ...(typeof d.certificado_captura === 'boolean' ? { certificado_captura: d.certificado_captura } : {}),
     },
   };
 }
@@ -1018,7 +1022,7 @@ export async function actualizarCotizacion(
   const [{ data: cot }, { data: lineasAntes }] = await Promise.all([
     supabase
       .from('cotizaciones')
-      .select('numero, estado, aprobada_en, cliente_id, destino_id, moneda, incoterm, forma_pago, adelanto_pct')
+      .select('numero, estado, aprobada_en, cliente_id, destino_id, moneda, incoterm, forma_pago, adelanto_pct, vendedor_id, observaciones, modificacion_autorizada_en')
       .eq('id', id).maybeSingle(),
     supabase
       .from('cotizacion_lineas')
@@ -1029,13 +1033,20 @@ export async function actualizarCotizacion(
 
   const { data: pedido } = await supabase
     .from('pedidos').select('numero_proforma').eq('cotizacion_id', id).maybeSingle();
-  if (pedido) {
+  /*
+   * 085 · Una cotización ACEPTADA (ya generó su pedido) solo se modifica con
+   * la autorización abierta de quien aprueba cotizaciones o de Gerencia. El
+   * guardado va por otro camino: modificar_cotizacion_aceptada, que cambia
+   * la cotización y su pedido en una sola operación.
+   */
+  const aceptadaAutorizada = cot.estado === 'aceptada' && !!cot.modificacion_autorizada_en && !!pedido;
+  if (pedido && !aceptadaAutorizada) {
     return {
       ok: false,
-      mensaje: `No se puede modificar: ya generó el pedido ${pedido.numero_proforma}. Los precios de una venta cerrada no se cambian.`,
+      mensaje: `No se puede modificar: ya generó el pedido ${pedido.numero_proforma}. Para cambiarla hace falta que quien aprueba cotizaciones (o Gerencia) use «Autorizar modificación» en la ficha.`,
     };
   }
-  if (!EDITABLES.includes(cot.estado as string)) {
+  if (!EDITABLES.includes(cot.estado as string) && !aceptadaAutorizada) {
     return {
       ok: false,
       mensaje: `Una cotización ${cot.estado} no se puede modificar. Cree una nueva si necesita otra oferta.`,
@@ -1079,6 +1090,11 @@ export async function actualizarCotizacion(
   const cambios = cambiosComerciales(
     cot as Record<string, unknown>, previas, datos, Number(condiciones.columnas.adelanto_pct ?? 0)
   );
+
+  /* ---- 085 · Cotización aceptada con autorización: cotización y pedido, juntos ---- */
+  if (aceptadaAutorizada) {
+    return guardarAceptadaAutorizada(supabase, id, String(cot.numero), cot as Record<string, unknown>, datos, condiciones.columnas, cambios, descuentos.autorizadoPor);
+  }
   const teniaFirma = Boolean(cot.aprobada_en) || ['aprobada', 'enviada'].includes(cot.estado as string);
   const anulaAprobacion = cambios.length > 0 && teniaFirma && (await aprobacionObligatoria());
 
@@ -1169,6 +1185,153 @@ export async function actualizarCotizacion(
       ? `Cotización ${cot.numero} actualizada. Como cambió ${enumerar(cambios)}, la aprobación se anuló y volvió a borrador: hay que aprobarla otra vez antes de enviarla.`
       : `Cotización ${cot.numero} actualizada.`,
   };
+}
+
+/* ==========================================================================
+   MODIFICAR UNA COTIZACIÓN YA ACEPTADA, CON AUTORIZACIÓN (085)
+   --------------------------------------------------------------------------
+   «Observaciones ERP 4», punto 13 (Oliver): «modificar cotización después
+   de aceptada bajo una autorización».
+
+   QUIÉN AUTORIZA
+   Las personas con la facultad «Aprueba cotizaciones» (Configuración ›
+   Usuarios y roles) y Gerencia: los mismos que firman el precio. Escriben
+   el motivo, que queda en el historial de la cotización y del pedido.
+
+   QUIÉN MODIFICA
+   Quien cotiza (Gerencia, Operaciones, Comercial), con el formulario de
+   siempre. Una autorización sirve para UNA modificación: al guardar se
+   consume. Si no se usa, quien autoriza puede retirarla.
+
+   QUÉ PASA CON EL PEDIDO
+   El pedido que nació de la cotización recibe los cambios en la misma
+   operación (lo hace la base: modificar_cotizacion_aceptada): cabecera y
+   líneas, casadas por producto. Las reservas del producto que sigue se
+   conservan; quitar un producto con stock apartado, embarque o packing, o
+   bajar su cantidad por debajo de lo apartado, se rechaza diciendo qué hay
+   que soltar antes. No se puede si el pedido ya tiene comprobante, salió o
+   está cancelado. El contrato es una copia firmada: hay que generarlo otra
+   vez (se avisa). El cliente no se cambia: el pedido ya es suyo.
+   ========================================================================== */
+
+/** Lo que cambió que NO es comercial, para que el historial lo cuente también. */
+function otrosCambios(antes: Record<string, unknown>, d: DatosCotizacion): string[] {
+  const xs: string[] = [];
+  if ((antes.vendedor_id == null ? null : Number(antes.vendedor_id)) !== (d.vendedor_id == null ? null : Number(d.vendedor_id))) xs.push('el vendedor');
+  if (String(antes.observaciones ?? '').trim() !== String(d.observaciones ?? '').trim()) xs.push('las observaciones');
+  return xs;
+}
+
+async function guardarAceptadaAutorizada(
+  supabase: Awaited<ReturnType<typeof crearClienteServidor>>,
+  id: number,
+  numero: string,
+  antes: Record<string, unknown>,
+  datos: DatosCotizacion,
+  columnas: Record<string, unknown>,
+  cambios: string[],
+  autorizadoPor: (string | null)[],
+): Promise<Resultado> {
+  const todos = [...cambios, ...otrosCambios(antes, datos)];
+  //  El certificado de captura (083, otra área) viaja si el formulario lo manda.
+  const extra = datos as DatosCotizacion & { certificado_captura?: boolean | null };
+  const cabecera = {
+    cliente_id: datos.cliente_id,
+    vendedor_id: datos.vendedor_id,
+    destino_id: datos.destino_id,
+    lista_id: datos.lista_id,
+    moneda: datos.moneda,
+    tipo_cambio: datos.tipo_cambio,
+    prioridad: datos.prioridad ?? 'normal',
+    incoterm: datos.incoterm,
+    validez_dias: datos.validez_dias,
+    observaciones: datos.observaciones,
+    ...columnasContacto(datos.contacto),
+    ...columnas,
+    //  El texto de pago que imprime la proforma, como al convertir.
+    condicion_pago: textoCondicionPago((columnas.forma_pago as FormaPago | null) ?? null, Number(columnas.adelanto_pct ?? 0), 0),
+    ...(extra.certificado_captura !== undefined ? { certificado_captura: extra.certificado_captura } : {}),
+  };
+  const lineas = datos.lineas.map((l, i) => ({
+    sku_presentacion_id: l.sku_presentacion_id,
+    cantidad_tm: l.cantidad_tm,
+    precio_lista_tm: l.precio_lista_tm,
+    precio_tm: l.precio_tm,
+    descuento_pct: l.descuento_pct,
+    descuento_autorizado_por: autorizadoPor[i] ?? null,
+  }));
+
+  const { data, error } = await supabase.rpc('modificar_cotizacion_aceptada', {
+    p_cotizacion_id: id, p_cab: cabecera, p_lineas: lineas, p_cambios: todos,
+  });
+  if (error) {
+    const m = String(error.message ?? '');
+    return {
+      ok: false,
+      mensaje: m && !/violates|constraint|column|relation|syntax|function|invalid input/i.test(m)
+        ? m
+        : `No se pudo guardar la modificación de ${numero}. Revise los datos y vuelva a intentarlo; si se repite, avise a Sistemas.`,
+    };
+  }
+  await guardarCuentas(supabase, 'cotizacion_cuentas', 'cotizacion_id', id, datos.cuentas);
+  const r = (data ?? {}) as { pedido_id?: number; numero_proforma?: string; contratos?: number };
+  //  Las cuentas que imprime la proforma también siguen a la cotización.
+  if (r.pedido_id) await guardarCuentas(supabase, 'pedido_cuentas', 'pedido_id', Number(r.pedido_id), datos.cuentas);
+
+  revalidatePath('/ventas/cotizaciones');
+  revalidatePath(`/ventas/cotizaciones/${id}`);
+  revalidatePath('/ventas/pedidos');
+  if (r.pedido_id) {
+    revalidatePath(`/ventas/pedidos/${r.pedido_id}`);
+    revalidatePath(`/ventas/pedidos/${r.pedido_id}/contrato`);
+  }
+  revalidatePath('/ventas/control');
+  return {
+    ok: true, id, numero,
+    mensaje:
+      `${numero} modificada${todos.length ? ` (${enumerar(todos)})` : ''}. Los cambios pasaron al pedido ${r.numero_proforma ?? ''}: ` +
+      'vuelva a descargar la proforma antes de enviarla.' +
+      (Number(r.contratos ?? 0) > 0 ? ' Tiene contrato generado: genérelo otra vez desde «Contrato» para que lleve lo nuevo.' : ''),
+  };
+}
+
+/** Quien aprueba cotizaciones (facultad personal) o Gerencia. */
+const autorizaModificar = (u: { rol: string; aprueba_cotizaciones?: boolean | null }) =>
+  u.aprueba_cotizaciones === true || u.rol === 'gerencia';
+
+/** «Autorizar modificación»: abre la cotización aceptada para UNA modificación. */
+export async function autorizarModificacion(id: number, motivo: string): Promise<Resultado> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (!autorizaModificar(usuario)) {
+    return {
+      ok: false,
+      mensaje: `${usuario.nombre} (${nombreRol(usuario.rol)}) no autoriza modificaciones: lo hacen las personas con la facultad «Aprueba cotizaciones» (Configuración › Usuarios y roles) y Gerencia.`,
+    };
+  }
+  const limpio = motivo.trim();
+  if (limpio.length < 5) {
+    return { ok: false, mensaje: 'Explique por qué se modifica (al menos 5 caracteres): queda en el historial.', campo: 'motivo' };
+  }
+  const supabase = await crearClienteServidor();
+  const { data, error } = await supabase.rpc('autorizar_modificacion_cotizacion', { p_cotizacion_id: id, p_motivo: limpio });
+  if (error) return { ok: false, mensaje: String(error.message ?? 'No se pudo autorizar.') };
+  revalidatePath(`/ventas/cotizaciones/${id}`);
+  return { ok: true, id, numero: '', mensaje: String(data) };
+}
+
+/** «Retirar autorización»: si al final no se modifica. */
+export async function retirarAutorizacion(id: number): Promise<Resultado> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (!autorizaModificar(usuario)) {
+    return { ok: false, mensaje: 'Retirar la autorización lo hacen quienes aprueban cotizaciones o Gerencia.' };
+  }
+  const supabase = await crearClienteServidor();
+  const { data, error } = await supabase.rpc('retirar_autorizacion_modificacion', { p_cotizacion_id: id });
+  if (error) return { ok: false, mensaje: String(error.message ?? 'No se pudo retirar la autorización.') };
+  revalidatePath(`/ventas/cotizaciones/${id}`);
+  return { ok: true, id, numero: '', mensaje: String(data) };
 }
 
 /* ==========================================================================

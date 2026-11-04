@@ -28,6 +28,11 @@ import { CabeceraPagina, RejillaKpi, Kpi, Panel } from '@/components/ui/Pagina';
 import { CalendarioEmbarques, type EmbarqueCalendario } from './Calendario';
 import { num, tm } from '@/lib/formato';
 import { uno, campo } from '@/lib/relaciones';
+import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
+import { semanaIso } from '@/lib/numeroPacking';
+import { cargarProgramacion, rangoDeParametros } from '@/lib/programacionDatos';
+import { TablaProgramacion } from '../TablaProgramacion';
+import '../programacion.css';
 
 export const metadata: Metadata = { title: 'Planificador' };
 export const dynamic = 'force-dynamic';
@@ -76,6 +81,51 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
   const { anio, mes } = mesPedido((q.mes as string | undefined) ?? diaEmbarque?.slice(0, 7), hoy);
 
   /*
+   * LA LISTA DEL MES («Observaciones ERP 4», puntos 10 y 11). Oliver: «la
+   * vista que más vamos a usar es la lista», con filtro en cada columna
+   * (almacén, operador logístico, naviera…). Es la misma tabla que la
+   * pantalla Embarques, acotada al mes que se mira aquí, y se descarga en
+   * Excel o PDF con esos mismos filtros.
+   */
+  const mesTexto = `${anio}-${String(mes + 1).padStart(2, '0')}`;
+  const vistaLista = q.vista === 'lista';
+  const pestanas = (
+    <nav className="prog-vistas" aria-label="Cómo ver el planificador">
+      <Link href={`/logistica/planificador?mes=${mesTexto}`} aria-current={vistaLista ? undefined : 'page'} data-vista="calendario">Calendario</Link>
+      <Link href={`/logistica/planificador?vista=lista&mes=${mesTexto}`} aria-current={vistaLista ? 'page' : undefined} data-vista="lista">Lista</Link>
+    </nav>
+  );
+  if (vistaLista) {
+    const rango = rangoDeParametros({ vista: 'lista', mes: mesTexto }, hoy);
+    const filas = await cargarProgramacion(supabase, { desde: rango.desde, hasta: rango.hasta });
+    const vecino = (d: number) => {
+      const f = new Date(Date.UTC(anio, mes + d, 1));
+      return `${f.getUTCFullYear()}-${String(f.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
+    const NOMBRES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    return (
+      <>
+        <CabeceraPagina
+          titulo="Planificador de embarques"
+          descripcion="La programación del mes en lista, como su Excel. Filtre en cada columna (almacén, operador logístico, naviera, estado…) y descargue lo que ve."
+        >
+          {pestanas}
+          <Link href="/logistica/embarques" className="btn btn-secundario">Ver todas las semanas</Link>
+        </CabeceraPagina>
+        <div className="atajos-fecha" style={{ padding: '0 0 .8rem', display: 'flex', gap: '.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <Link href={`/logistica/planificador?vista=lista&mes=${vecino(-1)}`} className="btn btn-sutil" scroll={false}>← {NOMBRES[(mes + 11) % 12]}</Link>
+          <strong>{NOMBRES[mes]} {anio}</strong>
+          <Link href={`/logistica/planificador?vista=lista&mes=${vecino(1)}`} className="btn btn-sutil" scroll={false}>{NOMBRES[(mes + 1) % 12]} →</Link>
+        </div>
+        <Panel titulo={`Programación de ${NOMBRES[mes].toLowerCase()} de ${anio}`}>
+          <TablaProgramacion filas={filas} descripcionRango={rango.descripcion}
+                             conFicha={rolPuedeVerRuta((usuario?.rol ?? 'consulta') as Rol, '/logistica/embarques')} />
+        </Panel>
+      </>
+    );
+  }
+
+  /*
    * El rango que se pide a la base de datos incluye los días de relleno que
    * el calendario pinta de los meses vecinos: si no, la primera semana
    * aparecería vacía aunque el lunes 31 de agosto hubiera dos salidas.
@@ -93,7 +143,7 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
       // deduce los tipos de la consulta leyendo ese texto en tiempo de
       // compilación, y una suma de cadenas le impide hacerlo.
       .select(
-        'id, numero, fecha_programada, estado, booking, naviera, observaciones, almacenes(nombre), destinos(puerto, pais), packing_lists(contenedor, packing_lineas(bultos, peso_neto_kg)), embarque_pedidos(pedidos(id, numero_proforma, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, clientes(razon_social), pedido_lineas(cantidad_tm, sku_presentaciones(skus(codigo, corte)))))'
+        'id, numero, fecha_programada, estado, booking, naviera, observaciones, semana_despacho, fecha_zarpe, operador_logistico, numero_packing, almacenes(nombre), destinos(puerto, pais), packing_lists(codigo, contenedor, estado, packing_lineas(bultos, peso_neto_kg)), embarque_pedidos(pedidos(id, numero_proforma, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, clientes(razon_social), pedido_lineas(cantidad_tm, sku_presentaciones(skus(codigo, corte)))))'
       )
       .gte('fecha_programada', desde)
       .lte('fecha_programada', hasta)
@@ -231,6 +281,10 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
       contenedor: (packings[0]?.contenedor as string) ?? null,
       booking: (e.booking as string) ?? null,
       naviera: (e.naviera as string) ?? null,
+      semana: e.semana_despacho == null ? semanaIso(String(e.fecha_programada)) : Number(e.semana_despacho),
+      zarpe: (e.fecha_zarpe as string) ?? null,
+      operador: (e.operador_logistico as string) ?? null,
+      pl: [...new Set([e.numero_packing as string | null, ...packings.filter((p) => p.estado !== 'anulado').map((p) => p.codigo as string)].filter(Boolean))].join(', ') || null,
       tm: hayPacking ? kg / 1000 : tmComprometidas,
       bultos: hayPacking ? bultos : 0,
       cargaReal: hayPacking,
@@ -278,6 +332,7 @@ export default async function PaginaPlanificador(props: PageProps<'/logistica/pl
         titulo="Planificador de embarques"
         descripcion={`Agenda de salidas del mes. El tope de bodegas despachando a la vez está en ${topeSimultaneo}; despachar en domingo tiene un recargo de ${recargoDomingo} %. Pulse un día para ver su detalle.`}
       >
+        {pestanas}
         <Link href="/logistica/embarques" className="btn btn-secundario">Ver lista completa</Link>
       </CabeceraPagina>
 

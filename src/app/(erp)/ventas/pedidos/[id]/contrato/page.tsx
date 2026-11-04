@@ -21,6 +21,8 @@ import { fechaHora } from '@/lib/formato';
 import { puedeVender, type Rol } from '@/lib/navegacion';
 import { uno } from '@/lib/relaciones';
 import { EditorContrato } from './EditorContrato';
+import { CertificadoCaptura } from './CertificadoCaptura';
+import { llevaCertificadoCaptura } from '@/lib/productoDocumento';
 import { puedeDescargarDocumentos, motivoSinDescarga } from '../../../DocumentosApagados';
 import { listaDeRoles } from '@/lib/permisosVentas';
 
@@ -34,7 +36,7 @@ export default async function PaginaContrato(props: PageProps<'/ventas/pedidos/[
   const usuario = await obtenerUsuarioActual();
 
   const { data: ped } = await supabase
-    .from('pedidos').select('id, numero_proforma, cotizacion_id, clientes(razon_social), cotizaciones(numero)')
+    .from('pedidos').select('id, numero_proforma, cotizacion_id, certificado_captura, clientes(razon_social), cotizaciones(numero, certificado_captura), destinos(pais)')
     .eq('id', pedidoId).maybeSingle();
   if (!ped) notFound();
 
@@ -129,12 +131,38 @@ export default async function PaginaContrato(props: PageProps<'/ventas/pedidos/[
         )}
       </Panel>
 
+      {/*
+        083 · Lo que la proforma y el contrato toman del pedido y que se decide
+        aquí: el certificado de captura (punto 05) y quién firma (quien aprobó
+        la cotización; si no subió su firma, Gerencia).
+      */}
+      <Panel titulo="Documentos y firma" className="mb-espacio">
+        <div style={{ padding: '.8rem 1rem 1rem', display: 'grid', gap: '.8rem' }}>
+          <CertificadoCaptura
+            pedidoId={pedidoId}
+            lleva={llevaCertificadoCaptura(ped.certificado_captura as boolean | null, String(uno<Record<string, unknown>>(ped.destinos)?.pais ?? ''))}
+            decidido={typeof ped.certificado_captura === 'boolean'}
+            origen={typeof cot?.certificado_captura === 'boolean' && cot.certificado_captura === ped.certificado_captura
+              ? `Se negoció en la cotización ${String(cot.numero)}`
+              : 'Se decidió en este pedido'}
+            puede={puede}
+            motivoNo={`Lo cambian ${listaDeRoles(['gerencia', 'operaciones', 'comercial', 'comex'])}.`}
+          />
+          {armado.ok && armado.datos.firmante?.motivo && (
+            <p className="pie-explicativo" style={{ margin: 0 }} data-firmante={armado.datos.firmante.usuarioId ? 'aprobador' : 'gerencia'}>
+              <b>Firma:</b> {armado.datos.firmante.motivo} Cada usuario sube la suya en <Link href="/cuenta/firma">Mi firma</Link>.
+            </p>
+          )}
+        </div>
+      </Panel>
+
       {!armado.ok ? (
         <Vacio titulo="No se puede armar el contrato" mensaje={armado.mensaje} />
       ) : puede ? (
         <Panel titulo={armado.revision === 0 ? 'Revisar y generar' : 'Generar una revisión'} className="mb-espacio">
           <div style={{ padding: '.8rem 1rem 1rem' }}>
-            <EditorContrato pedidoId={pedidoId} inicial={armado.datos} siguiente={armado.datos.numero} />
+            {/* La clave hace que el editor tome el documento F nuevo al cambiar el certificado. */}
+            <EditorContrato key={`f-${armado.datos.documentoF.en}`} pedidoId={pedidoId} inicial={armado.datos} siguiente={armado.datos.numero} />
           </div>
         </Panel>
       ) : null}

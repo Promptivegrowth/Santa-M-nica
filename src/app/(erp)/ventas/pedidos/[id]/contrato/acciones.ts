@@ -16,6 +16,7 @@ import { puedeVender, type Rol } from '@/lib/navegacion';
 import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 import { numeroContrato, fechaBilingue, revisarDatosContrato, type DatosContrato } from '@/lib/contratoVenta';
 import { hoyEnLima } from '@/lib/fechas';
+import { resolverFirmante } from '@/lib/firmanteDocumento';
 
 type Resultado = { ok: true; id: number; numero: string; mensaje: string } | { ok: false; mensaje: string };
 
@@ -30,6 +31,8 @@ function limpiar(d: DatosContrato): DatosContrato {
     cantidad: t(d.cantidad, 200), precio: t(d.precio, 800), empaque: t(d.empaque, 300),
     periodo: { en: t(d.periodo?.en, 100), es: t(d.periodo?.es, 100) },
     puertoCarga: t(d.puertoCarga, 100), puertoDescarga: t(d.puertoDescarga, 100),
+    //  083 · El puerto de descarga en castellano («VIGO, ESPAÑA»); vacío = el mismo del inglés.
+    puertoDescargaEs: t(d.puertoDescargaEs ?? d.puertoDescarga, 100),
     pago: { en: t(d.pago?.en, 600), es: t(d.pago?.es, 600) },
     banco: {
       nombre: t(d.banco?.nombre, 120), direccion: t(d.banco?.direccion, 300), pais: t(d.banco?.pais, 80),
@@ -51,7 +54,7 @@ export async function generarContrato(pedidoId: number, recibidos: DatosContrato
 
   const supabase = await crearClienteServidor();
   const { data: ped } = await supabase
-    .from('pedidos').select('numero_proforma, cotizacion_id, ciclo, cotizaciones(aprobada_en)').eq('id', pedidoId).maybeSingle();
+    .from('pedidos').select('numero_proforma, cotizacion_id, creado_por, ciclo, cotizaciones(aprobada_en)').eq('id', pedidoId).maybeSingle();
   if (!ped) return { ok: false, mensaje: 'Ese pedido no existe.' };
   if (ped.ciclo === 'cancelado') return { ok: false, mensaje: `El pedido ${ped.numero_proforma} está cancelado.` };
 
@@ -65,11 +68,21 @@ export async function generarContrato(pedidoId: number, recibidos: DatosContrato
   datos.proforma = String(ped.numero_proforma);
   datos.numero = numeroContrato(datos.proforma, revision);
   datos.fecha = fechaBilingue(hoyEnLima());
-  //  Quién firma: de Configuración, nunca de la pantalla.
-  const { data: params } = await supabase.from('parametros').select('clave, valor')
-    .in('clave', ['firmante_nombre', 'firmante_cargo', 'empresa_ruc']);
+  /*
+   * Quién firma: lo decide el servidor, nunca la pantalla (083). Quien aprobó
+   * la cotización si subió su firma («Mi firma»); si no, Gerencia de
+   * Configuración. Se guarda en el contrato quién es; la imagen se busca al
+   * descargar.
+   */
+  const [{ data: params }, firmante] = await Promise.all([
+    supabase.from('parametros').select('clave, valor').in('clave', ['empresa_ruc']),
+    resolverFirmante(supabase, ped),
+  ]);
   const pm = new Map((params ?? []).map((x) => [String(x.clave), String(x.valor ?? '')]));
-  datos.firmante = { nombre: pm.get('firmante_nombre') ?? '', cargo: pm.get('firmante_cargo') ?? '', ruc: pm.get('empresa_ruc') ?? '' };
+  datos.firmante = {
+    nombre: firmante.nombre, cargo: firmante.cargo, ruc: pm.get('empresa_ruc') ?? '',
+    usuarioId: firmante.usuarioId, motivo: firmante.motivo,
+  };
 
   const { data, error } = await supabase
     .from('contratos')
@@ -97,4 +110,51 @@ export async function generarContrato(pedidoId: number, recibidos: DatosContrato
   revalidatePath(`/ventas/pedidos/${pedidoId}/contrato`);
   if (ped.cotizacion_id) revalidatePath(`/ventas/cotizaciones/${ped.cotizacion_id}`);
   return { ok: true, id: Number(data.id), numero: datos.numero, mensaje: `Contrato ${datos.numero} generado. Ya se puede descargar en PDF y en Word.` };
+}
+
+/**
+ * 083 · ¿La proforma y el contrato de este pedido llevan certificado de
+ * captura? Nace con lo que se negoció en la cotización; aquí se corrige si el
+ * cliente cambió de idea. Lo hacen los mismos que generan el contrato.
+ *
+ * El contrato ya generado no cambia (es la copia firmada): hay que generar
+ * una revisión, y la pantalla lo dice.
+ */
+export async function cambiarCertificadoCaptura(
+  pedidoId: number, lleva: boolean,
+): Promise<{ ok: boolean; mensaje: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (!puedeVender(usuario.rol as Rol)) {
+    return {
+      ok: false,
+      mensaje: `${nombreRol(usuario.rol)} no cambia los documentos de la proforma: lo hacen ${listaDeRoles(['gerencia', 'operaciones', 'comercial', 'comex'])}.`,
+    };
+  }
+  const supabase = await crearClienteServidor();
+  const { data: ped } = await supabase.from('pedidos').select('numero_proforma, ciclo').eq('id', pedidoId).maybeSingle();
+  if (!ped) return { ok: false, mensaje: 'Ese pedido no existe.' };
+  if (ped.ciclo === 'cancelado') return { ok: false, mensaje: `El pedido ${ped.numero_proforma} está cancelado.` };
+
+  const { data, error } = await supabase
+    .from('pedidos').update({ certificado_captura: !!lleva }).eq('id', pedidoId).select('id');
+  //  Una escritura que la base no deja pasar devuelve 0 filas sin error.
+  if (error || !data?.length) {
+    return { ok: false, mensaje: `No se pudo guardar: la base no dejó cambiar el pedido ${ped.numero_proforma}. Pídaselo a Gerencia u Operaciones.` };
+  }
+
+  await supabase.rpc('registrar_evento', {
+    p_entidad: 'pedidos', p_entidad_id: pedidoId, p_tipo: 'certificado_captura',
+    p_descripcion: `${usuario.nombre} ${lleva ? 'agregó' : 'quitó'} el certificado de captura de la proforma ${ped.numero_proforma}.`,
+    p_severidad: 'info',
+  }).then(() => undefined, () => undefined);
+
+  revalidatePath(`/ventas/pedidos/${pedidoId}`);
+  revalidatePath(`/ventas/pedidos/${pedidoId}/contrato`);
+  return {
+    ok: true,
+    mensaje: lleva
+      ? `La proforma ${ped.numero_proforma} ahora lleva el certificado de captura (CATCH CERTIFICATE).`
+      : `La proforma ${ped.numero_proforma} ya no lleva el certificado de captura.`,
+  };
 }

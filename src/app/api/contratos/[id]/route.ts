@@ -9,6 +9,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { generarPdfContrato } from '@/lib/pdfContrato';
 import { generarDocxContrato } from '@/lib/docxContrato';
 import type { DatosContrato } from '@/lib/contratoVenta';
+import { firmaDeContrato } from '@/lib/firmanteDocumento';
 import { PUEDEN_DESCARGAR_DOCUMENTOS } from '@/lib/permisosFinanzas';
 import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 import type { Rol } from '@/lib/navegacion';
@@ -35,22 +36,23 @@ export async function GET(req: NextRequest, ctx: RouteContext<'/api/contratos/[i
 
   const { id } = await ctx.params;
   const supabase = await crearClienteServidor();
-  const [{ data: c }, { data: firmas }] = await Promise.all([
-    supabase.from('contratos').select('numero, datos').eq('id', Number(id)).maybeSingle(),
-    supabase.from('parametros').select('clave, valor').in('clave', ['firmante_firma', 'firmante_firma_contrato']),
-  ]);
+  const { data: c } = await supabase.from('contratos').select('numero, datos').eq('id', Number(id)).maybeSingle();
   if (!c) return NextResponse.json({ error: 'Ese contrato no existe o no tiene acceso.' }, { status: 404 });
   if (!c.datos) return NextResponse.json({ error: 'Es un contrato de la plantilla provisional, sin datos del modelo.' }, { status: 410 });
 
-  const datos = c.datos as DatosContrato;
+  const datos = { ...(c.datos as DatosContrato) };
   /*
-   * La firma: el BLOQUE del contrato (trazo + nombre, cargo, empresa y RUC,
-   * como en el modelo) si está en Configuración; si no, la firma suelta de la
-   * proforma, y entonces el PDF escribe debajo nombre y cargo.
+   * La firma (083): la de quien aprobó la cotización, si el contrato se generó
+   * con la suya («Mi firma»), y el PDF escribe debajo su nombre y cargo. Si
+   * no —o si después la quitó—, la de Configuración: el BLOQUE del contrato
+   * (trazo + nombre, cargo, empresa y RUC, como en el modelo) o la firma
+   * suelta de la proforma, con el nombre y el cargo de Gerencia.
    */
-  const bloque = String(firmas?.find((f) => f.clave === 'firmante_firma_contrato')?.valor ?? '') || null;
-  const suelta = String(firmas?.find((f) => f.clave === 'firmante_firma')?.valor ?? '') || null;
-  const firma = { imagen: bloque ?? suelta, esBloque: !!bloque };
+  const elegida = await firmaDeContrato(supabase, datos.firmante?.usuarioId ?? null);
+  if (elegida.defecto && datos.firmante) {
+    datos.firmante = { ...datos.firmante, nombre: elegida.defecto.nombre, cargo: elegida.defecto.cargo };
+  }
+  const firma = { imagen: elegida.imagen, esBloque: elegida.esBloque };
   const word = req.nextUrl.searchParams.get('formato') === 'word';
   const archivo = word ? await generarDocxContrato(datos, firma) : await generarPdfContrato(datos, firma);
   const nombre = `Contrato_${String(c.numero).replace(/[^A-Za-z0-9-]+/g, '_').replace(/_+$/, '')}`;

@@ -22,13 +22,16 @@ export default async function PaginaNuevoEmbarque() {
   const supabase = await crearClienteServidor();
   const [
     { data: almacenes }, { data: destinos }, { data: transportistas },
-    { data: vehiculos }, { data: conductores },
+    { data: vehiculos }, { data: conductores }, { data: plPropuesto }, { data: operadores },
   ] = await Promise.all([
     supabase.from('almacenes').select('id, nombre').eq('activo', true).order('orden').order('nombre'),
     supabase.from('destinos').select('id, puerto, pais').eq('activo', true).order('puerto'),
     supabase.from('transportistas').select('id, razon_social').eq('activo', true).order('razon_social'),
     supabase.from('vehiculos').select('id, placa, soat_vence, revision_vence').eq('activo', true).order('placa'),
     supabase.from('conductores').select('id, nombre').eq('activo', true).order('nombre'),
+    //  «Observaciones ERP 4», 11 y 13: el PL propuesto y los operadores ya usados.
+    supabase.rpc('proponer_numero_packing'),
+    supabase.from('embarques').select('operador_logistico').not('operador_logistico', 'is', null).limit(500),
   ]);
 
   const primerAlmacen = Number(almacenes?.[0]?.id ?? 0);
@@ -60,6 +63,8 @@ export default async function PaginaNuevoEmbarque() {
           conductores={(conductores ?? []).map((c) => ({ id: c.id as number, nombre: c.nombre as string }))}
           pedidos={pedidos}
           hoy={hoy}
+          plPropuesto={(plPropuesto as string | null) ?? null}
+          sugerenciasOperador={[...new Set((operadores ?? []).map((o) => String(o.operador_logistico ?? '').trim()).filter(Boolean))].sort()}
           noPuedeTrasladar={rolPuede(usuario?.rol, PUEDEN_CONSOLIDAR)
             ? null
             : mensajeNoPuede(usuario?.rol, 'armar traslados de consolidación', PUEDEN_CONSOLIDAR) + ' Pídales que lo armen.'}

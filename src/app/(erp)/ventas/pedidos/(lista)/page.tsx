@@ -331,6 +331,14 @@ export default async function PaginaPedidos(props: PageProps<'/ventas/pedidos'>)
         )}
       </CabeceraPagina>
 
+      {/* 085 · Confirmación de «Eliminar pedido» desde la ficha (solo Gerencia). */}
+      {typeof q.eliminado === 'string' && (
+        <div className="ficha-aviso ficha-aviso-ok" role="status" data-aviso="pedido-eliminado">
+          <Icono nombre="papelera" tamano={17} />
+          <span>{q.eliminado} Queda en el historial con el motivo.</span>
+        </div>
+      )}
+
       {/* --- Vistas guardadas --- */}
       <nav className="pestanas no-imprimir" aria-label="Vistas de pedidos">
         {VISTAS.map((v) => (

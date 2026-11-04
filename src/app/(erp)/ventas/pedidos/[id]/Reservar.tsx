@@ -23,13 +23,19 @@
  *  sacar de la bodega desde la que sale el contenedor para no pagar un
  *  traslado, aunque no sea el más antiguo. El sistema ordena y avisa; decide
  *  la persona.
+ *
+ *  VARIOS A LA VEZ (085, «Observaciones ERP 4» punto 06)
+ *  Cada pallet tiene su casilla: se marcan varios —también equivalentes, con
+ *  la casilla «Incluir SKU equivalentes» encendida— y «Apartar los N
+ *  marcados» los aparta juntos, en el orden de la tabla, tomando de cada uno
+ *  lo que falte. Debajo se ve cuánto suman y cuánto cubren antes de apartar.
  * ============================================================================
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import {
-  crearReserva, lotesParaLinea, apartarTodoDisponible,
+  crearReserva, lotesParaLinea, apartarTodoDisponible, apartarSeleccionados,
   type LoteCandidato, type OpcionesDeLinea,
 } from '@/app/(erp)/almacenes/reservas/acciones';
 import { accionSegura } from '@/lib/accionSegura';
@@ -77,6 +83,17 @@ export function FilaCobertura({
    * apartar uno, queda registrado qué se pidió y qué se apartó.
    */
   const [equivalentes, setEquivalentes] = useState(false);
+  /* 085 · Los pallets marcados para apartar juntos (clave lote-almacén). */
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  const clave = (l: LoteCandidato) => `${l.lote_id}-${l.almacen_id}`;
+  function marcar(l: LoteCandidato, si: boolean) {
+    setMarcados((previo) => {
+      const nuevo = new Set(previo);
+      if (si) nuevo.add(clave(l)); else nuevo.delete(clave(l));
+      return nuevo;
+    });
+    setAviso(null);
+  }
 
   function abrir(conEquivalentes = equivalentes) {
     setAviso(null);
@@ -87,6 +104,33 @@ export function FilaCobertura({
       setOpciones(datos);
       setElegido(null);
       setKilos(0);
+      setMarcados(new Set());
+    });
+  }
+
+  /**
+   * 085 · Aparta los pallets marcados, en el orden de la tabla. El servidor
+   * vuelve a leer cuánto queda en cada uno y valida cada pallet como si se
+   * apartara de a uno.
+   */
+  function apartarMarcados() {
+    if (!opciones) return;
+    setAviso(null);
+    const elegidos = opciones.candidatos
+      .filter((l) => marcados.has(clave(l)))
+      .map((l) => ({ lote_id: l.lote_id, almacen_id: l.almacen_id }));
+    iniciarGuardado(async () => {
+      const r = await accionSegura(() => apartarSeleccionados(pedidoLineaId, elegidos, equivalentes));
+      if ('sinConexion' in r) { setAviso({ tipo: 'mal', texto: r.mensaje }); return; }
+      setAviso({
+        tipo: r.apartados > 0 ? 'ok' : 'mal',
+        texto: r.fallos.length ? `${r.mensaje} No se pudo con: ${r.fallos.join(' · ')}` : r.mensaje,
+      });
+      setElegido(null);
+      setMarcados(new Set());
+      router.refresh();
+      const nuevas = await accionSegura(() => lotesParaLinea(pedidoLineaId, equivalentes));
+      if (!('sinConexion' in nuevas)) setOpciones(nuevas);
     });
   }
 
@@ -115,6 +159,7 @@ export function FilaCobertura({
         texto: r.fallos.length ? `${r.mensaje} No se pudo con: ${r.fallos.join(' · ')}` : r.mensaje,
       });
       setElegido(null);
+      setMarcados(new Set());
       router.refresh();
       const nuevas = await accionSegura(() => lotesParaLinea(pedidoLineaId, equivalentes));
       if (!('sinConexion' in nuevas)) setOpciones(nuevas);
@@ -141,6 +186,7 @@ export function FilaCobertura({
 
       setAviso({ tipo: 'ok', texto: r.mensaje });
       setElegido(null);
+      setMarcados(new Set());
       router.refresh();
       // Se recargan los candidatos: el disponible acaba de cambiar.
       const datos = await accionSegura(() => lotesParaLinea(pedidoLineaId, equivalentes));
@@ -235,10 +281,51 @@ export function FilaCobertura({
                       )}
                     </div>
 
+                    {/* 085 · Lo marcado: cuánto suma, cuánto cubre, y el botón. Va ENCIMA de la tabla
+                        (fija al desplazarse): con 60 pallets, abajo no se vería. */}
+                    {marcados.size > 0 && (() => {
+                      const lista = opciones.candidatos.filter((l) => marcados.has(clave(l)));
+                      const suma = lista.reduce((s, l) => s + l.disponible_kg, 0);
+                      const cubre = Math.min(suma, opciones.faltaKg);
+                      const eq = lista.filter((l) => l.equivalente).length;
+                      return (
+                        <div className="reservar-confirma" data-bloque="marcados"
+                             style={{ position: 'sticky', top: '3.6rem', zIndex: 2, background: 'var(--superficie)' }}>
+                          <div className="reservar-campo">
+                            <span>
+                              <b data-marcados={lista.length}>{lista.length} pallet{lista.length === 1 ? '' : 's'} marcado{lista.length === 1 ? '' : 's'}</b>
+                              {eq > 0 && <> · <span className="pill pill-atencion">{eq} equivalente{eq === 1 ? '' : 's'}</span></>}
+                              {' · '}{cifra(suma)} kg disponibles · cubren <b data-cubre={Math.round(cubre)}>{cifra(cubre)} kg</b> de los {cifra(opciones.faltaKg)} que faltan
+                            </span>
+                            <small>
+                              Se aparta en el orden de la tabla, tomando de cada pallet lo que falte.
+                              {suma > opciones.faltaKg + 0.001 ? ' Sobra stock marcado: el último pallet se aparta en parte y los que no hagan falta no se tocan.' : ''}
+                            </small>
+                          </div>
+                          <div className="acciones-fila">
+                            <button type="button" className="btn btn-primario" data-accion="apartar-marcados"
+                                    onClick={apartarMarcados} disabled={guardando || opciones.faltaKg <= 0}>
+                              <Icono nombre="reservas" tamano={15} />
+                              {guardando ? 'Apartando…' : `Apartar los ${lista.length} marcado${lista.length === 1 ? '' : 's'}`}
+                            </button>
+                            <button type="button" className="btn btn-sutil" onClick={() => setMarcados(new Set())} disabled={guardando}>
+                              Desmarcar
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
                     <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
                       <table className="datos">
                         <thead>
                           <tr>
+                            <th style={{ width: '1.8rem' }}>
+                              {/* 085 · Marcar o desmarcar todos los de la tabla. */}
+                              <input type="checkbox" name="marcar_todos" aria-label="Marcar todos los pallets"
+                                     checked={opciones.candidatos.length > 0 && opciones.candidatos.every((l) => marcados.has(clave(l)))}
+                                     disabled={guardando || opciones.faltaKg <= 0}
+                                     onChange={(e) => setMarcados(e.target.checked ? new Set(opciones.candidatos.map(clave)) : new Set())} />
+                            </th>
                             <th>Pallet</th>
                             <th>SKU</th>
                             <th>Almacén</th>
@@ -255,7 +342,13 @@ export function FilaCobertura({
                             return (
                               <tr key={`${l.lote_id}-${l.almacen_id}`}
                                   data-elegido={elegidoAqui ? 'si' : 'no'}
+                                  data-marcado={marcados.has(clave(l)) ? 'si' : 'no'}
                                   data-equivalente={l.equivalente ? 'si' : 'no'}>
+                                <td>
+                                  <input type="checkbox" name="marcar_pallet" aria-label={`Marcar el pallet ${l.codigo_pallet}`}
+                                         checked={marcados.has(clave(l))} disabled={guardando || opciones.faltaKg <= 0}
+                                         onChange={(e) => marcar(l, e.target.checked)} />
+                                </td>
                                 <td className="mono">{l.codigo_pallet}</td>
                                 <td style={{ fontSize: '.74rem' }}>
                                   {l.sku}
@@ -282,6 +375,7 @@ export function FilaCobertura({
                         </tbody>
                       </table>
                     </div>
+
                   </>
                 )}
 

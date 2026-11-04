@@ -41,6 +41,14 @@ export type EmbarqueCalendario = {
   contenedor: string | null;
   booking: string | null;
   naviera: string | null;
+  /* «Observaciones ERP 4», puntos 07, 11 y 13 (migración 084). */
+  /** Semana de despacho (la escrita o la de la fecha). */
+  semana: number | null;
+  /** Fecha de zarpe de la nave: no es la de despacho. */
+  zarpe: string | null;
+  operador: string | null;
+  /** N.º de packing (PL) del embarque o de sus contenedores. */
+  pl: string | null;
   tm: number;
   bultos: number;
   /** true si las TM salen del packing real; false si son las comprometidas. */
@@ -418,6 +426,10 @@ export function CalendarioEmbarques({
                       {e.contenedor && <div><dt>Contenedor</dt><dd className="mono">{e.contenedor}</dd></div>}
                       {e.booking && <div><dt>Booking</dt><dd className="mono">{e.booking}</dd></div>}
                       {e.naviera && <div><dt>Naviera</dt><dd>{e.naviera}</dd></div>}
+                      {e.pl && <div><dt>N.º de packing</dt><dd className="mono">{e.pl}</dd></div>}
+                      {e.semana && <div><dt>Semana</dt><dd>{e.semana}</dd></div>}
+                      {e.zarpe && <div><dt>Zarpe</dt><dd>{e.zarpe.slice(8, 10)}/{e.zarpe.slice(5, 7)}/{e.zarpe.slice(0, 4)}</dd></div>}
+                      {e.operador && <div><dt>Operador logístico</dt><dd>{e.operador}</dd></div>}
                       {e.topeNetoKg !== null && (
                         <div>
                           <dt>Tope neto</dt>

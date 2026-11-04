@@ -75,7 +75,7 @@ export async function cargarCatalogoVenta() {
   ] = await Promise.all([
     supabase
       .from('clientes')
-      .select('id, razon_social, pais, moneda, bloqueado, forma_pago, adelanto_pct')
+      .select('id, razon_social, pais, moneda, bloqueado, forma_pago, adelanto_pct, vendedor_id')
       .eq('activo', true)
       .order('razon_social'),
     supabase.from('vendedores').select('id, nombre').eq('activo', true).order('nombre'),
@@ -160,6 +160,8 @@ export async function cargarCatalogoVenta() {
       //  Forma de pago habitual (lista de Comex, 065): la cotización la propone.
       forma_pago: (c.forma_pago as FormaPago | null) ?? null,
       adelanto_pct: c.adelanto_pct === null || c.adelanto_pct === undefined ? null : Number(c.adelanto_pct),
+      //  085 · Su vendedor asignado: la cotización y el pedido directo lo proponen.
+      vendedor_id: c.vendedor_id === null || c.vendedor_id === undefined ? null : Number(c.vendedor_id),
     })),
     vendedores: (vendedores ?? []).map((v) => ({
       id: v.id as number,

@@ -11,13 +11,18 @@
  *  El Word sale de la plantilla exacta (docxContrato.ts); este PDF es la
  *  versión lista para enviar, igual que la proforma. Los dos leen el MISMO
  *  objeto de datos guardado, así que no pueden decir cosas distintas.
+ *
+ *  083 · Como el contrato SM26-384 de KULALIA: el producto por ítems —(1)
+ *  inglés, (1) castellano, (2)…— con su talla, el precio por ítem, el puerto
+ *  de descarga en inglés y en castellano, todo en negro, y la firma de quien
+ *  aprobó la cotización (o la de Gerencia por defecto).
  * ============================================================================
  */
 import PDFDocument from 'pdfkit';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { seguro as seguroLinea } from './textoPdf';
-import type { DatosContrato } from './contratoVenta';
+import { productoIntercalado, type DatosContrato } from './contratoVenta';
 import {
   ENTREGA, SEGURO, PAGO_FIJO, DOCUMENTOS, OTRAS_CONDICIONES, TITULO_DECLARACIONES,
   DECLARACIONES, ANEXO_TITULO, ANEXO, type Bilingue,
@@ -77,17 +82,30 @@ export async function generarPdfContrato(d: DatosContrato, firmaElegida: { image
   const caber = (alto: number) => { if (doc.y + alto > ABAJO) doc.addPage(); };
 
   /** Una fila rótulo / valor. El valor puede traer varias líneas. */
-  const fila = (rotulo: string, valor: string, opciones: { negrita?: boolean; cursiva?: boolean } = {}) => {
+  const fila = (rotulo: string, valor: string, opciones: { negrita?: boolean; cursiva?: boolean; unaLinea?: boolean } = {}) => {
     const v = seguro(valor);
     doc.font(opciones.negrita === false ? 'Helvetica' : 'Helvetica-Bold').fontSize(T);
+    /*
+     * 083 · `unaLinea`: cada renglón del valor en UN renglón del papel, como el
+     * contrato del modelo («(1) FROZEN GIANT SQUID SEXUAL TENTACLES, WITH TIP,
+     * SIZE: 50CM-UP»). Si alguno no cabe, se achica la letra (hasta 7,5) en
+     * vez de partirlo: un ítem partido en dos se confunde con el siguiente.
+     */
+    let cuerpo = T;
+    if (opciones.unaLinea) {
+      const masAncho = () => Math.max(...v.split('\n').map((l) => doc.widthOfString(l)));
+      while (cuerpo > 7.5 && masAncho() > DER - COL) { cuerpo -= 0.25; doc.fontSize(cuerpo); }
+    }
     const altoValor = doc.heightOfString(v, { width: DER - COL });
-    doc.font('Helvetica-Bold');
+    doc.font('Helvetica-Bold').fontSize(T);
     const altoRotulo = doc.heightOfString(seguro(rotulo), { width: COL - IZQ - 10 });
     caber(Math.max(altoValor, altoRotulo));
     const y = doc.y;
     doc.font('Helvetica-Bold').fontSize(T).fillColor(TINTA).text(seguro(rotulo), IZQ, y, { width: COL - IZQ - 10 });
     doc.font(opciones.negrita === false ? (opciones.cursiva ? 'Helvetica-Oblique' : 'Helvetica') : 'Helvetica-Bold')
+      .fontSize(cuerpo)
       .text(v, COL, y, { width: DER - COL });
+    doc.fontSize(T);
     doc.y = y + Math.max(altoValor, altoRotulo);
     doc.x = IZQ;
     espacio(11);
@@ -144,23 +162,26 @@ export async function generarPdfContrato(d: DatosContrato, firmaElegida: { image
    * Configuración solo está la firma suelta, el nombre y el cargo se escriben.
    */
   const firmas = () => {
-    caber(130);
+    //  083 · Algo más compacto (antes pedía 130 pt) para que quepa al pie de
+    //  las declaraciones, como el modelo, en vez de saltar sola a otra hoja.
+    caber(108);
     const y = doc.y + 4;
     doc.font('Helvetica-Bold').fontSize(T).text('SELLER', IZQ, y);
     doc.text('BUYER', IZQ + 330, y);
-    const x = IZQ + 88;
+    const x = IZQ + 78;
     if (firma) {
-      try { doc.image(firma, x, y + 4, { fit: firmaElegida.esBloque ? [92, 95] : [110, 52], align: 'center' }); } catch { /* sin imagen, queda el espacio */ }
+      try { doc.image(firma, x + 10, y + 2, { fit: firmaElegida.esBloque ? [92, 95] : [120, 46], align: 'center' }); } catch { /* sin imagen, queda el espacio */ }
     }
     if (!firmaElegida.esBloque && d.firmante?.nombre) {
-      const yl = y + 60;
-      doc.moveTo(x, yl).lineTo(x + 120, yl).lineWidth(0.6).strokeColor(TINTA).stroke();
-      doc.font('Helvetica-Bold').fontSize(7).text(seguro(d.firmante.nombre), x, yl + 3, { width: 120, align: 'center' });
-      doc.font('Helvetica').text(seguro(d.firmante.cargo), x, doc.y, { width: 120, align: 'center' })
-        .text(seguro(d.vendedor.nombre), x, doc.y, { width: 120, align: 'center' })
-        .text(`RUC: ${seguro(d.firmante.ruc)}`, x, doc.y, { width: 120, align: 'center' });
+      //  Nombre, cargo, empresa y RUC bajo la raya: el «bloque» del modelo.
+      const yl = y + 52;
+      doc.moveTo(x, yl).lineTo(x + 140, yl).lineWidth(0.6).strokeColor(TINTA).stroke();
+      doc.font('Helvetica-Bold').fontSize(7).text(seguro(d.firmante.nombre), x - 10, yl + 3, { width: 160, align: 'center' });
+      doc.font('Helvetica').text(seguro(d.firmante.cargo), x - 10, doc.y, { width: 160, align: 'center' })
+        .text(seguro(d.vendedor.nombre), x - 10, doc.y, { width: 160, align: 'center' })
+        .text(`RUC: ${seguro(d.firmante.ruc)}`, x - 10, doc.y, { width: 160, align: 'center' });
     }
-    doc.y = y + 112;
+    doc.y = y + 100;
     doc.x = IZQ;
     espacio(10);
   };
@@ -188,13 +209,15 @@ export async function generarPdfContrato(d: DatosContrato, firmaElegida: { image
     doc.font('Helvetica').text(seguro([d.comprador.direccion, d.comprador.documento].filter(Boolean).join('\n')), COL, doc.y, { width: DER - COL });
     doc.x = IZQ; espacio(11);
   }
-  fila('PRODUCT / PRODUCTO:', `${d.producto.en}\n${d.producto.es}`);
+  //  083 · (1) inglés, (1) castellano, (2)… como el contrato SM26-384 del modelo.
+  fila('PRODUCT / PRODUCTO:', productoIntercalado(d.producto), { unaLinea: true });
   fila('QUANTITY  / CANTIDAD:', d.cantidad);
-  fila('PRICE / PRECIO:', d.precio);
+  fila('PRICE / PRECIO:', d.precio, { unaLinea: true });
   fila('PACKING / EMPAQUETADO:', d.empaque);
   fila('PERIOD FOR SHIPMENT  / PERIODO DE ENVÍO:', `${d.periodo.en}\n${d.periodo.es}`);
   fila('LOADING PORT / PUERTO DE CARGA:', `${d.puertoCarga}\n${d.puertoCarga}`);
-  fila('DESTINATION PORT / PUERTO DE DESCARGA:', `${d.puertoDescarga}\n${d.puertoDescarga}`);
+  //  083 · En inglés y en castellano: «VIGO, SPAIN» / «VIGO, ESPAÑA».
+  fila('DESTINATION PORT / PUERTO DE DESCARGA:', `${d.puertoDescarga}\n${d.puertoDescargaEs || d.puertoDescarga}`);
   bilingueEnColumna('DELIVERY  / ENTREGA:', ENTREGA);
   bilingueEnColumna('INSURANCE POLICY / POLITICA DE SEGURO:', SEGURO);
 

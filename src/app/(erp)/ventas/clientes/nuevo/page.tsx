@@ -31,11 +31,12 @@ export default async function PaginaNuevoCliente() {
   const supabase = await crearClienteServidor();
   const [codigo, { data: filas }, { data: vendedores }] = await Promise.all([
     siguienteCodigoCliente(),
-    supabase.from('clientes').select('pais').eq('activo', true),
+    supabase.from('clientes').select('pais, condicion').eq('activo', true),
     supabase.from('vendedores').select('id, nombre').eq('activo', true).order('nombre'),
   ]);
 
   const paises = [...new Set((filas ?? []).map((f) => f.pais as string).filter(Boolean))].sort();
+  const condiciones = [...new Set((filas ?? []).map((f) => f.condicion as string).filter(Boolean))].sort();
 
   return (
     <>
@@ -49,6 +50,7 @@ export default async function PaginaNuevoCliente() {
           gestionaBloqueo={PUEDEN_GESTIONAR_CREDITO.includes((usuario?.rol ?? 'consulta') as Rol)}
           fijaCredito={usuario?.fija_credito === true}
           paises={paises}
+          condiciones={condiciones}
           vendedores={(vendedores ?? []).map((v) => ({ id: v.id as number, nombre: v.nombre as string }))}
         />
       </Panel>

@@ -127,7 +127,13 @@ export const NAVEGACION: Grupo[] = [
        */
       { titulo: 'Planificador',     ruta: '/logistica/planificador', icono: 'planificador', ayuda: 'Calendario de embarques', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Tiempos del flujo',  ruta: '/ventas/tiempos',        icono: 'cronometro',   ayuda: 'Cuánto tarda cada paso, de la oferta al cobro', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'consulta'] },
-      { titulo: 'Embarques',        ruta: '/logistica/embarques',    icono: 'embarques',    ayuda: 'Programación de salidas', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
+      /*
+       * COMERCIAL entra también (084, «Observaciones ERP 4», punto 08): la
+       * etiqueta del embarque la sube Comercial, y la programación es la lista
+       * que todos miran. Solo ve y adjunta: programar y editar siguen siendo
+       * de Gerencia, Operaciones, Comercio Exterior y Almacén.
+       */
+      { titulo: 'Embarques',        ruta: '/logistica/embarques',    icono: 'embarques',    ayuda: 'Programación de salidas', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Packing y estiba', ruta: '/logistica/packing',      icono: 'packing',      ayuda: 'La carga del contenedor', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },
       { titulo: 'Despachos',        ruta: '/logistica/despachos',    icono: 'despachos',    ayuda: 'Lo que ya salió', roles: TODOS },
       { titulo: 'Flota',            ruta: '/logistica/flota',        icono: 'flota',        ayuda: 'Vehículos, conductores y sus documentos', roles: ['gerencia', 'operaciones', 'comex', 'almacen', 'consulta'] },

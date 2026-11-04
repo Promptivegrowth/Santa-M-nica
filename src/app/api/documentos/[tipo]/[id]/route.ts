@@ -169,6 +169,13 @@ export async function GET(
       // Cuántas observaciones trae, para que la pantalla pueda avisar sin
       // tener que abrir el archivo.
       'X-Avisos': String(documento.avisos.length),
+      /*
+       * 083 · Y cuáles. Ya no se imprimen dentro del documento («quitar el
+       * recuadro de observaciones», Oliver): son para quien lo emite, no para
+       * el cliente. La pantalla las muestra al descargar. Van codificadas
+       * porque una cabecera HTTP no admite tildes.
+       */
+      'X-Avisos-Detalle': encodeURIComponent(JSON.stringify(documento.avisos.slice(0, 12))),
     },
   });
 }

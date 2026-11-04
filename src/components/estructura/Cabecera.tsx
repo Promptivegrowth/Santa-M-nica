@@ -242,6 +242,19 @@ export function Cabecera({
                   <Icono nombre="editar" tamano={15} />
                   Cambiar mi contraseña
                 </Link>
+                {/* 083 · La firma de la proforma y el contrato: la de quien aprueba. */}
+                {['gerencia', 'operaciones', 'comercial', 'comex'].includes(usuario.rol) && (
+                  <Link
+                    href="/cuenta/firma"
+                    className="cabecera-opcion"
+                    role="menuitem"
+                    data-accion="mi-firma"
+                    onClick={() => setMenuAbierto(false)}
+                  >
+                    <Icono nombre="editar" tamano={15} />
+                    Mi firma
+                  </Link>
+                )}
               </div>
 
               {/* --- Salir --- */}

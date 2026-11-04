@@ -37,6 +37,9 @@ import {
   type DatosEmbarque, type PedidoEmbarcable, type LineaEmbarcable,
 } from '../acciones';
 import { consolidarEnBodega } from '@/app/(erp)/almacenes/traslados/acciones';
+import { avisoSaltoPacking, normalizarNumeroPacking, problemaNumeroPacking, semanaIso } from '@/lib/numeroPacking';
+import { EN_FRASE_DOCUMENTO, FORMATOS_DOCUMENTO, NOMBRE_DOCUMENTO } from '@/lib/documentosEmbarque';
+import { subirDocumentoEmbarque } from '../subirDocumento';
 
 const cifra = (n: number, d = 1) =>
   n.toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -50,6 +53,8 @@ export function FormularioEmbarque({
   pedidos,
   hoy,
   noPuedeTrasladar = null,
+  plPropuesto = null,
+  sugerenciasOperador = [],
 }: {
   almacenes: { id: number; nombre: string }[];
   destinos: { id: number; puerto: string; pais: string }[];
@@ -64,6 +69,10 @@ export function FormularioEmbarque({
    * con la explicación (antes el servidor les respondía con un error).
    */
   noPuedeTrasladar?: string | null;
+  /** El N.º de packing que propone la base («Observaciones ERP 4», 13). */
+  plPropuesto?: string | null;
+  /** Operadores logísticos ya usados, para sugerirlos. */
+  sugerenciasOperador?: string[];
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
@@ -80,7 +89,23 @@ export function FormularioEmbarque({
     conductor_id: null,
     observaciones: '',
     pedidos: [],
+    semana_despacho: semanaIso(hoy),
+    fecha_zarpe: null,
+    operador_logistico: '',
+    numero_packing: plPropuesto ?? '',
   });
+  /** Si la semana se escribió a mano, ya no sigue a la fecha. */
+  const [semanaTocada, setSemanaTocada] = useState(false);
+  /*
+   * LOS DOCUMENTOS AL PROGRAMAR (punto 08): «al programar, opción para subir
+   * el packing list en PDF o Excel y la etiqueta». Se eligen aquí y se suben
+   * en cuanto el embarque existe; si alguno falla, el embarque queda creado
+   * y la ficha dice cuál volver a subir.
+   */
+  const [etiqueta, setEtiqueta] = useState<File | null>(null);
+  const [packingDecl, setPackingDecl] = useState<File | null>(null);
+  const [comentarioDocs, setComentarioDocs] = useState('');
+  const [subiendoDocs, setSubiendoDocs] = useState<string | null>(null);
 
   const [problema, setProblema] = useState<{ mensaje: string; campo?: string } | null>(null);
   const [consolidando, iniciarConsolidacion] = useTransition();
@@ -217,12 +242,27 @@ export function FormularioEmbarque({
     iniciar(async () => {
       const r = await accionSegura(() => crearEmbarque({
         ...d,
+        numero_packing_propuesto: plPropuesto,
         lineas: lineas
           .filter((l) => d.pedidos.includes(l.pedido_id))
           .map((l) => ({ pedido_linea_id: l.pedido_linea_id, sku_presentacion_id: l.sku_presentacion_id, cantidad_kg: Math.round(tmDe(l) * 1000 * 1000) / 1000 }))
           .filter((l) => l.cantidad_kg > 0),
       }));
       if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: 'campo' in r ? r.campo : undefined }); return; }
+
+      //  Los documentos elegidos, ahora que el embarque existe.
+      const fallidos: string[] = [];
+      for (const [tipo, archivo] of [['etiqueta', etiqueta], ['packing_declarado', packingDecl]] as const) {
+        if (!archivo) continue;
+        setSubiendoDocs(`Subiendo ${EN_FRASE_DOCUMENTO[tipo]}…`);
+        const s = await subirDocumentoEmbarque(r.id, tipo, archivo, comentarioDocs || null);
+        if (!s.ok) fallidos.push(s.mensaje);
+      }
+      setSubiendoDocs(null);
+      if (fallidos.length) {
+        //  El embarque ya está: se avisa y se va a la ficha, donde se vuelve a subir.
+        window.alert(`El embarque ${r.numero} quedó programado, pero no se pudo subir: ${fallidos.join(' · ')}. Súbalo desde «Documentos del embarque» en su ficha.`);
+      }
 
       /*
        * Se va a la FICHA del embarque, no a la lista.
@@ -238,6 +278,7 @@ export function FormularioEmbarque({
   }
 
   const error = (n: string) => (problema?.campo === n ? 'si' : undefined);
+  const problemaPl = (d.numero_packing ?? '').trim() ? problemaNumeroPacking(d.numero_packing) : null;
 
   return (
     <form className="form-maestro" onSubmit={enviar}>
@@ -529,9 +570,54 @@ export function FormularioEmbarque({
         <legend>Cuándo y hacia dónde</legend>
         <div className="form-rejilla">
           <label className="form-campo">
-            <span>Fecha de salida <b className="req">*</b></span>
-            <input className="campo" type="date" value={d.fecha_programada} data-error={error('fecha_programada')}
-                   onChange={(e) => campo('fecha_programada', e.target.value)} required />
+            <span>Fecha de despacho <b className="req">*</b></span>
+            <input className="campo" type="date" name="fecha_programada" value={d.fecha_programada} data-error={error('fecha_programada')}
+                   onChange={(e) => {
+                     const f = e.target.value;
+                     setD((p) => ({ ...p, fecha_programada: f, semana_despacho: semanaTocada ? p.semana_despacho : semanaIso(f) }));
+                     setProblema(null);
+                   }} required />
+            <small>El día que sale de la bodega. La fecha real se anota al despachar.</small>
+          </label>
+
+          {/* «Observaciones ERP 4», 07: la semana y el zarpe son dos datos distintos. */}
+          <label className="form-campo">
+            <span>Semana de despacho</span>
+            <input className="campo mono" type="number" name="semana_despacho" min={1} max={53} value={d.semana_despacho ?? ''}
+                   data-error={error('semana_despacho')}
+                   onChange={(e) => { setSemanaTocada(true); campo('semana_despacho', e.target.value ? Number(e.target.value) : null); }} />
+            <small>Sale sola de la fecha (semana {semanaIso(d.fecha_programada) ?? '—'}); cámbiela si se programa por semana.</small>
+          </label>
+
+          <label className="form-campo">
+            <span>Fecha de zarpe</span>
+            <input className="campo" type="date" name="fecha_zarpe" value={d.fecha_zarpe ?? ''} min={d.fecha_programada || undefined}
+                   data-error={error('fecha_zarpe') ?? (d.fecha_zarpe && d.fecha_zarpe < d.fecha_programada ? 'si' : undefined)}
+                   onChange={(e) => campo('fecha_zarpe', e.target.value || null)} />
+            <small>
+              {d.fecha_zarpe && d.fecha_zarpe < d.fecha_programada
+                ? 'No puede ser antes del despacho: el contenedor sale de la bodega antes de que zarpe la nave.'
+                : 'Cuándo zarpa la nave. Lo despachado jueves o viernes suele zarpar el lunes.'}
+            </small>
+          </label>
+
+          {/* «Observaciones ERP 4», 13: el N.º de packing de la casa, propuesto y editable. */}
+          <label className="form-campo">
+            <span>N.º de packing</span>
+            <input className="campo mono" name="numero_packing" maxLength={30} value={d.numero_packing ?? ''}
+                   data-error={error('numero_packing') ?? (problemaPl ? 'si' : undefined)}
+                   onChange={(e) => campo('numero_packing', e.target.value.toUpperCase())}
+                   onBlur={(e) => campo('numero_packing', normalizarNumeroPacking(e.target.value))}
+                   placeholder="PL POT1124" />
+            <small data-aviso-pl>
+              {problemaPl
+                ?? avisoSaltoPacking(d.numero_packing ?? '', plPropuesto)
+                ?? (!(d.numero_packing ?? '').trim()
+                  ? 'Sin N.º de packing: se le puede asignar después.'
+                  : normalizarNumeroPacking(d.numero_packing) === normalizarNumeroPacking(plPropuesto)
+                    ? 'Propuesto por el sistema; escriba el real si es otro.'
+                    : 'Escrito a mano.')}
+            </small>
           </label>
 
           <label className="form-campo">
@@ -589,6 +675,17 @@ export function FormularioEmbarque({
             <input className="campo" value={d.naviera ?? ''} maxLength={60}
                    onChange={(e) => campo('naviera', e.target.value)} placeholder="COSCO, Maersk…" />
           </label>
+
+          {/* «Observaciones ERP 4», 11. */}
+          <label className="form-campo">
+            <span>Operador logístico</span>
+            <input className="campo" name="operador_logistico" maxLength={80} value={d.operador_logistico ?? ''} list="operadores-logisticos"
+                   data-error={error('operador_logistico')}
+                   onChange={(e) => campo('operador_logistico', e.target.value)} placeholder="Agente de carga" />
+            <datalist id="operadores-logisticos">
+              {sugerenciasOperador.map((o) => <option key={o} value={o} />)}
+            </datalist>
+          </label>
         </div>
       </fieldset>
 
@@ -645,10 +742,38 @@ export function FormularioEmbarque({
         </label>
       </fieldset>
 
+      <fieldset className="form-bloque" data-bloque="documentos-al-programar">
+        <legend>Documentos (opcional)</legend>
+        <p className="form-pista" style={{ marginTop: 0 }}>
+          El modelo de etiqueta y el packing list que se declara al cliente / SANIPES. Se suben al programar;
+          después, en la ficha del embarque, se pueden subir versiones nuevas y el packing real.
+        </p>
+        <div className="form-rejilla">
+          <label className="form-campo">
+            <span>{NOMBRE_DOCUMENTO.etiqueta}</span>
+            <input className="campo" type="file" name="documento_etiqueta" accept={FORMATOS_DOCUMENTO.etiqueta.accept}
+                   onChange={(e) => setEtiqueta(e.target.files?.[0] ?? null)} />
+            <small>PDF, JPG o PNG, hasta 15 MB.</small>
+          </label>
+          <label className="form-campo">
+            <span>{NOMBRE_DOCUMENTO.packing_declarado}</span>
+            <input className="campo" type="file" name="documento_packing_declarado" accept={FORMATOS_DOCUMENTO.packing_declarado.accept}
+                   onChange={(e) => setPackingDecl(e.target.files?.[0] ?? null)} />
+            <small>PDF o Excel, hasta 15 MB.</small>
+          </label>
+          <label className="form-campo form-campo-ancho">
+            <span>Comentario de los documentos</span>
+            <input className="campo" name="comentario_documentos" maxLength={500} value={comentarioDocs}
+                   onChange={(e) => setComentarioDocs(e.target.value)} placeholder="Por ejemplo: etiqueta aprobada por el cliente el 03/11" />
+          </label>
+        </div>
+      </fieldset>
+
       <div className="form-acciones">
-        <button type="submit" className="btn btn-primario" disabled={guardando}>
+        <button type="submit" className="btn btn-primario" disabled={guardando || !!problemaPl}
+                title={problemaPl ?? undefined}>
           <Icono nombre="embarques" tamano={15} />
-          {guardando ? 'Programando…' : 'Programar embarque'}
+          {subiendoDocs ?? (guardando ? 'Programando…' : 'Programar embarque')}
         </button>
       </div>
     </form>

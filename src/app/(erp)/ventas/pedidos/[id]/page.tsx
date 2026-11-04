@@ -41,9 +41,11 @@ import { RestriccionPeso } from './RestriccionPeso';
 import { uno, campo } from '@/lib/relaciones';
 import { BotonFacturar } from './Facturar';
 import { CicloPedido } from './CicloPedido';
+import { EliminarPedido } from './EliminarPedido';
 import { CambiarNumero } from './CambiarNumero';
 import { motivoNoCambiarNumero } from '@/lib/numeroProforma';
 import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
+import { PanelDatosCliente } from '@/components/ventas/PanelDatosCliente';
 import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
 import { hoyEnLima } from '@/lib/fechas';
 
@@ -114,6 +116,19 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
   const descarga = puedeDescargarDocumentos(usuarioCab?.rol);
   // Confirmar y cancelar el pedido: lo valida Gerencia u Operaciones.
   const puedeValidar = ['gerencia', 'operaciones'].includes(usuarioCab?.rol ?? '');
+  /*
+   * 085 · «Eliminar pedido»: solo Gerencia. Quien vende y no es Gerencia lo ve
+   * apagado, con la alternativa («Cancelar pedido»). Lo que lo impide lo dice
+   * la base (problema_eliminar_pedido), con el mismo texto que al intentarlo.
+   */
+  const esGerencia = usuarioCab?.rol === 'gerencia';
+  const [{ data: bloqueoEliminar }, { data: origenPedido }] = await Promise.all([
+    esGerencia
+      ? supabase.rpc('problema_eliminar_pedido', { p_pedido_id: pedidoId })
+      : Promise.resolve({ data: null }),
+    supabase.from('pedidos').select('cotizaciones(numero)').eq('id', pedidoId).maybeSingle(),
+  ]);
+  const cotizacionOrigen = (uno<Record<string, unknown>>(origenPedido?.cotizaciones)?.numero as string | undefined) ?? null;
 
   return (
     <>
@@ -140,6 +155,15 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
         )}
         <BotonFacturar pedidoId={pedidoId} puede={puedeFacturar} bloqueo={bloqueoFacturar} />
         <CicloPedido pedidoId={pedidoId} ciclo={String(pedido.ciclo)} puede={puedeValidar} />
+        {puedeVender((usuarioCab?.rol ?? 'consulta') as Rol) && (
+          <EliminarPedido
+            pedidoId={pedidoId}
+            numero={String(pedido.numero_proforma)}
+            cotizacion={cotizacionOrigen}
+            puede={esGerencia}
+            bloqueo={(bloqueoEliminar as string | null) ?? null}
+          />
+        )}
       </CabeceraPagina>
 
       <Suspense fallback={<CargandoCuerpo />}>
@@ -202,7 +226,7 @@ async function CuerpoPedido({
        * y quien abre una proforma necesita poder volver a la oferta que la
        * originó —es donde está la negociación—.
        */
-      .select('contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, cotizacion_id, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, restricciones_en, observaciones, prioridad, tipo_cambio, tipo_cambio_fecha, tipo_cambio_fuente, tipo_cambio_clase, fecha_tentativa_despacho, fecha_solicitada, forma_pago, condicion_pago, pago_adelanto_pct, adelanto_abonado, adelanto_abonado_en, cotizaciones(numero, fecha, estado, observaciones), usuarios!pedidos_restricciones_por_fkey(nombre)')
+      .select('contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, cotizacion_id, peso_neto_max_kg, peso_bruto_max_kg, nota_restricciones, restricciones_en, observaciones, prioridad, tipo_cambio, tipo_cambio_fecha, tipo_cambio_fuente, tipo_cambio_clase, fecha_tentativa_despacho, fecha_solicitada, forma_pago, condicion_pago, pago_adelanto_pct, adelanto_abonado, adelanto_abonado_en, cliente_razon_social, cliente_direccion, cliente_tax_id, cliente_etiqueta_tax_id, cliente_datos_en, vendedores(nombre), clientes(razon_social, direccion, ruc_tax_id, etiqueta_tax_id, vendedores(nombre)), cotizaciones(numero, fecha, estado, observaciones, cliente_datos_en), usuarios!pedidos_restricciones_por_fkey(nombre)')
       .eq('id', pedidoId)
       .single(),
     supabase
@@ -491,6 +515,26 @@ async function CuerpoPedido({
                 puedeVerImportes={puedeVerCostos}
               />
             </div>
+          )}
+
+          {/*
+            085 · Los datos del cliente con los que se imprime la proforma
+            (punto 01 de «Observaciones ERP 4»): heredados de la cotización.
+            Si la ficha del cliente cambió, se avisa y se puede actualizar
+            mientras no haya comprobante.
+          */}
+          {cabecera && (
+            <PanelDatosCliente
+              tipo="pedido"
+              id={pedidoId}
+              doc={cabecera as unknown as Record<string, unknown>}
+              ficha={uno<Record<string, unknown>>(cabecera.clientes)}
+              vendedor={campo(cabecera.vendedores, 'nombre', '') || null}
+              vendedorFicha={campo(uno<Record<string, unknown>>(cabecera.clientes)?.vendedores, 'nombre', '') || null}
+              puede={puedeVender((usuario?.rol ?? 'consulta') as Rol)}
+              bloqueo={comprobanteVigente ? `Ya tiene el comprobante ${comprobanteVigente}: salió con estos datos y no se cambian por debajo.` : null}
+              origen={origen?.cliente_datos_en && String(origen.cliente_datos_en) === String(cabecera.cliente_datos_en) ? String(origen.numero) : null}
+            />
           )}
 
           {/* ---- Lo que sale impreso en la proforma ---- */}

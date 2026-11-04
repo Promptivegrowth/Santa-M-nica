@@ -17,9 +17,13 @@
  *     cifras que no alinea es ilegible, y en un comprobante eso es grave.
  *   · La cabecera se repite en cada página, con «página N de M»: una factura
  *     de cuarenta líneas se imprime y se traspapela.
- *   · Las inconsistencias que encontró la verificación se imprimen DENTRO del
- *     documento. Esconderlas en la pantalla sería justo lo contrario de para
- *     qué sirven.
+ *   · Las observaciones de la verificación (avisos que no impiden emitir) ya
+ *     NO se imprimen dentro del documento (083, Oliver: «quitar el recuadro de
+ *     observaciones»): son para quien lo emite, no para el cliente. Se ven en
+ *     pantalla al descargar (BotonesDocumento).
+ *   · El importe en letras («SON: …») va solo en la factura y la boleta, donde
+ *     lo exige la representación impresa de SUNAT. En la cotización, no
+ *     (083: «que no aparezca, solo el número»).
  * ============================================================================
  */
 import PDFDocument from 'pdfkit';
@@ -311,36 +315,15 @@ function totales(doc: Lienzo, d: Documento, y: number): number {
     }
   }
 
-  /* ---- Importe en letras ---- */
-  doc.fillColor(MARCA.tintaSuave).font('Helvetica-Bold').fontSize(6.5)
-    .text('SON', MARGEN, y + 10);
-  doc.fillColor(MARCA.tinta).font('Helvetica-Bold').fontSize(8)
-    .text(importeEnLetras(d.totales.total, d.moneda), MARGEN, y + 19, { width: ANCHO_UTIL - anchoCaja - 20 });
+  /* ---- Importe en letras: solo en el comprobante, que lo exige SUNAT (083) ---- */
+  if (d.tipo === 'factura' || d.tipo === 'boleta') {
+    doc.fillColor(MARCA.tintaSuave).font('Helvetica-Bold').fontSize(6.5)
+      .text('SON', MARGEN, y + 10);
+    doc.fillColor(MARCA.tinta).font('Helvetica-Bold').fontSize(8)
+      .text(importeEnLetras(d.totales.total, d.moneda), MARGEN, y + 19, { width: ANCHO_UTIL - anchoCaja - 20 });
+  }
 
   return yy + 6;
-}
-
-/**
- * Los avisos de la verificación, impresos dentro del documento.
- * No se esconden: si algo no cuadra, quien lo tiene en la mano debe saberlo.
- */
-function avisos(doc: Lienzo, d: Documento, y: number): number {
-  if (!d.avisos.length) return y;
-
-  const alto = 14 + d.avisos.length * 10;
-  doc.roundedRect(MARGEN, y, ANCHO_UTIL, alto, 3)
-    .fillAndStroke('#FFF8E6', MARCA.atencion);
-
-  doc.fillColor(MARCA.atencion).font('Helvetica-Bold').fontSize(6.5)
-    .text('OBSERVACIONES DE LA VERIFICACIÓN', MARGEN + 8, y + 5);
-
-  let yy = y + 15;
-  for (const a of d.avisos) {
-    doc.fillColor(MARCA.tinta).font('Helvetica').fontSize(7)
-      .text(`· ${a}`, MARGEN + 8, yy, { width: ANCHO_UTIL - 16 });
-    yy += 10;
-  }
-  return y + alto + 8;
 }
 
 /**
@@ -475,7 +458,6 @@ export async function generarPdf(documento: Documento): Promise<Buffer> {
   y = tabla(doc, d, y);
   y = totales(doc, d, y);
   y = cuentas(doc, d, y);
-  y = avisos(doc, d, y);
   pie(doc, d, y);
 
   /* ---- Numeración y sello, en todas las páginas ---- */

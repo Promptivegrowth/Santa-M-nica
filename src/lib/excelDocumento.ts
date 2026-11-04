@@ -157,8 +157,16 @@ export async function generarDocumentoExcel(d: Documento): Promise<Buffer> {
 
   d.lineas.forEach((l, i) => {
     const fila = filaEnc + 1 + i;
+    /*
+     * 083 · En la proforma de exportación, el producto con el MISMO nombre que
+     * el PDF y el contrato (reproductores con punta / sin punta, y su talla):
+     * es lo que permite cotejar línea por línea.
+     */
+    const descripcion = d.exportacion && l.ingles
+      ? `${l.ingles}${l.talla ? `, SIZE: ${l.talla}` : ''} / ${l.espanol}`
+      : l.descripcion;
     const valores: (string | number)[] = [
-      l.n, l.codigo, l.descripcion, l.presentacion,
+      l.n, l.codigo, descripcion, l.presentacion,
       l.cantidadTm, l.precioTm, l.descuentoPct / 100, l.importe,
     ];
     valores.forEach((v, j) => {
@@ -216,11 +224,15 @@ export async function generarDocumentoExcel(d: Documento): Promise<Buffer> {
     f++;
   }
 
-  /* ═════════ IMPORTE EN LETRAS ═════════ */
+  /* ═════════ IMPORTE EN LETRAS ═════════
+     Solo en la factura y la boleta, donde lo exige SUNAT. En la cotización y
+     la proforma, no (083, Oliver: «que no aparezca, solo el número»). */
   f++;
-  escribir(f, 1, 'SON', { negrita: true, tamano: 7, color: 'FF6F7D95' });
-  escribir(f, 2, importeEnLetras(d.totales.total, d.moneda), { negrita: true, tamano: 9, hasta: COLS });
-  f += 2;
+  if (d.tipo === 'factura' || d.tipo === 'boleta') {
+    escribir(f, 1, 'SON', { negrita: true, tamano: 7, color: 'FF6F7D95' });
+    escribir(f, 2, importeEnLetras(d.totales.total, d.moneda), { negrita: true, tamano: 9, hasta: COLS });
+    f += 2;
+  }
 
   /* ═════════ DATOS PARA EL PAGO ═════════ */
   if (d.cuentas.length) {
@@ -265,22 +277,9 @@ export async function generarDocumentoExcel(d: Documento): Promise<Buffer> {
     f++;
   }
 
-  /* ═════════ OBSERVACIONES DE LA VERIFICACIÓN ═════════ */
-  if (d.avisos.length) {
-    const c = escribir(f, 1, 'OBSERVACIONES DE LA VERIFICACIÓN', {
-      negrita: true, tamano: 8, color: MARCA.atencion, hasta: COLS,
-    });
-    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF6E0' } };
-    f++;
-    for (const a of d.avisos) {
-      const ca = escribir(f, 1, `· ${a}`, { tamano: 8, hasta: COLS });
-      ca.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF6E0' } };
-      ca.alignment = { wrapText: true, vertical: 'top' };
-      hoja.getRow(f).height = 24;
-      f++;
-    }
-    f++;
-  }
+  /* ═════════ OBSERVACIONES DE LA VERIFICACIÓN ═════════
+     Ya no se escriben en el archivo (083): son para quien emite, no para el
+     cliente. La pantalla las muestra al descargar. */
 
   /* ═════════ OBSERVACIONES Y NOTAS ═════════ */
   if (d.observaciones) {

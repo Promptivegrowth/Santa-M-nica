@@ -10,12 +10,19 @@
  *  Un valor de varias líneas va con saltos de línea dentro del mismo párrafo,
  *  como en el modelo. El documento F se quita entero si el contrato no lo
  *  lleva. La firma del gerente se pone desde Configuración.
+ *
+ *  083 · Como el contrato SM26-384 del modelo: el producto por ítems
+ *  intercalados —(1) inglés, (1) castellano, (2)…—, el puerto de descarga en
+ *  inglés y después en castellano, sin el resaltado amarillo que la plantilla
+ *  conservaba del Word de trabajo, y la firma de quien aprobó la cotización:
+ *  si es su trazo suelto (no el bloque de Gerencia), se escriben debajo su
+ *  nombre, cargo, empresa y RUC, como en el bloque del modelo.
  * ============================================================================
  */
 import JSZip from 'jszip';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { DatosContrato } from './contratoVenta';
+import { productoIntercalado, type DatosContrato } from './contratoVenta';
 
 const PLANTILLA = join(process.cwd(), 'plantillas', 'contrato-venta.docx');
 
@@ -38,7 +45,8 @@ export async function generarDocxContrato(d: DatosContrato, firma: { imagen: str
     numero: d.numero, proforma: d.proforma, fecha: d.fecha,
     vendedor_nombre: d.vendedor.nombre, vendedor_direccion: d.vendedor.direccion,
     comprador_nombre: d.comprador.nombre, comprador_direccion: d.comprador.direccion, comprador_documento: d.comprador.documento,
-    producto_en: d.producto.en, producto_es: d.producto.es,
+    //  083 · Intercalado en el primer marcador; el segundo párrafo se quita abajo.
+    producto_en: productoIntercalado(d.producto), producto_es: '',
     cantidad: d.cantidad, precio: d.precio, empaque: d.empaque,
     periodo_en: d.periodo.en, periodo_es: d.periodo.es,
     puerto_carga: d.puertoCarga, puerto_descarga: d.puertoDescarga,
@@ -52,6 +60,14 @@ export async function generarDocxContrato(d: DatosContrato, firma: { imagen: str
   if (!d.documentoF.en.trim()) {
     xml = xml.replace(/<w:p[ >](?:(?!<w:p[ >])[\s\S])*?\{\{documento_f_(?:en|es)\}\}[\s\S]*?<\/w:p>/g, '');
   }
+  /* 083 · El producto ya va entero (e intercalado) en {{producto_en}}: el párrafo del castellano sobra. */
+  xml = xml.replace(/<w:p[ >](?:(?!<w:p[ >])[\s\S])*?\{\{producto_es\}\}[\s\S]*?<\/w:p>/g, '');
+  /* 083 · El puerto de descarga: la primera vez en inglés, la segunda en castellano. */
+  let vecesPuerto = 0;
+  xml = xml.replace(/<w:t xml:space="preserve">\{\{puerto_descarga\}\}<\/w:t>/g, () =>
+    conSaltos((vecesPuerto++ === 0 ? d.puertoDescarga : (d.puertoDescargaEs || d.puertoDescarga)) ?? ''));
+  /* 083 · Sin el resaltado amarillo de los campos variables del Word de trabajo: el contrato va en negro. */
+  xml = xml.replace(/<w:highlight w:val="[^"]*"\/>/g, '');
   /* El comprador sin documento tributario: se quita la línea, no queda «USCI: .». */
   if (!d.comprador.documento.trim()) {
     xml = xml.replace(/<w:p[ >](?:(?!<w:p[ >])[\s\S])*?\{\{comprador_documento\}\}[\s\S]*?<\/w:p>/g, '');
@@ -86,6 +102,21 @@ export async function generarDocxContrato(d: DatosContrato, firma: { imagen: str
       const [x, y] = caja(Number(cx), Number(cy));
       return `${a}${x}${b}${y}${c}`;
     });
+    /*
+     * 083 · Si es el trazo suelto de quien aprobó (no el bloque de Gerencia,
+     * que ya trae dibujados nombre, cargo, empresa y RUC), se escriben debajo
+     * de la línea «SELLER … BUYER», bajo la imagen, como en el bloque del modelo.
+     */
+    if (!firma.esBloque && d.firmante?.nombre) {
+      const linea = (t: string, negrita = false) =>
+        `<w:r><w:rPr>${negrita ? '<w:b/><w:bCs/>' : ''}<w:sz w:val="14"/><w:szCs w:val="14"/></w:rPr><w:t xml:space="preserve">${escapar(t)}</w:t></w:r>`;
+      const textos = [d.firmante.nombre, d.firmante.cargo, d.vendedor.nombre, d.firmante.ruc ? `RUC: ${d.firmante.ruc}` : '']
+        .filter((t) => String(t ?? '').trim());
+      const bloque = '<w:p><w:pPr><w:spacing w:before="560" w:after="0" w:line="240" w:lineRule="auto"/>' +
+        '<w:ind w:left="1300"/></w:pPr>' +
+        textos.map((t, i) => (i > 0 ? '<w:r><w:br/></w:r>' : '') + linea(t, i === 0)).join('') + '</w:p>';
+      doc = doc.replace(/ELLER\s+BUYER<\/w:t>[\s\S]*?<\/w:p>/g, (parrafo) => parrafo + bloque);
+    }
     zip.file('word/document.xml', doc);
   }
 

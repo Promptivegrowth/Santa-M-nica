@@ -31,7 +31,13 @@
  */
 import { crearClienteServidor } from '@/lib/supabase/servidor';
 import { fecha } from '@/lib/formato';
-import { desplazarDias } from '@/lib/fechas';
+import { desplazarDias, HUSO_OPERACION } from '@/lib/fechas';
+import {
+  nombreComercial, tallaImpresa, bultosDe, puertoDestino, llevaCertificadoCaptura, fechaEnIngles,
+} from '@/lib/productoDocumento';
+import { resolverFirmante } from '@/lib/firmanteDocumento';
+//  085 · Los datos del cliente fijados en la cotización (y heredados por el pedido).
+import { clienteDelDocumento } from '@/lib/datosClienteDocumento';
 
 export type TipoDocumento = 'cotizacion' | 'proforma' | 'factura' | 'boleta';
 
@@ -64,12 +70,22 @@ export type LineaDocumento = {
   /** Cómo viene partido el saco por dentro. Puede faltar. */
   bloques: number | null;
   pesoBloqueKg: number | null;
-  /** Talla en gramos: «1000-UP». Define el precio, así que va aparte. */
+  /**
+   * La talla tal como se imprime: «1000-UP» en el filete, «50CM-UP» en los
+   * reproductores (083: si el maestro no la tiene, se lee del corte). Define
+   * el precio, así que va aparte.
+   */
   talla: string | null;
   /** El mismo producto en los tres idiomas que entiende una aduana. */
   cientifico: string;
+  /**
+   * El nombre comercial (083, productoDocumento.ts): el del formato, salvo los
+   * reproductores, que llevan el suyo con su condición de punta.
+   */
   ingles: string;
   espanol: string;
+  /** Tentáculo sexual: cambia el nombre, la unidad de la talla y el empaque del contrato. */
+  reproductor: boolean;
 };
 
 /**
@@ -100,6 +116,13 @@ export type ProformaExportacion = {
   /** «AUGUST 2026». El comprador acepta el mes, no el día. */
   mesEmbarque: string;
 
+  /** La fecha de la proforma en inglés, como el modelo: «November 03, 2026». */
+  fechaTexto: string;
+  /** El incoterm suelto, para el rótulo de la columna: «UNIT PRICE / CFR USD/KGS». */
+  incoterm: string;
+  /** 083 · Si lleva certificado de captura (se decide en la cotización). */
+  certificadoCaptura: boolean;
+
   /** Qué parte se cobra por adelantado; el resto va contra documentos. */
   adelantoPct: number;
 
@@ -116,6 +139,8 @@ export type ProformaExportacion = {
     cargo: string;
     /** La firma escaneada, incrustada. Vacía significa «se firma a mano». */
     firma: string;
+    /** 083 · Por qué firma esta persona (quien aprobó la cotización, o Gerencia). */
+    motivo: string;
   } | null;
 };
 
@@ -278,7 +303,8 @@ async function cargarParametrosExportacion() {
     .in('clave', ['empresa_fda', 'empresa_ceu', 'empresa_telefono', 'empresa_fax',
                   'empresa_web', 'pais_origen', 'zona_pesca', 'puerto_embarque',
                   'proforma_documentos', 'proforma_condiciones',
-                  'firmante_nombre', 'firmante_cargo', 'firmante_firma']);
+                  // 083 · Lo que la proforma usa cuando el pedido no lo trae.
+                  'proforma_tolerancia_pct', 'contenedor_filas', 'contenedor_sacos_por_fila']);
   return new Map((data ?? []).map((x) => [x.clave as string, String(x.valor ?? '')]));
 }
 
@@ -294,7 +320,8 @@ function mesEnIngles(v: string | null | undefined): string {
    * «JANUARY». Lo destapó el contrato, que usa el mismo mes.
    */
   const m = /^(\d{4})-(\d{2})/.exec(String(v));
-  return m ? `${MESES_EN[Number(m[2]) - 1]} ${m[1]}` : '';
+  // «NOVEMBER, 2026», con la coma, como la proforma y el contrato del modelo.
+  return m ? `${MESES_EN[Number(m[2]) - 1]}, ${m[1]}` : '';
 }
 
 /**
@@ -347,12 +374,18 @@ function construirLinea(
   const pesoBultoKg = Number(pres?.peso_bulto_kg ?? 0);
 
   /*
-   * Los sacos se redondean HACIA ARRIBA: no existe medio saco. Un pedido de
-   * 161 910 kg en sacos de 21 son 7 710 sacos exactos, pero cuando no dan
-   * exactos el que sobra viaja igual, así que se cuenta.
+   * Los sacos, al entero más cercano (083, como la proforma del modelo:
+   * 19 000 kg en sacos de 30 son 633, no 634). Antes se redondeaba hacia
+   * arriba y la proforma no coincidía con la que escribe Santa Mónica.
    */
-  const bultos = pesoBultoKg > 0 ? Math.ceil(pesoNetoKg / pesoBultoKg) : 0;
+  const bultos = bultosDe(pesoNetoKg, pesoBultoKg);
 
+  /* 083 · El nombre y la talla que se imprimen (reproductores incluidos). */
+  const nombre = nombreComercial({
+    corte: sku?.corte as string,
+    formatoEn: formato?.descripcion_en as string,
+    formatoEs: formato?.descripcion_es as string,
+  });
 
   return {
     n,
@@ -373,7 +406,7 @@ function construirLinea(
     pesoBultoKg,
     bloques: pres?.bloques_por_bulto == null ? null : Number(pres.bloques_por_bulto),
     pesoBloqueKg: pres?.peso_bloque_kg == null ? null : Number(pres.peso_bloque_kg),
-    talla: (sku?.talla as string) || null,
+    talla: tallaImpresa(sku?.talla as string, sku?.corte as string),
     cientifico: String(especie?.nombre_cientifico ?? ''),
     /*
      * El nombre comercial se lee TAL COMO ESTÁ ESCRITO en el maestro, no se
@@ -382,9 +415,13 @@ function construirLinea(
      * suma de sus partes —el laminado de pota se vende como GIANT SQUID
      * SHEETS—. Se escribe una vez, bien, y el cliente lo corrige si su
      * comprador lo llama de otra manera.
+     *
+     * 083 · Salvo los reproductores, que comparten formato (TENTÁCULO) con los
+     * rejos pero se venden como SEXUAL TENTACLES, con o sin punta.
      */
-    ingles: String(formato?.descripcion_en ?? '').toUpperCase(),
-    espanol: String(formato?.descripcion_es ?? '').toUpperCase(),
+    ingles: nombre.en,
+    espanol: nombre.es,
+    reproductor: nombre.reproductor,
   };
 }
 
@@ -603,7 +640,8 @@ async function cargarCotizacion(id: number): Promise<Documento> {
 
   if (!cot) throw new Error('La cotización no existe.');
 
-  const cliente = uno<Record<string, unknown>>(cot.clientes);
+  //  085 · Razón social, dirección e identificación: las fijadas al emitir la cotización.
+  const cliente = clienteDelDocumento(cot, uno<Record<string, unknown>>(cot.clientes));
   const moneda = cot.moneda as 'USD' | 'PEN';
   const igvPct = Number(parametros?.[0]?.valor ?? 18);
 
@@ -700,13 +738,63 @@ async function cargarProforma(id: number): Promise<Documento> {
 
   if (!ped) throw new Error('El pedido no existe.');
 
-  const cliente = uno<Record<string, unknown>>(ped.clientes);
+  //  085 · Las que el pedido heredó de su cotización (o fijó al crearse, si fue directo).
+  const cliente = clienteDelDocumento(ped, uno<Record<string, unknown>>(ped.clientes));
   const destino = uno<Record<string, unknown>>(ped.destinos);
   const moneda = ped.moneda as 'USD' | 'PEN';
   const igvPct = Number(parametros?.[0]?.valor ?? 18);
   const esExportacion = String(cliente?.pais ?? '') !== 'Perú';
 
   const filas: LineaDocumento[] = (lineas ?? []).map((l, i) => construirLinea(l, i + 1));
+
+  /*
+   * 083 · Quién firma (quien aprobó la cotización; si no subió firma, Gerencia)
+   * y cuántos contenedores ya tiene armados el pedido. Solo hace falta en
+   * exportación.
+   */
+  const [firmante, { count: armados }] = esExportacion
+    ? await Promise.all([
+        resolverFirmante(supabase, ped),
+        supabase.from('v_pedido_contenedores').select('pedido_id', { count: 'exact', head: true }).eq('pedido_id', id),
+      ])
+    : [null, { count: 0 }];
+
+  /*
+   * 083 · Lo que el pedido no trae se completa como lo hacía la 041 con los
+   * pedidos de antes: los pedidos nuevos nacen sin tolerancia, sin mes de
+   * embarque y sin contenedores (no hay pantalla que los pida), y la proforma
+   * salía sin esas líneas. Ahora:
+   *  · tolerancia → la de Configuración (proforma_tolerancia_pct, 10 %);
+   *  · mes de embarque → el de la fecha tentativa de despacho o, si no, el de
+   *    la fecha comprometida;
+   *  · contenedores → los ya armados en packing; si aún no hay, se estiman por
+   *    sacos con la capacidad configurada (filas × sacos por fila). Para
+   *    SM26-623: 5 016 sacos / 1 342 = 4 contenedores, los mismos de la
+   *    proforma del modelo.
+   */
+  const capacidadSacos = Number(expo.get('contenedor_filas') ?? 0) * Number(expo.get('contenedor_sacos_por_fila') ?? 0);
+  const sacos = filas.reduce((s, l) => s + l.bultos, 0);
+  const contenedores = Number(ped.contenedores ?? 0) > 0
+    ? Number(ped.contenedores)
+    : (armados ?? 0) > 0
+      ? Number(armados)
+      : capacidadSacos > 0 && sacos > 0 ? Math.ceil(sacos / capacidadSacos) : 0;
+  const tolerancia = ped.tolerancia_pct != null ? Number(ped.tolerancia_pct) : Number(expo.get('proforma_tolerancia_pct') ?? 0);
+  const mes = (ped.mes_embarque as string) ?? (ped.fecha_tentativa_despacho as string) ?? (ped.fecha_comprometida as string) ?? null;
+
+  /*
+   * 083 · El certificado de captura, según se negoció en la cotización. La
+   * lista de Configuración trae los obligatorios; este se agrega (o se quita
+   * si alguien lo dejó escrito allí) según la decisión del pedido.
+   */
+  const conCaptura = llevaCertificadoCaptura(ped.certificado_captura as boolean | null, destino?.pais as string);
+  const documentosProforma = [
+    ...listaDeParametro(expo.get('proforma_documentos')).filter((x) => !/CATCH\s+CERTIFICATE|CERTIFICADO\s+DE\s+CAPTURA/i.test(x)),
+    ...(conCaptura ? ['CATCH CERTIFICATE'] : []),
+  ];
+
+  /* La fecha de la proforma, en Lima: «November 03, 2026». */
+  const fechaLima = new Date(String(ped.creado_en)).toLocaleDateString('en-CA', { timeZone: HUSO_OPERACION });
 
   const subtotal = redondear(filas.reduce((s, l) => s + l.importe, 0));
   const bruto = redondear((lineas ?? []).reduce((s, l) => s + Number(l.cantidad_tm) * Number(l.precio_tm), 0));
@@ -762,31 +850,32 @@ async function cargarProforma(id: number): Promise<Documento> {
       // El puerto del pedido manda sobre el de configuración: casi siempre es
       // Paita, pero «casi siempre» no es «siempre».
       puertoEmbarque: String(ped.puerto_embarque ?? expo.get('puerto_embarque') ?? ''),
-      puertoDescarga: [destino?.puerto, destino?.pais].filter(Boolean).join(', ').toUpperCase(),
+      // 083 · En inglés, como el modelo: «VIGO, SPAIN» (el maestro dice «España»).
+      puertoDescarga: puertoDestino(destino?.puerto, destino?.pais, 'en'),
 
       // El incoterm no significa nada suelto: CFR sin destino no dice hasta
       // dónde paga el flete el vendedor.
-      incotermCompleto: [String(ped.incoterm ?? ''),
-                         [destino?.puerto, destino?.pais].filter(Boolean).join(', ')]
+      incotermCompleto: [String(ped.incoterm ?? ''), puertoDestino(destino?.puerto, destino?.pais, 'en')]
                         .filter(Boolean).join(' ').toUpperCase(),
-      contenedorTipo: String(ped.contenedor_tipo ?? ''),
-      contenedores: Number(ped.contenedores ?? 0),
-      toleranciaPct: Number(ped.tolerancia_pct ?? 0),
-      mesEmbarque: mesEnIngles(ped.mes_embarque as string),
+      // El tipo, como lo escribe Santa Mónica: «04 FCL REEFER 40' HC».
+      contenedorTipo: String(ped.contenedor_tipo ?? '').trim() || "REEFER 40' HC",
+      contenedores,
+      toleranciaPct: tolerancia,
+      mesEmbarque: mesEnIngles(mes),
+
+      fechaTexto: fechaEnIngles(fechaLima),
+      incoterm: String(ped.incoterm ?? '').toUpperCase(),
+      certificadoCaptura: conCaptura,
 
       adelantoPct: Number(ped.pago_adelanto_pct ?? 0),
 
-      documentos: listaDeParametro(expo.get('proforma_documentos')),
+      documentos: documentosProforma,
       condiciones: listaDeParametro(expo.get('proforma_condiciones')),
 
       // Sin nombre no se imprime el bloque: mejor la raya sola que un cargo
       // suelto debajo de una firma que no se sabe de quién es.
-      firmante: (expo.get('firmante_nombre') ?? '').trim()
-        ? {
-            nombre: (expo.get('firmante_nombre') ?? '').trim(),
-            cargo: (expo.get('firmante_cargo') ?? '').trim(),
-            firma: (expo.get('firmante_firma') ?? '').trim(),
-          }
+      firmante: firmante?.nombre
+        ? { nombre: firmante.nombre, cargo: firmante.cargo, firma: firmante.firma, motivo: firmante.motivo }
         : null,
     },
 

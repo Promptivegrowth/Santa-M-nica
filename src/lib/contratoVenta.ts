@@ -25,8 +25,14 @@
  */
 import type { crearClienteServidor } from '@/lib/supabase/servidor';
 import { uno } from '@/lib/relaciones';
+//  085 · El comprador del contrato es el de la proforma: los datos fijados en el pedido.
+import { clienteDelDocumento } from '@/lib/datosClienteDocumento';
 import { hoyEnLima } from '@/lib/fechas';
 import type { FormaPago } from '@/lib/condicionesVenta';
+import {
+  nombreComercial, tallaImpresa, pesoCorto, puertoDestino, llevaCertificadoCaptura,
+} from '@/lib/productoDocumento';
+import { resolverFirmante } from '@/lib/firmanteDocumento';
 
 type Cliente = Awaited<ReturnType<typeof crearClienteServidor>>;
 
@@ -36,21 +42,32 @@ export type DatosContrato = {
   fecha: string;
   vendedor: { nombre: string; direccion: string };
   comprador: { nombre: string; direccion: string; documento: string };
-  /** Una línea por producto, en los dos idiomas. */
+  /**
+   * Una línea por ÍTEM, en los dos idiomas: «(1) FROZEN GIANT SQUID SEXUAL
+   * TENTACLES, WITH TIP, SIZE: 50CM-UP». El PDF y el Word las intercalan
+   * —(1) inglés, (1) castellano, (2)…— como el contrato del modelo.
+   */
   producto: { en: string; es: string };
   cantidad: string;
   precio: string;
   empaque: string;
   periodo: { en: string; es: string };
   puertoCarga: string;
+  /** En inglés: «VIGO, SPAIN». */
   puertoDescarga: string;
+  /** 083 · En castellano: «VIGO, ESPAÑA». Los contratos de antes no lo traen (se repite el inglés). */
+  puertoDescargaEs?: string;
   /** Líneas de la forma de pago, en los dos idiomas. */
   pago: { en: string; es: string };
   banco: { nombre: string; direccion: string; pais: string; swift: string; cuenta: string; beneficiario: string };
   /** Documento F, opcional: el certificado de captura. Vacío = no va. */
   documentoF: { en: string; es: string };
-  /** Quién firma por Santa Mónica. Lo pone el servidor desde Configuración. */
-  firmante?: { nombre: string; cargo: string; ruc: string };
+  /**
+   * Quién firma por Santa Mónica. Lo pone el servidor, nunca la pantalla:
+   * desde la 083, quien aprobó la cotización (su firma de «Mi firma»), o
+   * Gerencia por defecto. `usuarioId` vacío = la de Configuración.
+   */
+  firmante?: { nombre: string; cargo: string; ruc: string; usuarioId?: string | null; motivo?: string };
 };
 
 const MESES_EN = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
@@ -82,7 +99,22 @@ export function numeroContrato(proforma: string, revision: number): string {
 }
 
 const kg = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const precioKg = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+/** «2.450», con tres decimales como la proforma (y hasta cuatro si los tiene). */
+const precioKg = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 4 });
+
+/**
+ * El producto como se imprime en el contrato: (1) inglés, (1) castellano,
+ * (2) inglés, (2) castellano… como el modelo SM26-384. Si quien revisó el
+ * contrato dejó distinto número de líneas en un idioma que en el otro, se
+ * imprime primero todo el inglés y después todo el castellano (como antes):
+ * mejor eso que emparejar mal un ítem con la traducción de otro.
+ */
+export function productoIntercalado(p: { en: string; es: string }): string {
+  const en = String(p.en ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
+  const es = String(p.es ?? '').split('\n').map((x) => x.trim()).filter(Boolean);
+  if (en.length > 1 && en.length === es.length) return en.flatMap((x, i) => [x, es[i]]).join('\n');
+  return [...en, ...es].join('\n');
+}
 
 /**
  * La forma de pago en las palabras del contrato. El caso del modelo —20 %
@@ -122,26 +154,20 @@ function empaqueEn(tipo: string, kgs: number[]): string {
   return pesos.length ? `${unidad} OF ${pesos.join(' AND/OR ')}` : '';
 }
 
-/** Países donde la UE exige certificado de captura (Reglamento CE 1005/2008). Propone el documento F. */
-const UNION_EUROPEA = ['ALEMANIA', 'AUSTRIA', 'BELGICA', 'BULGARIA', 'CHIPRE', 'CROACIA', 'DINAMARCA', 'ESLOVAQUIA', 'ESLOVENIA', 'ESPAÑA', 'ESPANA',
-  'ESTONIA', 'FINLANDIA', 'FRANCIA', 'GRECIA', 'HUNGRIA', 'IRLANDA', 'ITALIA', 'LETONIA', 'LITUANIA', 'LUXEMBURGO', 'MALTA', 'PAISES BAJOS', 'HOLANDA',
-  'POLONIA', 'PORTUGAL', 'REPUBLICA CHECA', 'RUMANIA', 'SUECIA'];
-const sinTildes = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
-
 export type ResultadoArmado = { ok: true; datos: DatosContrato; revision: number } | { ok: false; mensaje: string };
 
 /** Arma el contrato de un pedido con lo que dice la proforma, el cliente y Configuración. */
 export async function armarDatosContrato(supabase: Cliente, pedidoId: number): Promise<ResultadoArmado> {
   const [{ data: ped }, { data: lineas }, { data: params }, { data: cuentas }, { count }] = await Promise.all([
     supabase.from('pedidos')
-      .select('id, numero_proforma, incoterm, moneda, mes_embarque, fecha_comprometida, tolerancia_pct, puerto_embarque, forma_pago, pago_adelanto_pct, dias_credito, condicion_pago, ciclo, clientes(razon_social, direccion, ruc_tax_id, etiqueta_tax_id, pais), destinos(puerto, pais)')
+      .select('id, numero_proforma, cotizacion_id, creado_por, certificado_captura, fecha_tentativa_despacho, incoterm, moneda, mes_embarque, fecha_comprometida, tolerancia_pct, puerto_embarque, forma_pago, pago_adelanto_pct, dias_credito, condicion_pago, ciclo, cliente_razon_social, cliente_direccion, cliente_tax_id, cliente_etiqueta_tax_id, cliente_datos_en, clientes(razon_social, direccion, ruc_tax_id, etiqueta_tax_id, pais), destinos(puerto, pais)')
       .eq('id', pedidoId).maybeSingle(),
     supabase.from('pedido_lineas')
-      .select('cantidad_tm, precio_tm, descuento_pct, orden, sku_presentaciones(skus(talla, empaque, formatos(descripcion_en, descripcion_es)), presentaciones(peso_bulto_kg))')
+      .select('cantidad_tm, precio_tm, descuento_pct, orden, sku_presentaciones(skus(corte, talla, empaque, formatos(descripcion_en, descripcion_es)), presentaciones(peso_bulto_kg))')
       .eq('pedido_id', pedidoId).order('orden'),
     supabase.from('parametros').select('clave, valor')
       .in('clave', ['empresa_razon_social', 'empresa_domicilio_fiscal', 'empresa_direccion_planta', 'puerto_embarque',
-                    'empresa_ruc', 'firmante_nombre', 'firmante_cargo']),
+                    'empresa_ruc', 'proforma_tolerancia_pct']),
     supabase.from('pedido_cuentas')
       .select('cuentas_bancarias(banco, tipo, moneda, numero, swift, titular, direccion_banco, principal)').eq('pedido_id', pedidoId),
     supabase.from('contratos').select('id', { count: 'exact', head: true }).eq('pedido_id', pedidoId),
@@ -151,36 +177,58 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
   if (ped.ciclo === 'cancelado') return { ok: false, mensaje: `El pedido ${ped.numero_proforma} está cancelado.` };
 
   const p = new Map((params ?? []).map((x) => [String(x.clave), String(x.valor ?? '')]));
-  const cliente = uno<Record<string, unknown>>(ped.clientes);
+  const cliente = clienteDelDocumento(ped as Record<string, unknown>, uno<Record<string, unknown>>(ped.clientes));
   const destino = uno<Record<string, unknown>>(ped.destinos);
-  const destinoTexto = [destino?.puerto, destino?.pais].filter(Boolean).join(', ').toUpperCase();
+  //  083 · El destino en inglés para el precio y el puerto («VIGO, SPAIN») y en
+  //  castellano para la segunda línea del puerto («VIGO, ESPAÑA»), como el modelo.
+  const destinoTexto = puertoDestino(destino?.puerto, destino?.pais, 'en');
+  const destinoTextoEs = puertoDestino(destino?.puerto, destino?.pais, 'es');
   const moneda = String(ped.moneda ?? 'USD');
 
-  /* ---- Productos, cantidad, precio y empaque ---- */
+  /*
+   * ---- Productos, cantidad, precio y empaque (083, puntos 02 y 03) ----
+   * Un ÍTEM por producto y talla, en el orden de la proforma: las líneas que
+   * solo cambian de saco (el mismo reproductor en sacos de 20 y de 30) son el
+   * mismo ítem, como en el contrato del modelo. Cada ítem lleva su precio; si
+   * un ítem tiene dos precios (uno por saco), se dice cuál es cuál. Así cada
+   * línea de la proforma tiene su ítem y su precio en el contrato.
+   */
   let totalKg = 0;
-  const prods: { en: string; es: string; precio: number }[] = [];
+  const items: { en: string; es: string; precios: { precio: number; saco: number }[] }[] = [];
   const pesos: number[] = [];
   let tipoEmpaque = 'sacos';
+  let todosReproductores = true;
   for (const l of lineas) {
     const sp = uno<Record<string, unknown>>(l.sku_presentaciones);
     const sku = uno<Record<string, unknown>>(sp?.skus);
     const f = uno<Record<string, unknown>>(sku?.formatos);
-    const talla = sku?.talla ? String(sku.talla) : '';
-    const en = `${String(f?.descripcion_en ?? '').toUpperCase()}${talla ? `, SIZE ${talla}` : ''}`;
-    const es = `${String(f?.descripcion_es ?? '').toUpperCase()}${talla ? `, TALLA ${talla}` : ''}`;
+    const nombre = nombreComercial({ corte: sku?.corte as string, formatoEn: f?.descripcion_en as string, formatoEs: f?.descripcion_es as string });
+    const talla = tallaImpresa(sku?.talla as string, sku?.corte as string) ?? '';
+    const en = `${nombre.en}${talla ? `, SIZE: ${talla}` : ''}`;
+    const es = `${nombre.es}${talla ? `, TALLAS: ${talla}` : ''}`;
+    todosReproductores = todosReproductores && nombre.reproductor;
     totalKg += Number(l.cantidad_tm) * 1000;
     const precio = (Number(l.precio_tm) / 1000) * (1 - Number(l.descuento_pct ?? 0) / 100);
-    if (!prods.some((x) => x.en === en && Math.abs(x.precio - precio) < 0.00005)) prods.push({ en, es, precio });
-    pesos.push(Number(uno<Record<string, unknown>>(sp?.presentaciones)?.peso_bulto_kg ?? 0));
+    const saco = Number(uno<Record<string, unknown>>(sp?.presentaciones)?.peso_bulto_kg ?? 0);
+    let item = items.find((x) => x.en === en);
+    if (!item) { item = { en, es, precios: [] }; items.push(item); }
+    if (!item.precios.some((x) => Math.abs(x.precio - precio) < 0.00005)) item.precios.push({ precio, saco });
+    pesos.push(saco);
     tipoEmpaque = String(sku?.empaque ?? tipoEmpaque);
   }
-  const unico = [...new Set(prods.map((x) => x.en))];
-  const precios = [...new Set(prods.map((x) => x.precio.toFixed(4)))];
+  //  Con un solo ítem no se numera: «(1)» suelto sobra.
+  const marca = (i: number) => (items.length > 1 ? `(${i + 1}) ` : '');
   const incoterm = [String(ped.incoterm ?? ''), destinoTexto].filter(Boolean).join(' ');
-  const precio = precios.length === 1
-    ? `${precioKg(prods[0].precio)} ${moneda}/KG ${incoterm}`
-    : prods.map((x) => `${precioKg(x.precio)} ${moneda}/KG ${incoterm} (${x.en})`).join('\n');
-  const tol = Number(ped.tolerancia_pct ?? 0);
+  const unidadSaco = tipoEmpaque === 'cajas' ? 'BOXES' : tipoEmpaque === 'block' ? 'BLOCKS' : 'BAGS';
+  const todosLosPrecios = [...new Set(items.flatMap((x) => x.precios.map((pr) => pr.precio.toFixed(4))))];
+  const precio = todosLosPrecios.length === 1
+    //  Un solo precio para todo: una sola línea, sin numerar.
+    ? `${precioKg(items[0].precios[0].precio)} ${moneda}/KG ${incoterm}`
+    : items.flatMap((x, i) => x.precios.map((pr) =>
+        `${marca(i)}${precioKg(pr.precio)} ${moneda}/KG ${incoterm}` +
+        (x.precios.length > 1 && pr.saco > 0 ? ` - ${unidadSaco} X ${pesoCorto(pr.saco)} KG` : ''))).join('\n');
+  //  Sin tolerancia en el pedido, la de Configuración (la misma que usa la proforma).
+  const tol = ped.tolerancia_pct != null ? Number(ped.tolerancia_pct) : Number(p.get('proforma_tolerancia_pct') ?? 0);
 
   /* ---- La cuenta: la del pedido en su moneda; si no, la principal ---- */
   let cuenta = (cuentas ?? []).map((c) => uno<Record<string, unknown>>(c.cuentas_bancarias))
@@ -193,11 +241,18 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
     cuenta = principal ?? undefined;
   }
 
-  /* ---- Documento F: se propone el certificado de captura para la Unión Europea ---- */
-  const paisDestino = sinTildes(String(destino?.pais ?? cliente?.pais ?? ''));
-  const documentoF = UNION_EUROPEA.includes(paisDestino)
+  /*
+   * ---- Documento F: el certificado de captura (083, punto 05) ----
+   * Lo decide la cotización (y el pedido lo hereda): tiene un costo adicional
+   * y se negocia en cada venta. Solo si nadie lo decidió (pedidos de antes de
+   * la 083) se propone para la Unión Europea, como antes.
+   */
+  const documentoF = llevaCertificadoCaptura(ped.certificado_captura as boolean | null, String(destino?.pais ?? cliente?.pais ?? ''))
     ? { en: 'Catch Certificate', es: 'Certificado de Captura' }
     : { en: '', es: '' };
+
+  /* ---- Quién firma: quien aprobó la cotización, o Gerencia (083) ---- */
+  const firmante = await resolverFirmante(supabase, ped as Record<string, unknown>);
 
   const revision = count ?? 0;
   const proforma = String(ped.numero_proforma);
@@ -219,15 +274,18 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
         documento: cliente?.ruc_tax_id ? `${etiqueta}: ${cliente.ruc_tax_id}.` : '',
       },
       producto: {
-        en: unico.join('\n'),
-        es: [...new Set(prods.map((x) => x.es))].join('\n'),
+        en: items.map((x, i) => `${marca(i)}${x.en}`).join('\n'),
+        es: items.map((x, i) => `${marca(i)}${x.es}`).join('\n'),
       },
       cantidad: `${kg(totalKg)} KG${tol > 0 ? ` (+/- ${Number(tol.toFixed(2))}%)` : ''}`,
       precio,
-      empaque: empaqueEn(tipoEmpaque, pesos),
-      periodo: periodoBilingue((ped.mes_embarque as string) ?? (ped.fecha_comprometida as string) ?? null),
+      //  «BAGS OF 30 KG AND/OR 20 KG FOR SEXUAL TENTACLES», como el modelo, si todo son reproductores.
+      empaque: `${empaqueEn(tipoEmpaque, pesos)}${todosReproductores && pesos.some((k) => k > 0) ? ' FOR SEXUAL TENTACLES' : ''}`,
+      //  El mes: el de embarque; si no, el de la fecha tentativa de despacho; si no, el comprometido.
+      periodo: periodoBilingue((ped.mes_embarque as string) ?? (ped.fecha_tentativa_despacho as string) ?? (ped.fecha_comprometida as string) ?? null),
       puertoCarga: String(ped.puerto_embarque ?? p.get('puerto_embarque') ?? 'PAITA, PERU').toUpperCase().replace(/,(?=\S)/g, ', '),
       puertoDescarga: destinoTexto,
+      puertoDescargaEs: destinoTextoEs,
       pago: pagoBilingue((ped.forma_pago as FormaPago | null) ?? null, Number(ped.pago_adelanto_pct ?? 0), Number(ped.dias_credito ?? 0), (ped.condicion_pago as string) ?? null),
       banco: {
         nombre: String(cuenta?.banco ?? '').toUpperCase(),
@@ -238,7 +296,7 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
         beneficiario: String(cuenta?.titular || p.get('empresa_razon_social') || '').toUpperCase(),
       },
       documentoF,
-      firmante: { nombre: p.get('firmante_nombre') ?? '', cargo: p.get('firmante_cargo') ?? '', ruc: p.get('empresa_ruc') ?? '' },
+      firmante: { nombre: firmante.nombre, cargo: firmante.cargo, ruc: p.get('empresa_ruc') ?? '', usuarioId: firmante.usuarioId, motivo: firmante.motivo },
     },
   };
 }

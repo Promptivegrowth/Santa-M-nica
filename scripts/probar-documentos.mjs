@@ -259,8 +259,18 @@ async function principal() {
       textoHoja.includes(String(c.numero)));
     comprobar(`  · el Excel identifica al emisor por su RUC`,
       textoHoja.includes('20205572229'), 'no aparece el RUC de Santa Mónica');
-    comprobar(`  · el Excel trae el importe en letras`,
-      /CON \d{2}\/100/.test(textoHoja), 'falta la línea «SON …»');
+    /*
+     * 083 · El importe en letras va solo en la factura y la boleta (lo exige
+     * SUNAT). En la cotización y la proforma, no: Oliver pidió «que no
+     * aparezca, solo el número».
+     */
+    if (c.tipo === 'factura' || c.tipo === 'boleta') {
+      comprobar(`  · el Excel trae el importe en letras`,
+        /CON \d{2}\/100/.test(textoHoja), 'falta la línea «SON …»');
+    } else {
+      comprobar(`  · el Excel de ${c.tipo} NO trae el importe en letras (083)`,
+        !/CON \d{2}\/100/.test(textoHoja), 'aparece la línea «SON …»');
+    }
 
     /* ---- Y LO IMPORTANTE: que las cifras coincidan con la base ---- */
     if (c.guardado) {

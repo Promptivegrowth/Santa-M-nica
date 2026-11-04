@@ -35,6 +35,8 @@ import { BotonDespachar } from './Despachar';
 import { PlanoEditable } from './PlanoEditable';
 import { CargarLotes } from './CargarLotes';
 import { EditarDatosPacking } from './EditarDatos';
+import { CambiarNumeroPacking } from './CambiarNumeroPacking';
+import { PUEDEN_PACKING, rolPuede } from '@/lib/permisosLogistica';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,6 +147,7 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
   puedeDespachar: boolean;
 }) {
   const supabase = await crearClienteServidor();
+  const usuarioPk = await obtenerUsuarioActual();
 
   const [{ data: lineas }, { data: celdas }, { data: supervisores }] = await Promise.all([
     supabase
@@ -298,7 +301,17 @@ async function CuerpoPlano({ packingId, pk, puedeDespachar }: {
       {/* ---- Título del documento, como en el formato original ---- */}
       <Panel titulo="Datos del embarque" className="mb-espacio">
         <dl className="ficha ficha-columnas">
-          <div><dt>N.° packing list</dt><dd className="mono">{pk.codigo as string}</dd></div>
+          <div>
+            <dt>N.° packing list</dt>
+            <dd className="mono">
+              <span data-codigo-packing>{pk.codigo as string}</span>
+              {/* Se corrige en cualquier estado (084): es la numeración de la casa, no un dato fiscal. */}
+              {usuarioPk && rolPuede(usuarioPk.rol, PUEDEN_PACKING) && (
+                <CambiarNumeroPacking packingId={packingId} actual={pk.codigo as string} puede
+                                      noPuede={null} />
+              )}
+            </dd>
+          </div>
           <div><dt>N.° contenedor</dt><dd className="mono">{(pk.contenedor as string) ?? '—'}</dd></div>
           <div><dt>Precinto</dt><dd className="mono">{(pk.precinto as string) ?? '—'}</dd></div>
           <div><dt>Guía de remisión</dt><dd className="mono">{(pk.guia_remision as string) ?? '—'}</dd></div>

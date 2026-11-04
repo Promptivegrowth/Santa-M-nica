@@ -291,6 +291,9 @@ async function CuerpoCliente({ cliId, c }: { cliId: number; c: Record<string, un
             <div><dt>Correo</dt><dd>{(c.email as string) ?? '—'}</dd></div>
             <div><dt>Teléfono</dt><dd>{(c.telefono as string) ?? '—'}</dd></div>
             <div><dt>Vendedor asignado</dt><dd>{campo(c.vendedores, 'nombre', 'Sin vendedor')}</dd></div>
+            {/* Lo que trae la lista BASC de Comex (punto 01 de «Observaciones ERP 4»). */}
+            {c.productos_interes ? <div><dt>Productos de interés</dt><dd>{String(c.productos_interes)}</dd></div> : null}
+            {c.referencias_comerciales ? <div><dt>Referencias comerciales</dt><dd style={{ whiteSpace: 'pre-line' }}>{String(c.referencias_comerciales)}</dd></div> : null}
             <div><dt>Alta</dt><dd>{fecha(c.creado_en as string)}</dd></div>
           </dl>
         </Panel>

@@ -31,6 +31,9 @@ import { ObservacionesEmbarque } from './ObservacionesEmbarque';
 import { CicloEmbarque } from './CicloEmbarque';
 import { EditarEmbarque } from './EditarEmbarque';
 import { AgregarPedidos, QuitarPedido } from './PedidosDelEmbarque';
+import { DocumentosEmbarque, ComentariosEmbarque, type DocumentoVisible } from './DocumentosEmbarque';
+import { semanaIso } from '@/lib/numeroPacking';
+import { PUEDEN_DOCUMENTOS_EMBARQUE, PUEDEN_QUITAR_CUALQUIERA, type TipoDocumentoEmbarque } from '@/lib/documentosEmbarque';
 
 /** Programan, editan y cambian los pedidos (igual que el alta). */
 const PUEDEN_ARMAR = ['gerencia', 'operaciones', 'comex', 'almacen'];
@@ -84,7 +87,7 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
   const embId = Number(id);
 
   const supabase = await crearClienteServidor();
-  const [{ data: e }, usuarioCab, { data: supervisores }, { data: packingsCab }, { count: pedidosCab }] = await Promise.all([
+  const [{ data: e }, usuarioCab, { data: supervisores }, { data: packingsCab }, { count: pedidosCab }, { data: codigoPropuesto }] = await Promise.all([
     supabase
       .from('embarques')
       .select('*, almacenes(id, nombre), destinos(puerto, pais), transportistas(razon_social), vehiculos(placa), conductores(nombre)')
@@ -94,6 +97,8 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
     supabase.from('usuarios').select('id, nombre').eq('activo', true).order('nombre'),
     supabase.from('packing_lists').select('codigo, estado').eq('embarque_id', embId),
     supabase.from('embarque_pedidos').select('pedido_id', { count: 'exact', head: true }).eq('embarque_id', embId),
+    //  El N.º de packing que se propone al crear un contenedor (084).
+    supabase.rpc('proponer_codigo_packing', { p_embarque_id: embId }),
   ]);
 
   if (!e) notFound();
@@ -145,6 +150,7 @@ export default async function FichaEmbarque(props: PageProps<'/logistica/embarqu
             id: String(u.id), nombre: u.nombre as string,
           }))}
           puede={puedeArmar}
+          codigoPropuesto={(codigoPropuesto as string | null) ?? null}
         />
       </CabeceraPagina>
 
@@ -176,7 +182,8 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
   const puedeVerImportes = veCostos((usuario?.rol ?? 'consulta') as Rol);
 
   const puedeEditar = PUEDEN_ARMAR.includes(usuario?.rol ?? '');
-  const [{ data: vinculos }, { data: packings }, { data: programadas }, catalogos] = await Promise.all([
+  const puedeDocumentos = PUEDEN_DOCUMENTOS_EMBARQUE.includes((usuario?.rol ?? 'consulta') as Rol);
+  const [{ data: vinculos }, { data: packings }, { data: programadas }, catalogos, { data: archivos }, { data: comentarios }, { data: operadores }] = await Promise.all([
     supabase
       .from('embarque_pedidos')
       .select('pedidos(id, numero_proforma, ciclo, cobertura, situacion, moneda, tipo_cambio, fecha_comprometida, clientes(id, razon_social, pais), pedido_lineas(id, cantidad_tm, precio_tm, descuento_pct))')
@@ -200,7 +207,44 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
           supabase.from('conductores').select('id, nombre').eq('activo', true).order('nombre'),
         ])
       : Promise.resolve(null),
+    //  Documentos y comentarios del embarque («Observaciones ERP 4», 08 y 09).
+    supabase.from('embarque_archivos')
+      .select('id, tipo, ruta, nombre, tipo_mime, tamano_bytes, comentario, subido_en, subido_por, usuarios(nombre)')
+      .eq('embarque_id', embId).order('subido_en'),
+    supabase.from('embarque_comentarios')
+      .select('id, texto, creado_en, usuarios(nombre)').eq('embarque_id', embId).order('creado_en'),
+    //  Los operadores logísticos ya usados, para sugerirlos al escribir.
+    puedeEditar
+      ? supabase.from('embarques').select('operador_logistico').not('operador_logistico', 'is', null).limit(500)
+      : Promise.resolve({ data: [] as { operador_logistico: string }[] }),
   ]);
+
+  /* Enlaces firmados por una hora para ver y descargar cada documento. */
+  const rutas = (archivos ?? []).map((a) => String(a.ruta));
+  const { data: firmados } = rutas.length
+    ? await supabase.storage.from('despachos').createSignedUrls(rutas, 3600)
+    : { data: [] as { path: string | null; signedUrl: string }[] };
+  const urlDe = new Map((firmados ?? []).map((f) => [String(f.path), f.signedUrl as string | null]));
+  const descargas = await Promise.all((archivos ?? []).map(async (a) => {
+    const { data } = await supabase.storage.from('despachos').createSignedUrl(String(a.ruta), 3600, { download: String(a.nombre) });
+    return [Number(a.id), data?.signedUrl ?? null] as const;
+  }));
+  const descargaDe = new Map(descargas);
+  const quitaTodo = PUEDEN_QUITAR_CUALQUIERA.includes((usuario?.rol ?? 'consulta') as Rol);
+  const documentos: DocumentoVisible[] = (archivos ?? []).map((a) => ({
+    id: Number(a.id),
+    tipo: a.tipo as TipoDocumentoEmbarque,
+    nombre: String(a.nombre),
+    //  Un Excel no se «ve» en el navegador: solo se descarga.
+    url: String(a.tipo_mime).includes('sheet') || String(a.tipo_mime).includes('excel') ? null : (urlDe.get(String(a.ruta)) ?? null),
+    descarga: descargaDe.get(Number(a.id)) ?? null,
+    tamano_bytes: Number(a.tamano_bytes),
+    subido_en: String(a.subido_en),
+    subido_por: campo(a.usuarios, 'nombre', '') || null,
+    comentario: (a.comentario as string) ?? null,
+    quitable: puedeDocumentos && e.estado !== 'cancelado' && (quitaTodo || String(a.subido_por) === usuario?.id),
+  }));
+  const sugerenciasOperador = [...new Set((operadores ?? []).map((o) => String(o.operador_logistico ?? '').trim()).filter(Boolean))].sort();
   //  El saldo que le queda a cada línea, contando TODOS los embarques vivos.
   const idsLineas = [...new Set((programadas ?? []).map((x) => Number(x.pedido_linea_id)))];
   const { data: saldos } = idsLineas.length
@@ -354,7 +398,15 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
             <div><dt>Tipo de despacho</dt><dd>{etiquetaEstado(String(e.tipo_despacho))}</dd></div>
             <div><dt>Booking</dt><dd className="mono">{(e.booking as string) ?? 'Sin booking'}</dd></div>
             <div><dt>Naviera</dt><dd>{(e.naviera as string) ?? '—'}</dd></div>
-            <div><dt>Fecha programada</dt><dd>{e.fecha_programada ? fecha(e.fecha_programada as string) : '—'}</dd></div>
+            <div><dt>Despacho programado</dt><dd>{e.fecha_programada ? fecha(e.fecha_programada as string) : '—'}</dd></div>
+            {/* «Observaciones ERP 4», 07, 11 y 13: semana y zarpe son dos datos, y el PL es el de la casa. */}
+            <div>
+              <dt>Semana de despacho</dt>
+              <dd data-semana>{e.semana_despacho == null ? semanaIso(String(e.fecha_programada)) ?? '—' : String(e.semana_despacho)}</dd>
+            </div>
+            <div><dt>Fecha de zarpe</dt><dd data-zarpe>{e.fecha_zarpe ? fecha(e.fecha_zarpe as string) : 'Sin fecha de zarpe'}</dd></div>
+            <div><dt>Operador logístico</dt><dd data-operador>{(e.operador_logistico as string) ?? '—'}</dd></div>
+            <div><dt>N.º de packing</dt><dd className="mono" data-numero-packing>{(e.numero_packing as string) ?? 'Sin asignar'}</dd></div>
           </dl>
           {/* Editables después de programar (octubre, punto 12). */}
           <div style={{ padding: '.2rem 1rem .9rem' }}>
@@ -366,7 +418,9 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
             <EditarEmbarque
               embarqueId={embId}
               tipoDespacho={String(e.tipo_despacho)}
-              noPuede={cerradoPara ? `${cerradoPara} Sus datos ya no se cambian.` : null}
+              noPuede={estado === 'cancelado' ? `${cerradoPara} Sus datos ya no se cambian.` : null}
+              soloProgramacion={estado === 'despachado'}
+              sugerenciasOperador={sugerenciasOperador}
               datos={{
                 fecha_programada: String(e.fecha_programada ?? ''),
                 destino_id: (e.destino_id as number) ?? null,
@@ -376,6 +430,10 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
                 vehiculo_id: (e.vehiculo_id as number) ?? null,
                 conductor_id: (e.conductor_id as number) ?? null,
                 observaciones: (e.observaciones as string) ?? null,
+                semana_despacho: (e.semana_despacho as number | null) ?? null,
+                fecha_zarpe: (e.fecha_zarpe as string | null) ?? null,
+                operador_logistico: (e.operador_logistico as string | null) ?? null,
+                numero_packing: (e.numero_packing as string | null) ?? null,
               }}
               destinos={(destinosCat?.data ?? []).map((x) => ({ id: Number(x.id), puerto: String(x.puerto), pais: String(x.pais ?? '') }))}
               transportistas={(transportistasCat?.data ?? []).map((t) => ({ id: Number(t.id), nombre: String(t.razon_social) }))}
@@ -588,6 +646,30 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
             </table>
           </div>
         )}
+      </Panel>
+
+      {/* ══════ DOCUMENTOS Y COMENTARIOS («Observaciones ERP 4», 08 y 09) ══════ */}
+      <Panel id="documentos" titulo={`Documentos del embarque · ${documentos.length}`} className="mb-espacio">
+        <DocumentosEmbarque
+          embarqueId={embId}
+          documentos={documentos}
+          puede={puedeDocumentos && estado !== 'cancelado'}
+          noPuede={estado === 'cancelado'
+            ? 'El embarque está cancelado: ya no se le adjuntan documentos.'
+            : !puedeDocumentos
+              ? 'Los documentos los suben Gerencia, Operaciones, Comercial, Comercio Exterior o Almacén.'
+              : null}
+        />
+      </Panel>
+      <Panel id="comentarios" titulo={`Comentarios · ${(comentarios ?? []).length}`} className="mb-espacio">
+        <ComentariosEmbarque
+          embarqueId={embId}
+          puede={puedeDocumentos}
+          comentarios={(comentarios ?? []).map((c) => ({
+            id: Number(c.id), texto: String(c.texto), creado_en: String(c.creado_en),
+            autor: campo(c.usuarios, 'nombre', 'Usuario'),
+          }))}
+        />
       </Panel>
 
       <Panel titulo="Historial del embarque">

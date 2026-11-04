@@ -17,6 +17,12 @@
  *  · El RUC se comprueba mientras se escribe, con el mismo cálculo de dígito
  *    verificador que usa SUNAT. Un RUC mal tecleado que entra al maestro sale
  *    después impreso en una factura.
+ *
+ *  · «Observaciones ERP 4», punto 01: aquí se llena TODO lo que trae la lista
+ *    BASC de Comex (dirección, identificación fiscal y su etiqueta, contacto,
+ *    web, condición, forma de pago, referencias y productos). Antes esos
+ *    datos solo entraban por script y no se podían corregir: la dirección y
+ *    el CIF/USCI salen impresos en la cotización, la proforma y el contrato.
  * ============================================================================
  */
 import { useState, useTransition } from 'react';
@@ -26,6 +32,7 @@ import { Icono } from '@/components/estructura/Icono';
 import { crearCliente, actualizarCliente, type DatosCliente } from './acciones';
 import { accionSegura } from '@/lib/accionSegura';
 import { AVISO_LINEA_CREDITO } from '@/lib/permisosFinanzas';
+import { FORMAS_PAGO, PIDE_ADELANTO, type FormaPago } from '@/lib/condicionesVenta';
 
 export type ClienteExistente = DatosCliente & { id: number; activo: boolean };
 
@@ -39,6 +46,19 @@ function rucCorrecto(ruc: string): boolean {
   return esperado === Number(ruc[10]);
 }
 
+/**
+ * Cómo se llama la identificación fiscal en cada país (lo que más se usa en
+ * la lista de Comex). Es una sugerencia: se puede escribir otra.
+ */
+const ETIQUETAS_FISCALES = ['RUC', 'TAX ID', 'USCI', 'CIF', 'NIF', 'VAT', 'EIN', 'RFC', 'INN', 'BRN', 'UEN', 'MST', 'NIT', 'RUT', 'CNPJ'];
+const ETIQUETA_POR_PAIS: Record<string, string> = {
+  'Perú': 'RUC', China: 'USCI', 'Hong Kong': 'BRN', 'España': 'CIF', Portugal: 'NIF', 'Estados Unidos': 'EIN',
+  'México': 'RFC', Mexico: 'RFC', Rusia: 'INN', Corea: 'BRN', 'Corea del Sur': 'BRN', Vietnam: 'MST', Singapur: 'UEN',
+  Chile: 'RUT', Colombia: 'NIT', Brasil: 'CNPJ',
+};
+/** Como los escribe la lista de Comex (sin tilde). */
+const CONTINENTES = ['America', 'Asia', 'Europa', 'Africa', 'Oceania'];
+
 /** Por qué quien no es Gerencia ni Operaciones ve apagado el bloqueo. */
 const AVISO_BLOQUEO = 'Bloquear y desbloquear al cliente lo hacen Gerencia u Operaciones: es control financiero.';
 
@@ -51,6 +71,9 @@ const VACIO: DatosCliente = {
   codigo: '', razon_social: '', nombre_corto: '', tipo: 'final', pais: 'Perú',
   ruc_tax_id: '', contacto: '', email: '', telefono: '', vendedor_id: null,
   moneda: 'USD', linea_credito: null, dias_credito: 30, bloqueado: false, motivo_bloqueo: '',
+  //  Los de la lista BASC (punto 01). Un cliente nuevo nace en Perú: su identificación es el RUC.
+  direccion: '', etiqueta_tax_id: 'RUC', continente: 'America', web: '', condicion: '',
+  forma_pago: null, adelanto_pct: null, forma_pago_habitual: '', referencias_comerciales: '', productos_interes: '',
 };
 
 export function FormularioCliente({
@@ -60,6 +83,7 @@ export function FormularioCliente({
   vendedores,
   gestionaBloqueo = false,
   fijaCredito = false,
+  condiciones = [],
 }: {
   cliente?: ClienteExistente;
   codigoPropuesto?: string;
@@ -75,6 +99,8 @@ export function FormularioCliente({
    * fija o cambia la línea; los demás la ven apagada, con el porqué.
    */
   fijaCredito?: boolean;
+  /** Las condiciones que ya se usan (Importador, Intermediario…), para sugerirlas. */
+  condiciones?: string[];
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
@@ -92,6 +118,19 @@ export function FormularioCliente({
     setD((previo) => {
       const siguiente = { ...previo, [k]: v };
       //  081 · Ya no se propone soles al elegir Perú: todo se vende en dólares.
+      /*
+       * Al cambiar el país se propone cómo se llama su identificación fiscal
+       * (Perú → RUC, España → CIF, China → USCI…), salvo que ya se haya
+       * escrito otra a mano.
+       */
+      if (k === 'pais') {
+        const propuesta = ETIQUETA_POR_PAIS[String(v).trim()];
+        const anterior = ETIQUETA_POR_PAIS[previo.pais.trim()];
+        const actual = previo.etiqueta_tax_id?.trim() ?? '';
+        if (propuesta && (!actual || actual === anterior || actual === 'TAX ID')) {
+          siguiente.etiqueta_tax_id = propuesta;
+        }
+      }
       return siguiente;
     });
     setProblema(null);
@@ -180,7 +219,29 @@ export function FormularioCliente({
           </label>
 
           <label className="form-campo">
-            <span>{esPeru ? 'RUC' : 'Tax ID'}</span>
+            <span>Continente</span>
+            <input className="campo" list="lista-continentes" name="continente" value={d.continente ?? ''}
+                   data-error={error('continente')} maxLength={40}
+                   onChange={(e) => campo('continente', e.target.value)} />
+            <datalist id="lista-continentes">
+              {CONTINENTES.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </label>
+
+          <label className="form-campo">
+            <span>Nombre de la identificación fiscal</span>
+            <input className="campo mono" list="lista-etiquetas-fiscales" name="etiqueta_tax_id"
+                   value={d.etiqueta_tax_id ?? ''} data-error={error('etiqueta_tax_id')} maxLength={20}
+                   placeholder={esPeru ? 'RUC' : 'CIF, USCI, EIN…'}
+                   onChange={(e) => campo('etiqueta_tax_id', e.target.value)} />
+            <datalist id="lista-etiquetas-fiscales">
+              {ETIQUETAS_FISCALES.map((c) => <option key={c} value={c} />)}
+            </datalist>
+            <small>Sale delante del número en los documentos: «CIF: B27821032».</small>
+          </label>
+
+          <label className="form-campo">
+            <span>{esPeru ? 'RUC' : `Número (${d.etiqueta_tax_id?.trim() || 'Tax ID'})`}</span>
             <input className="campo mono" value={d.ruc_tax_id ?? ''} data-error={error('ruc_tax_id') ?? (rucMal ? 'si' : undefined)}
                    onChange={(e) => campo('ruc_tax_id', e.target.value)}
                    placeholder={esPeru ? '20205572229' : 'Identificación fiscal'}
@@ -193,6 +254,15 @@ export function FormularioCliente({
             {esPeru && ruc.length > 0 && ruc.length < 11 && (
               <small>Un RUC peruano tiene once dígitos. Van {ruc.length}.</small>
             )}
+          </label>
+
+          <label className="form-campo form-campo-ancho">
+            <span>Dirección</span>
+            <textarea className="campo" name="direccion" rows={2} value={d.direccion ?? ''}
+                      data-error={error('direccion')} maxLength={300}
+                      placeholder="Calle, número, ciudad, código postal, provincia"
+                      onChange={(e) => campo('direccion', e.target.value)} />
+            <small>Sale impresa en la cotización, la proforma y el contrato tal como se escriba aquí.</small>
           </label>
 
           <label className="form-campo">
@@ -248,6 +318,12 @@ export function FormularioCliente({
                    onChange={(e) => campo('telefono', e.target.value)}
                    placeholder="+51 999 999 999" maxLength={40} />
           </label>
+          <label className="form-campo">
+            <span>Página web</span>
+            <input className="campo" name="web" value={d.web ?? ''} data-error={error('web')}
+                   onChange={(e) => campo('web', e.target.value)}
+                   placeholder="www.empresa.com" maxLength={200} />
+          </label>
         </div>
         <p className="form-pista">
           Este es el contacto de cabecera del cliente. Los contactos adicionales —con su cargo, para
@@ -267,7 +343,7 @@ export function FormularioCliente({
               <option value="">Sin asignar</option>
               {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nombre}</option>)}
             </select>
-            <small>Es el responsable de la cuenta. Al cotizar se elige el vendedor de cada oferta: no se llena solo.</small>
+            <small>Es el responsable de la cuenta. Al cotizarle se propone como vendedor de la oferta (se puede cambiar).</small>
           </label>
 
           <label className="form-campo" title={fijaCredito ? undefined : AVISO_LINEA_CREDITO}>
@@ -289,6 +365,62 @@ export function FormularioCliente({
                    value={d.dias_credito} data-error={error('dias_credito')}
                    onChange={(e) => campo('dias_credito', Number(e.target.value))} />
             <small>Con esto se calcula el vencimiento de la factura.</small>
+          </label>
+
+          {/* ---- Lo que trae la lista BASC de Comex (punto 01) ---- */}
+          <label className="form-campo">
+            <span>Forma de pago habitual</span>
+            <select className="campo" name="forma_pago" value={d.forma_pago ?? ''} data-error={error('forma_pago')}
+                    onChange={(e) => campo('forma_pago', (e.target.value || null) as FormaPago | null)}>
+              <option value="">Sin definir</option>
+              {(Object.keys(FORMAS_PAGO) as FormaPago[]).map((f) => <option key={f} value={f}>{FORMAS_PAGO[f]}</option>)}
+            </select>
+            <small>Se propone sola al cotizarle (en cada cotización se puede cambiar).</small>
+          </label>
+
+          <label className="form-campo">
+            <span>% de adelanto</span>
+            <input className="campo mono" type="number" min={0} max={100} step={1} name="adelanto_pct"
+                   value={d.adelanto_pct ?? ''} data-error={error('adelanto_pct')} placeholder="—"
+                   onChange={(e) => campo('adelanto_pct', e.target.value === '' ? null : Number(e.target.value))} />
+            <small>
+              {d.forma_pago && PIDE_ADELANTO.includes(d.forma_pago)
+                ? 'Lo que adelanta el cliente; el saldo, contra documentos.'
+                : 'Opcional.'}
+            </small>
+          </label>
+
+          <label className="form-campo form-campo-ancho">
+            <span>Forma de pago, como la escribe Comex</span>
+            <input className="campo" name="forma_pago_habitual" value={d.forma_pago_habitual ?? ''}
+                   data-error={error('forma_pago_habitual')} maxLength={300}
+                   placeholder="Transferencia: 30% Adelanto / 70% contra copia de documentos"
+                   onChange={(e) => campo('forma_pago_habitual', e.target.value)} />
+          </label>
+
+          <label className="form-campo">
+            <span>Condición</span>
+            <input className="campo" list="lista-condiciones" name="condicion" value={d.condicion ?? ''}
+                   data-error={error('condicion')} maxLength={120} placeholder="Importador, Intermediario…"
+                   onChange={(e) => campo('condicion', e.target.value)} />
+            <datalist id="lista-condiciones">
+              {[...new Set(['Importador', 'Intermediario', 'Comprador', 'Importador / Distribuidor', ...condiciones])]
+                .map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </label>
+
+          <label className="form-campo form-campo-ancho">
+            <span>Productos de interés</span>
+            <input className="campo" name="productos_interes" value={d.productos_interes ?? ''}
+                   data-error={error('productos_interes')} maxLength={300} placeholder="Pota, merluza…"
+                   onChange={(e) => campo('productos_interes', e.target.value)} />
+          </label>
+
+          <label className="form-campo form-campo-ancho">
+            <span>Referencias comerciales</span>
+            <textarea className="campo" name="referencias_comerciales" rows={2} value={d.referencias_comerciales ?? ''}
+                      data-error={error('referencias_comerciales')} maxLength={1000}
+                      onChange={(e) => campo('referencias_comerciales', e.target.value)} />
           </label>
         </div>
 

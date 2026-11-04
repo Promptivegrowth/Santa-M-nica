@@ -45,6 +45,8 @@ import { revisarTipoCambio, TIPO_CAMBIO_MINIMO, TIPO_CAMBIO_MAXIMO } from '@/lib
 import { accionSegura } from '@/lib/accionSegura';
 import { problemaNumeroProforma } from '@/lib/numeroProforma';
 import { CampoNumeroProforma } from './CampoNumeroProforma';
+//  085 · «Otro destino…»: destinos que no están en la lista (punto 12 de «Observaciones ERP 4»).
+import { CampoDestino } from './CampoDestino';
 import type { ContactoDocumento } from '@/lib/contactoDocumento';
 import type { TipoCambioSunat } from '@/lib/tipoCambioSunat';
 import {
@@ -135,6 +137,8 @@ export type DatosEdicion = {
   adelanto_pct?: number;
   adelanto_abonado?: number | null;
   adelanto_abonado_en?: string | null;
+  /** 083 · Si la venta incluye certificado de captura. null = no se decidió (anterior a la 083). */
+  certificado_captura?: boolean | null;
   cuentas?: number[];
   lineas: {
     sku_presentacion_id: number;
@@ -205,7 +209,7 @@ export function FormularioVenta({
   numeroPropuesto = null,
 }: {
   modo: Modo;
-  clientes: (Opcion & { pais: string; moneda: string; bloqueado: boolean; forma_pago?: FormaPago | null; adelanto_pct?: number | null })[];
+  clientes: (Opcion & { pais: string; moneda: string; bloqueado: boolean; forma_pago?: FormaPago | null; adelanto_pct?: number | null; vendedor_id?: number | null })[];
   vendedores: Opcion[];
   destinos: (Opcion & { pais: string })[];
   listas: (Opcion & { moneda: string; incoterm: string })[];
@@ -267,8 +271,15 @@ export function FormularioVenta({
     : null;
 
   const [clienteId, setClienteId] = useState<number | ''>(edicion?.cliente_id ?? deEntrada?.id ?? '');
-  const [vendedorId, setVendedorId] = useState<number | ''>(edicion?.vendedor_id ?? '');
+  /*
+   * 085 · El vendedor: al crear se propone el asignado al cliente (punto 01 de
+   * «Observaciones ERP 4»: la cotización de KULALIA quedó «Sin vendedor» y el
+   * cliente tenía uno). Se puede cambiar; al reabrir se respeta el guardado.
+   */
+  const [vendedorId, setVendedorId] = useState<number | ''>(edicion?.vendedor_id ?? deEntrada?.vendedor_id ?? '');
   const [destinoId, setDestinoId] = useState<number | ''>(edicion?.destino_id ?? '');
+  //  Los destinos agregados con «Otro destino…» se suman a la lista sin recargar (085).
+  const [listaDestinos, setListaDestinos] = useState(destinos);
   const [listaId, setListaId] = useState<number | ''>(edicion?.lista_id ?? listas[0]?.id ?? '');
   const [moneda, setMoneda] = useState<'USD' | 'PEN'>(
     edicion?.moneda ?? (deEntrada?.moneda as 'USD' | 'PEN' | undefined) ?? 'USD'
@@ -333,6 +344,14 @@ export function FormularioVenta({
   /* ---- Entrega y pago (puntos 4, 5 y 6) ---- */
   const [fechaTentativa, setFechaTentativa] = useState(edicion?.fecha_tentativa_despacho ?? '');
   const [formaPago, setFormaPago] = useState<FormaPago | ''>(edicion?.forma_pago ?? deEntrada?.forma_pago ?? '');
+  /*
+   * 083 · Certificado de captura (punto 05 de Oliver): opcional porque tiene
+   * un costo adicional; se decide en cada cotización y llega a la proforma y
+   * al contrato. Si se reabre una cotización de antes de la 083 (sin decidir)
+   * y no se toca la casilla, no se envía: sigue la regla de antes.
+   */
+  const [certCaptura, setCertCaptura] = useState<boolean>(edicion?.certificado_captura ?? false);
+  const [certTocado, setCertTocado] = useState(false);
   const [adelantoPct, setAdelantoPct] = useState(
     edicion?.adelanto_pct ?? (deEntrada?.forma_pago ? Number(deEntrada.adelanto_pct ?? 0) : 0)
   );
@@ -649,6 +668,8 @@ export function FormularioVenta({
       adelanto_pct: adelantoPct,
       adelanto_abonado: abonado === '' ? null : Number(abonado),
       adelanto_abonado_en: abonado === '' ? null : (edicion?.adelanto_abonado_en ?? null),
+      //  083 · Solo si se decidió (casilla tocada o ya decidida antes).
+      ...(certTocado || !esEdicion || edicion?.certificado_captura != null ? { certificado_captura: certCaptura } : {}),
     };
 
     // Se descartan las tres ayudas de pantalla —la clave de React, el
@@ -698,6 +719,8 @@ export function FormularioVenta({
             tipo_cambio_clase: condiciones.tipo_cambio_clase,
             numero_proforma: numeroProforma,
             numero_propuesto: numeroPropuesto,
+            //  083 · El certificado de captura, decidido al registrar el pedido.
+            certificado_captura: certCaptura,
           })
         : await crearCotizacion({
             cliente_id: Number(clienteId),
@@ -760,6 +783,11 @@ export function FormularioVenta({
        * La forma de pago habitual del cliente (lista de Comex): se
        * propone al crear, no al reabrir una cotización ya hecha.
        */
+      //  085 · Su vendedor asignado, si no se eligió otro a mano.
+      const anterior = clientes.find((x) => x.id === clienteId)?.vendedor_id ?? null;
+      if (!esEdicion && c.vendedor_id && (vendedorId === '' || Number(vendedorId) === anterior)) {
+        setVendedorId(c.vendedor_id);
+      }
       if (!esEdicion && c.forma_pago) {
         setFormaPago(c.forma_pago);
         setAdelantoPct(Number(c.adelanto_pct ?? 0));
@@ -823,17 +851,14 @@ export function FormularioVenta({
             </select>
           </label>
 
-          <label className="form-campo">
-            <span className="etiqueta">Destino</span>
-            <select
-              className="campo"
-              value={destinoId}
-              onChange={(e) => setDestinoId(e.target.value ? Number(e.target.value) : '')}
-            >
-              <option value="">Sin definir</option>
-              {destinos.map((d) => <option key={d.id} value={d.id}>{d.nombre} · {d.pais}</option>)}
-            </select>
-          </label>
+          {/* 085 · Con «Otro destino…» para los que no están en la lista. */}
+          <CampoDestino
+            destinos={listaDestinos}
+            valor={destinoId}
+            onChange={setDestinoId}
+            onAgregado={(d) => setListaDestinos((xs) => (xs.some((x) => x.id === d.id) ? xs : [...xs, d].sort((a, b) => a.nombre.localeCompare(b.nombre))))}
+            disabled={guardando}
+          />
 
           {!esPedido && (
             <label className="form-campo">
@@ -1077,6 +1102,38 @@ export function FormularioVenta({
           </div>
         </section>
       )}
+
+      {/* ══════ CERTIFICADO DE CAPTURA (083, punto 05 de Oliver) ══════
+        Todos los documentos de exportación son obligatorios salvo este, que
+        tiene un costo adicional y se negocia en cada venta (el mismo cliente
+        puede pedirlo en una proforma y en otra no). Llega a la proforma
+        («CATCH CERTIFICATE») y al contrato (documento F).
+      */}
+      <section className="panel mb-espacio" data-bloque="certificado-captura">
+        <div className="panel-cabecera">
+          <span className="panel-titulo">Documentos de exportación</span>
+          <span className="form-nota-cab">Van a la proforma y al contrato</span>
+        </div>
+        <div style={{ padding: '.75rem 1rem' }}>
+          <label style={{ display: 'flex', gap: '.55rem', alignItems: 'flex-start', cursor: 'pointer' }}>
+            <input
+              type="checkbox" name="certificado_captura" checked={certCaptura} style={{ marginTop: '.2rem' }}
+              onChange={(e) => { setCertCaptura(e.target.checked); setCertTocado(true); }}
+            />
+            <span>
+              <strong>Incluye certificado de captura (Catch Certificate)</strong>
+              <br />
+              <small style={{ color: 'var(--tinta-3)' }}>
+                Tiene un costo adicional: márquelo solo si se negoció con el cliente. Los demás documentos
+                (factura comercial, packing list, B/L, certificado sanitario y certificado de origen) van siempre.
+                {esEdicion && edicion?.certificado_captura == null && !certTocado
+                  ? ' Esta cotización es anterior a esta opción: mientras no la marque o desmarque, la proforma lo propone solo para destinos de la Unión Europea.'
+                  : ''}
+              </small>
+            </span>
+          </label>
+        </div>
+      </section>
 
       {/* ══════ CONTACTO ══════
         Opcional a propósito. Se pidió que no bloquee, y es lo correcto: una

@@ -25,10 +25,11 @@ import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, dinero, pct, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
-import { ROLES_RECHAZAN_COTIZACION, motivoNoEliminarCotizacion, validezVencida, mensajeValidezVencida } from '@/lib/permisosVentas';
+import { ROLES_RECHAZAN_COTIZACION, motivoNoEliminarCotizacion, validezVencida, mensajeValidezVencida, puedeCotizar } from '@/lib/permisosVentas';
 import { DocumentosApagados, puedeDescargarDocumentos } from '../../DocumentosApagados';
 import { uno, campo } from '@/lib/relaciones';
 import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
+import { PanelDatosCliente } from '@/components/ventas/PanelDatosCliente';
 import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
 import { hoyEnLima, desplazarDias } from '@/lib/fechas';
 
@@ -115,7 +116,7 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
   const [{ data: cot }, { data: pedido }, requiereAprobacion] = await Promise.all([
     supabase
       .from('cotizaciones')
-      .select('*, clientes(id, razon_social, pais, moneda, bloqueado), vendedores(nombre), destinos(puerto, pais), listas_precio(nombre), usuarios!cotizaciones_creado_por_fkey(nombre), aprobador:usuarios!cotizaciones_aprobada_por_fkey(nombre)')
+      .select('*, clientes(id, razon_social, pais, moneda, bloqueado, direccion, ruc_tax_id, etiqueta_tax_id, vendedores(nombre)), vendedores(nombre), destinos(puerto, pais), listas_precio(nombre), usuarios!cotizaciones_creado_por_fkey(nombre), aprobador:usuarios!cotizaciones_aprobada_por_fkey(nombre), autorizador:usuarios!cotizaciones_modificacion_autorizada_por_fkey(nombre)')
       .eq('id', cotId)
       .single(),
     supabase
@@ -140,6 +141,24 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
     ? mensajeValidezVencida(String(cot.vence_el), { edita: puedeOperar, aprueba: puedeAprobar })
     : null;
 
+  /*
+   * 085 · Modificar una cotización ya aceptada («Observaciones ERP 4», 13).
+   * Autoriza quien aprueba cotizaciones o Gerencia; edita quien cotiza. Lo
+   * que lo impide (comprobante, despachado, cancelado) lo dice la base, con
+   * el mismo texto que daría al intentarlo.
+   */
+  const puedeAutorizarModificacion = puedeAprobar || usuario?.rol === 'gerencia';
+  const modificacion = cot.modificacion_autorizada_en
+    ? {
+        en: String(cot.modificacion_autorizada_en),
+        motivo: String(cot.modificacion_motivo ?? ''),
+        quien: campo(cot.autorizador, 'nombre', 'quien aprueba cotizaciones'),
+      }
+    : null;
+  const { data: bloqueoModificar } = pedido && estado === 'aceptada' && puedeOperar
+    ? await supabase.rpc('problema_modificar_pedido', { p_pedido_id: pedido.id })
+    : { data: null };
+
   return (
     <>
       <CabeceraPagina
@@ -163,6 +182,11 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
             puedeRechazar={ROLES_RECHAZAN_COTIZACION.includes((usuario?.rol ?? 'consulta') as Rol)}
             bloqueoAprobar={avisoVencida}
             bloqueoEliminar={motivoNoEliminarCotizacion(usuario?.rol, estado, cot.numero as string, !!pedido)}
+            modificacion={modificacion}
+            puedeAutorizarModificacion={puedeAutorizarModificacion}
+            puedeEditar={puedeCotizar((usuario?.rol ?? 'consulta') as Rol)}
+            bloqueoModificar={(bloqueoModificar as string | null) ?? null}
+            pedidoNumero={pedido?.numero_proforma ?? null}
           />
         )}
       </CabeceraPagina>
@@ -195,6 +219,17 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
               : puedeAprobar
                 ? 'Usted tiene esa facultad: use el botón «Aprobar» de arriba.'
                 : 'Avise a quien aprueba cotizaciones para que la revise.'}
+          </span>
+        </div>
+      )}
+
+      {modificacion && estado === 'aceptada' && (
+        <div className="ficha-aviso ficha-aviso-atencion" role="status" data-aviso="modificacion-autorizada">
+          <Icono nombre="alerta" tamano={17} />
+          <span>
+            <strong>Modificación autorizada</strong> por {modificacion.quien} el {fechaHora(modificacion.en)}:
+            «{modificacion.motivo}». Use «Editar (autorizado)»: al guardar, los cambios pasan también al
+            pedido {pedido?.numero_proforma ?? ''} y la autorización se consume.
           </span>
         </div>
       )}
@@ -301,8 +336,10 @@ async function CuerpoCotizacion({
           <span>
             <strong>Esta oferta se cerró.</strong> Generó el pedido{' '}
             <Link href={`/ventas/pedidos/${pedido.id}`}>{pedido.numero_proforma as string}</Link>, que
-            está en estado <em>{etiquetaEstado(pedido.ciclo as string)}</em>. Por eso ya no se puede
-            modificar ni eliminar: los precios de una venta cerrada no se cambian.
+            está en estado <em>{etiquetaEstado(pedido.ciclo as string)}</em>. Por eso ya no se edita ni
+            se elimina sola: para cambiarla, quien aprueba cotizaciones o Gerencia usa «Autorizar
+            modificación» (el cambio pasa al pedido); para quitarla, Gerencia elimina el pedido desde su
+            ficha y puede eliminar con él esta cotización.
           </span>
         </div>
       )}
@@ -411,6 +448,22 @@ async function CuerpoCotizacion({
 
       {/* ---- Contacto y cuentas: lo que sale impreso en el documento ---- */}
       <div className="rejilla-2 mb-espacio">
+        {/*
+          085 · Los datos del cliente con los que se imprime (punto 01 de
+          «Observaciones ERP 4»): fijados al emitirla y heredados por la
+          proforma. Si la ficha cambió, se avisa y se puede actualizar.
+        */}
+        <PanelDatosCliente
+          tipo="cotizacion"
+          id={cotId}
+          doc={cot}
+          ficha={cliente}
+          vendedor={campo(cot.vendedores, 'nombre', '') || null}
+          vendedorFicha={campo(cliente?.vendedores, 'nombre', '') || null}
+          puede={puedeVender((usuario?.rol ?? 'consulta') as Rol)}
+          bloqueo={pedido ? `Ya generó el pedido ${pedido.numero_proforma}: actualice los datos en el pedido (la cotización queda como se ofreció).` : null}
+        />
+
         <Panel titulo="Dirigido a">
           {!cot.contacto_nombre ? (
             <Vacio

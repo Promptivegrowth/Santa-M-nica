@@ -32,6 +32,7 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { PUEDEN_PACKING, mensajeNoPuede, mensajeDeBase } from '@/lib/permisosLogistica';
+import { normalizarNumeroPacking, problemaNumeroPacking } from '@/lib/numeroPacking';
 
 export type Resultado =
   | { ok: true; mensaje: string }
@@ -599,4 +600,49 @@ export async function guardarDatosPacking(packingId: number, d: DatosPacking): P
 
   refrescar(packingId);
   return { ok: true, mensaje: 'Datos del embarque guardados.' };
+}
+
+/* ==========================================================================
+   CAMBIAR EL N.º DE PACKING DEL CONTENEDOR («Observaciones ERP 4», punto 13)
+   --------------------------------------------------------------------------
+   El sistema numeraba sus contenedores desde PL POT001 y la numeración real
+   de Santa Mónica va por la 1123: los que ya se crearon hay que poder
+   alinearlos. Se puede en cualquier estado —también despachado: el número
+   no salió a SUNAT y los reportes leen el vigente— y queda en el historial
+   (lo escribe la base). Si era el PL de su embarque, el embarque toma el
+   nuevo (son el mismo packing). Las reglas y el «ya lo usa…» son de la base.
+   ========================================================================== */
+export async function cambiarNumeroPacking(packingId: number, numero: string): Promise<Resultado> {
+  const permiso = await autorizar();
+  if (permiso.error) return { ok: false, mensaje: permiso.error };
+
+  const nuevo = normalizarNumeroPacking(numero);
+  const forma = problemaNumeroPacking(nuevo);
+  if (forma) return { ok: false, mensaje: forma };
+
+  const supabase = await crearClienteServidor();
+  const { data: pk } = await supabase
+    .from('packing_lists').select('codigo, embarque_id').eq('id', packingId).maybeSingle();
+  if (!pk) return { ok: false, mensaje: 'Ese packing ya no existe.' };
+  if (normalizarNumeroPacking(pk.codigo as string).replace(/ /g, '') === nuevo.replace(/ /g, '')) {
+    return { ok: true, mensaje: 'Es el mismo número: no había nada que cambiar.' };
+  }
+
+  const { data: problema } = await supabase.rpc('problema_numero_packing', {
+    p_numero: nuevo, p_embarque_id: pk.embarque_id, p_packing_id: packingId, p_es_packing: true,
+  });
+  if (problema) return { ok: false, mensaje: String(problema) };
+
+  const { data, error } = await supabase.from('packing_lists').update({ codigo: nuevo }).eq('id', packingId).select('codigo');
+  if (error) {
+    if (error.code === '23505') return { ok: false, mensaje: `El N.º de packing ${nuevo} lo acaba de tomar otro contenedor. Escriba otro.` };
+    return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo cambiar el número') };
+  }
+  if (!data?.length) return { ok: false, mensaje: 'No se pudo cambiar el número: su usuario no tiene permiso. Pídaselo a Gerencia u Operaciones.' };
+
+  refrescar(packingId);
+  revalidatePath(`/logistica/embarques/${pk.embarque_id}`);
+  revalidatePath('/logistica/embarques');
+  revalidatePath('/logistica/planificador');
+  return { ok: true, mensaje: `Listo: ${pk.codigo} ahora es ${data[0].codigo}.` };
 }

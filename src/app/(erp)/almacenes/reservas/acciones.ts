@@ -661,3 +661,98 @@ export async function apartarTodoDisponible(pedidoLineaId: number): Promise<Resu
 
   return { apartados, kgApartados, faltaKg: restante, mensaje, fallos };
 }
+
+/* ==========================================================================
+   APARTAR LOS PALLETS MARCADOS, DE UNA VEZ (085)
+   --------------------------------------------------------------------------
+   «Observaciones ERP 4», punto 06 (Oliver): «habilitar selección múltiple de
+   productos equivalentes, en disponibilidad para reserva». En el panel
+   «Apartar stock» del pedido se marcan varios pallets —del SKU pedido o, con
+   la casilla encendida, también equivalentes— y se apartan juntos.
+
+   CÓMO SE REPARTE
+   En el orden de la tabla (primero el SKU pedido, del más antiguo al más
+   nuevo; después los equivalentes): de cada pallet se toma lo que falte o
+   todo lo que tenga si es menos. Si la línea se cubre antes de llegar al
+   último, los que sobran no se tocan y se dice cuáles.
+
+   LAS MISMAS VALIDACIONES QUE DE A UNO
+   Cada pallet pasa por crearReserva: saldo disponible, bloqueo de calidad,
+   «Solo mercado nacional», equivalencia (misma especie y corte), tope de lo
+   pedido. Se leen otra vez aquí los candidatos: lo marcado en pantalla solo
+   dice QUÉ pallets; cuánto queda lo dice la base en este momento. Igual que
+   «Apartar todo», no es una transacción única: si uno falla, los demás
+   quedan apartados y el resultado dice cuál falló y por qué.
+   ========================================================================== */
+export async function apartarSeleccionados(
+  pedidoLineaId: number,
+  elegidos: { lote_id: number; almacen_id: number }[],
+  conEquivalentes = false,
+): Promise<ResultadoLote> {
+  const vacio = (mensaje: string, faltaKg = 0): ResultadoLote => ({ apartados: 0, kgApartados: 0, faltaKg, mensaje, fallos: [] });
+
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return vacio('Su sesión expiró. Vuelva a entrar.');
+  if (!puedeApartarStock(usuario.rol)) {
+    return vacio(`${nombreRol(usuario.rol)} no aparta stock: lo hacen ${listaDeRoles(ROLES_APARTAN_STOCK)}.`);
+  }
+  //  Sin repetidos, y con un tope razonable (la tabla muestra hasta 60).
+  const unicos = elegidos.filter((e, i, xs) =>
+    xs.findIndex((x) => x.lote_id === e.lote_id && x.almacen_id === e.almacen_id) === i).slice(0, 60);
+  if (!unicos.length) return vacio('Marque al menos un pallet.');
+
+  const opciones = await lotesParaLinea(pedidoLineaId, conEquivalentes);
+  if (opciones.faltaKg <= 0.001) return vacio('Esta línea ya está cubierta por completo.');
+
+  const marcados = new Set(unicos.map((e) => `${e.lote_id}-${e.almacen_id}`));
+  //  El orden de la tabla, no el orden en que se hizo clic.
+  const enOrden = opciones.candidatos.filter((c) => marcados.has(`${c.lote_id}-${c.almacen_id}`));
+  const fallos: string[] = [];
+  //  Lo marcado que ya no aparece entre los candidatos: alguien lo apartó o lo bloqueó mientras tanto.
+  const sinSaldo = unicos.length - enOrden.length;
+  if (sinSaldo > 0) {
+    fallos.push(`${sinSaldo} pallet${sinSaldo === 1 ? '' : 's'} marcado${sinSaldo === 1 ? '' : 's'} ya no ${sinSaldo === 1 ? 'tiene' : 'tienen'} saldo disponible para esta línea`);
+  }
+
+  let porCubrir = opciones.faltaKg;
+  let apartados = 0;
+  let kgApartados = 0;
+  const sobraron: string[] = [];
+
+  for (const lote of enOrden) {
+    if (porCubrir <= 0.001) { sobraron.push(lote.codigo_pallet); continue; }
+    const kilos = Math.round(Math.min(porCubrir, lote.disponible_kg) * 10) / 10;
+    if (kilos <= 0) continue;
+    const r = await crearReserva({
+      pedido_linea_id: pedidoLineaId,
+      lote_id: lote.lote_id,
+      almacen_id: lote.almacen_id,
+      bultos: Math.max(1, Math.ceil(kilos / lote.kg_por_bulto)),
+      peso_neto_kg: kilos,
+      equivalente: lote.equivalente,
+    });
+    if (r.ok) {
+      apartados += 1;
+      kgApartados += kilos;
+      porCubrir -= kilos;
+    } else {
+      fallos.push(`${lote.codigo_pallet}: ${r.mensaje}`);
+    }
+  }
+
+  const restante = Math.max(0, porCubrir);
+  const kgTexto = kgApartados.toLocaleString('es-PE', { maximumFractionDigits: 1 });
+  let mensaje: string;
+  if (apartados === 0) {
+    mensaje = 'No se pudo apartar de ninguno de los pallets marcados.';
+  } else if (restante <= 0.001) {
+    mensaje = `Línea cubierta al 100 %: se apartaron ${kgTexto} kg de ${apartados} pallet${apartados === 1 ? '' : 's'} marcado${apartados === 1 ? '' : 's'}.`;
+  } else {
+    mensaje = `Se apartaron ${kgTexto} kg de ${apartados} pallet${apartados === 1 ? '' : 's'} marcado${apartados === 1 ? '' : 's'}. ` +
+      `Faltan ${restante.toLocaleString('es-PE', { maximumFractionDigits: 0 })} kg: marque más pallets o use «Apartar de los N pallets».`;
+  }
+  if (sobraron.length) {
+    mensaje += ` No hicieron falta: ${sobraron.join(', ')} (la línea ya estaba cubierta).`;
+  }
+  return { apartados, kgApartados, faltaKg: restante, mensaje, fallos };
+}

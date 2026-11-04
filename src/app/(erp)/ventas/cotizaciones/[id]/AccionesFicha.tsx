@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   convertirEnPedido, eliminarCotizacion, cambiarEstadoCotizacion, aprobarCotizacion,
+  autorizarModificacion, retirarAutorizacion,
 } from '../acciones';
 import { Icono } from '@/components/estructura/Icono';
 import { accionSegura } from '@/lib/accionSegura';
@@ -35,6 +36,11 @@ export function AccionesFicha({
   puedeRechazar = true,
   bloqueoAprobar = null,
   bloqueoEliminar = null,
+  modificacion = null,
+  puedeAutorizarModificacion = false,
+  puedeEditar = true,
+  bloqueoModificar = null,
+  pedidoNumero = null,
 }: {
   cotizacionId: number;
   numero: string;
@@ -52,16 +58,31 @@ export function AccionesFicha({
   bloqueoAprobar?: string | null;
   /** Por qué esta persona no puede eliminarla (motivoNoEliminarCotizacion), o null. */
   bloqueoEliminar?: string | null;
+  /** 085 · La autorización abierta para modificarla ya aceptada, si la hay. */
+  modificacion?: { en: string; motivo: string; quien: string } | null;
+  /** 085 · ¿Esta persona autoriza? (facultad «Aprueba cotizaciones» o Gerencia) */
+  puedeAutorizarModificacion?: boolean;
+  /** 085 · ¿Esta persona edita cotizaciones? (Gerencia, Operaciones, Comercial) */
+  puedeEditar?: boolean;
+  /** 085 · Lo que impide modificar el pedido (comprobante, despachado…), o null. */
+  bloqueoModificar?: string | null;
+  /** El número de proforma del pedido que generó, si lo generó. */
+  pedidoNumero?: string | null;
 }) {
   const router = useRouter();
   /* Las dos acciones que no se deshacen piden confirmación en el sitio. */
-  const [confirmando, setConfirmando] = useState<'eliminar' | 'rechazar' | 'convertir' | null>(null);
+  const [confirmando, setConfirmando] = useState<'eliminar' | 'rechazar' | 'convertir' | 'autorizar' | null>(null);
+  /* 085 · El motivo de la autorización para modificar una aceptada. */
+  const [motivo, setMotivo] = useState('');
   /* 082 · Al convertir se pide el N.º de proforma: viene propuesto y se puede cambiar. */
   const numero_pf = usePropuestaProforma();
   const [error, setError] = useState<string | null>(null);
   const [pendiente, iniciar] = useTransition();
 
   const editable = !yaConvertida && ['borrador', 'aprobada', 'enviada'].includes(estado);
+  /* 085 · Aceptada y con su pedido: se modifica solo con autorización. */
+  const aceptada = yaConvertida && estado === 'aceptada';
+  const autorizada = aceptada && !!modificacion;
   const convertible = !yaConvertida && !['rechazada', 'vencida'].includes(estado);
   // Si la empresa exige aprobar, convertir también espera la firma (el servidor lo vuelve a comprobar).
   const puedeConvertir = !requiereAprobacion || aprobada;
@@ -185,6 +206,84 @@ export function AccionesFicha({
         )
       )}
 
+      {/*
+        --- 085 · Modificar una cotización ya aceptada («Observaciones ERP 4», 13) ---
+        Quien aprueba cotizaciones o Gerencia la autoriza con un motivo; después
+        «Editar» se abre y, al guardar, el cambio pasa al pedido.
+      */}
+      {aceptada && !autorizada && (
+        confirmando === 'autorizar' ? (
+          <span className="accion-confirmar" data-confirmar="autorizar-modificacion">
+            <input className="campo" name="motivo_modificacion" placeholder="¿Por qué se modifica?" autoFocus
+                   value={motivo} maxLength={300} onChange={(e) => setMotivo(e.target.value)}
+                   style={{ minWidth: '14rem', padding: '.2rem .4rem', fontSize: '.78rem' }} />
+            <button
+              type="button"
+              className="btn btn-primario"
+              style={{ padding: '.2rem .5rem', fontSize: '.75rem' }}
+              disabled={pendiente || motivo.trim().length < 5}
+              title={motivo.trim().length < 5 ? 'Escriba el motivo (al menos 5 caracteres): queda en el historial' : undefined}
+              data-accion="confirmar-autorizacion"
+              onClick={() => accion(() => autorizarModificacion(cotizacionId, motivo))}
+            >
+              {pendiente ? 'Autorizando…' : 'Autorizar'}
+            </button>
+            <button type="button" className="btn btn-sutil" style={{ padding: '.2rem .5rem', fontSize: '.75rem' }}
+                    disabled={pendiente} onClick={() => setConfirmando(null)}>
+              Cancelar
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-secundario"
+            data-accion="autorizar-modificacion"
+            disabled={pendiente || !puedeAutorizarModificacion || !!bloqueoModificar}
+            title={!puedeAutorizarModificacion
+              ? 'Autorizan la modificación de una cotización aceptada las personas con la facultad «Aprueba cotizaciones» (Configuración › Usuarios y roles) y Gerencia'
+              : bloqueoModificar ?? `Abre ${numero} para UNA modificación; al guardar, los cambios pasan al pedido ${pedidoNumero ?? ''}`}
+            onClick={() => { setError(null); setMotivo(''); setConfirmando('autorizar'); }}
+          >
+            <Icono nombre="configuracion" tamano={15} />
+            Autorizar modificación
+          </button>
+        )
+      )}
+
+      {autorizada && (
+        <>
+          {puedeEditar ? (
+            <Link
+              href={`/ventas/cotizaciones/${cotizacionId}/editar`}
+              className="btn btn-primario"
+              data-accion="editar-autorizada"
+              title={`Autorizado por ${modificacion!.quien}. Al guardar, los cambios pasan al pedido ${pedidoNumero ?? ''}`}
+            >
+              <Icono nombre="configuracion" tamano={15} />
+              Editar (autorizado)
+            </Link>
+          ) : (
+            <button type="button" className="btn btn-secundario" disabled
+                    title="La modificación la hacen Gerencia, Operaciones o Comercial">
+              <Icono nombre="configuracion" tamano={15} />
+              Editar (autorizado)
+            </button>
+          )}
+          {puedeAutorizarModificacion && (
+            <button
+              type="button"
+              className="btn btn-sutil"
+              data-accion="retirar-autorizacion"
+              disabled={pendiente}
+              title="Si al final no se modifica: la cotización vuelve a quedar cerrada"
+              onClick={() => accion(() => retirarAutorizacion(cotizacionId))}
+            >
+              Retirar autorización
+            </button>
+          )}
+        </>
+      )}
+
       {editable ? (
         <Link
           href={`/ventas/cotizaciones/${cotizacionId}/editar`}
@@ -197,14 +296,14 @@ export function AccionesFicha({
           <Icono nombre="configuracion" tamano={15} />
           Editar
         </Link>
-      ) : (
+      ) : !autorizada && (
         <button
           type="button"
           className="btn btn-secundario"
           disabled
           title={
             yaConvertida
-              ? 'Ya generó un pedido: los precios de una venta cerrada no se modifican'
+              ? 'Ya generó un pedido: para modificarla hace falta «Autorizar modificación» (quien aprueba cotizaciones o Gerencia)'
               : `Una cotización ${estado} no se puede editar`
           }
         >
@@ -243,7 +342,9 @@ export function AccionesFicha({
           disabled={yaConvertida || pendiente || !!bloqueoEliminar}
           data-accion="eliminar"
           onClick={() => setConfirmando('eliminar')}
-          title={bloqueoEliminar ?? (yaConvertida ? 'No se puede eliminar: ya generó un pedido' : `Eliminar ${numero}`)}
+          title={bloqueoEliminar ?? (yaConvertida
+            ? `No se puede eliminar sola: generó el pedido ${pedidoNumero ?? ''}. Gerencia puede eliminar el pedido (y con él esta cotización) desde la ficha del pedido`
+            : `Eliminar ${numero}`)}
         >
           <Icono nombre="papelera" tamano={15} />
           Eliminar

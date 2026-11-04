@@ -33,13 +33,14 @@ export default async function PaginaEditarCliente(
   const supabase = await crearClienteServidor();
   const [{ data: cliente }, { data: filas }, { data: vendedores }] = await Promise.all([
     supabase.from('clientes').select('*').eq('id', numero).maybeSingle(),
-    supabase.from('clientes').select('pais').eq('activo', true),
+    supabase.from('clientes').select('pais, condicion').eq('activo', true),
     supabase.from('vendedores').select('id, nombre').eq('activo', true).order('nombre'),
   ]);
 
   if (!cliente) notFound();
 
   const paises = [...new Set((filas ?? []).map((f) => f.pais as string).filter(Boolean))].sort();
+  const condiciones = [...new Set((filas ?? []).map((f) => f.condicion as string).filter(Boolean))].sort();
 
   const datos: ClienteExistente = {
     id: cliente.id as number,
@@ -60,6 +61,17 @@ export default async function PaginaEditarCliente(
     dias_credito: Number(cliente.dias_credito ?? 0),
     bloqueado: Boolean(cliente.bloqueado),
     motivo_bloqueo: (cliente.motivo_bloqueo as string) ?? '',
+    //  Los de la lista BASC (punto 01 de «Observaciones ERP 4»).
+    direccion: (cliente.direccion as string) ?? '',
+    etiqueta_tax_id: (cliente.etiqueta_tax_id as string) ?? '',
+    continente: (cliente.continente as string) ?? '',
+    web: (cliente.web as string) ?? '',
+    condicion: (cliente.condicion as string) ?? '',
+    forma_pago: (cliente.forma_pago as ClienteExistente['forma_pago']) ?? null,
+    adelanto_pct: cliente.adelanto_pct === null || cliente.adelanto_pct === undefined ? null : Number(cliente.adelanto_pct),
+    forma_pago_habitual: (cliente.forma_pago_habitual as string) ?? '',
+    referencias_comerciales: (cliente.referencias_comerciales as string) ?? '',
+    productos_interes: (cliente.productos_interes as string) ?? '',
   };
 
   return (
@@ -69,7 +81,7 @@ export default async function PaginaEditarCliente(
         descripcion="Los cambios quedan registrados en la bitácora, campo por campo: quién los hizo, cuándo y qué había antes."
       />
       <Panel>
-        <FormularioCliente cliente={datos} paises={paises}
+        <FormularioCliente cliente={datos} paises={paises} condiciones={condiciones}
           gestionaBloqueo={PUEDEN_GESTIONAR_CREDITO.includes((usuario?.rol ?? 'consulta') as Rol)}
           fijaCredito={usuario?.fija_credito === true}
           vendedores={(vendedores ?? []).map((v) => ({ id: v.id as number, nombre: v.nombre as string }))} />

@@ -17,6 +17,11 @@
  *
  *  Es el MISMO formulario que se usa para crear. Se le pasa el contenido
  *  actual y él sabe que debe actualizar en vez de insertar.
+ *
+ *  085 · Una cotización ACEPTADA (ya generó su pedido) también se abre aquí
+ *  si tiene la autorización abierta de quien aprueba cotizaciones o de
+ *  Gerencia («Autorizar modificación» en la ficha). Al guardar, el cambio
+ *  pasa al pedido en la misma operación.
  * ============================================================================
  */
 import { notFound, redirect } from 'next/navigation';
@@ -55,7 +60,7 @@ export default async function PaginaEditarCotizacion(
   const [{ data: cot }, { data: lineas }, { data: pedido }, { data: cuentas }, exigeAprobacion] = await Promise.all([
     supabase
       .from('cotizaciones')
-      .select('aprobada_en, aprobador:usuarios!cotizaciones_aprobada_por_fkey(nombre), id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, prioridad, observaciones, contacto_id, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, tipo_cambio_fecha, tipo_cambio_fuente, tipo_cambio_clase, fecha_tentativa_despacho, forma_pago, adelanto_pct, adelanto_abonado, adelanto_abonado_en')
+      .select('aprobada_en, aprobador:usuarios!cotizaciones_aprobada_por_fkey(nombre), modificacion_autorizada_en, modificacion_motivo, autorizador:usuarios!cotizaciones_modificacion_autorizada_por_fkey(nombre), id, numero, estado, cliente_id, vendedor_id, destino_id, lista_id, moneda, tipo_cambio, incoterm, validez_dias, prioridad, observaciones, contacto_id, contacto_nombre, contacto_cargo, contacto_telefono, contacto_email, tipo_cambio_fecha, tipo_cambio_fuente, tipo_cambio_clase, fecha_tentativa_despacho, forma_pago, adelanto_pct, adelanto_abonado, adelanto_abonado_en, certificado_captura')
       .eq('id', cotId)
       .single(),
     supabase
@@ -63,23 +68,25 @@ export default async function PaginaEditarCotizacion(
       .select('sku_presentacion_id, cantidad_tm, precio_lista_tm, precio_tm, descuento_pct, descuento_autorizado_por')
       .eq('cotizacion_id', cotId)
       .order('orden'),
-    supabase.from('pedidos').select('id').eq('cotizacion_id', cotId).maybeSingle(),
+    supabase.from('pedidos').select('id, numero_proforma').eq('cotizacion_id', cotId).maybeSingle(),
     supabase.from('cotizacion_cuentas').select('cuenta_id').eq('cotizacion_id', cotId),
     aprobacionObligatoria(),
   ]);
 
   if (!cot) notFound();
 
-  /* ---- Las mismas dos reglas que aplica el servidor al guardar ---- */
-  if (pedido) redirect(`/ventas/cotizaciones/${cotId}?nohayeditar=convertida`);
-  if (!['borrador', 'aprobada', 'enviada'].includes(cot.estado as string)) {
+  /* ---- Las mismas reglas que aplica el servidor al guardar ---- */
+  //  085 · Aceptada con autorización abierta: se edita, y el cambio pasa al pedido.
+  const aceptadaAutorizada = cot.estado === 'aceptada' && !!cot.modificacion_autorizada_en && !!pedido;
+  if (pedido && !aceptadaAutorizada) redirect(`/ventas/cotizaciones/${cotId}?nohayeditar=convertida`);
+  if (!['borrador', 'aprobada', 'enviada'].includes(cot.estado as string) && !aceptadaAutorizada) {
     redirect(`/ventas/cotizaciones/${cotId}?nohayeditar=${cot.estado}`);
   }
 
   const cat = await cargarCatalogoVenta();
 
   /* ¿Guardar un cambio comercial anularía la aprobación? La misma regla que el servidor. */
-  const conFirma = exigeAprobacion && (Boolean(cot.aprobada_en) || ['aprobada', 'enviada'].includes(cot.estado as string));
+  const conFirma = !aceptadaAutorizada && exigeAprobacion && (Boolean(cot.aprobada_en) || ['aprobada', 'enviada'].includes(cot.estado as string));
 
   const edicion: DatosEdicion = {
     id: cot.id as number,
@@ -103,6 +110,8 @@ export default async function PaginaEditarCotizacion(
     adelanto_pct: Number(cot.adelanto_pct ?? 0),
     adelanto_abonado: cot.adelanto_abonado === null || cot.adelanto_abonado === undefined ? null : Number(cot.adelanto_abonado),
     adelanto_abonado_en: (cot.adelanto_abonado_en as string) ?? null,
+    // 083 · El certificado de captura tal como se decidió (null = antes de la 083).
+    certificado_captura: typeof cot.certificado_captura === 'boolean' ? cot.certificado_captura : null,
     // Se recupera tal cual estaba: al reabrir un documento no se le cambia el
     // contacto por debajo, porque quizá ya se envió con ese.
     contacto: {
@@ -149,6 +158,21 @@ export default async function PaginaEditarCotizacion(
             anula</strong>: la cotización vuelve a borrador y habrá que aprobarla otra vez antes de
             enviarla. Corregir observaciones, contacto, cuentas, vendedor, validez o prioridad la
             conserva.
+          </span>
+        </div>
+      )}
+
+      {aceptadaAutorizada && (
+        <div className="ficha-aviso ficha-aviso-atencion" role="status" data-aviso="modificacion-autorizada">
+          <span aria-hidden style={{ fontSize: '1.1rem', lineHeight: 1 }}>🔓</span>
+          <span>
+            <strong>
+              Cotización aceptada, abierta con la autorización de {campo(cot.autorizador, 'nombre', 'quien aprueba cotizaciones')} (
+              {fechaHora(cot.modificacion_autorizada_en as string)}): «{String(cot.modificacion_motivo ?? '')}».
+            </strong>{' '}
+            Al guardar, los cambios pasan también al pedido <strong>{String(pedido?.numero_proforma ?? '')}</strong> (cabecera y
+            productos; las reservas de los productos que siguen se conservan) y la autorización se consume. El cliente no se
+            puede cambiar. Si el pedido tiene contrato, habrá que generarlo otra vez.
           </span>
         </div>
       )}

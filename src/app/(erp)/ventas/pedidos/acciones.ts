@@ -81,6 +81,8 @@ export type DatosPedido = {
    */
   numero_proforma?: string;
   numero_propuesto?: string | null;
+  /** 083 · Si la proforma y el contrato llevan certificado de captura (costo adicional). */
+  certificado_captura?: boolean | null;
 };
 
 export type Resultado =
@@ -217,6 +219,8 @@ export async function crearPedidoDirecto(datos: DatosPedido): Promise<Resultado>
       situacion: 'sin_facturar',
       observaciones: datos.observaciones,
       ...columnasContacto(datos.contacto),
+      //  083 · Decidido al registrar el pedido directo.
+      certificado_captura: typeof datos.certificado_captura === 'boolean' ? datos.certificado_captura : null,
       creado_por: usuario.id,
     }));
 
@@ -492,4 +496,63 @@ export async function cambiarNumeroProforma(
     mensaje: `Listo: la proforma ${anterior} ahora es ${final}. Queda en el historial del pedido.` +
       (avisos.length ? ` ${avisos.join(' ')}` : ''),
   };
+}
+
+/* ==========================================================================
+   ELIMINAR UN PEDIDO (085)
+   --------------------------------------------------------------------------
+   «Observaciones ERP 4», punto 13 (Oliver): «permitir eliminar proformas».
+   Lo hace SOLO Gerencia (el «acceso total»), con motivo. Los demás tienen
+   «Cancelar pedido» (Gerencia u Operaciones), que lo deja sin efecto sin
+   borrarlo.
+
+   QUÉ LO IMPIDE (la regla vive en la base: problema_eliminar_pedido)
+   Lo que ya dependa de él y no se puede deshacer borrando: un comprobante
+   (aunque esté anulado: es un documento tributario), un embarque no
+   cancelado, packing, un despacho, o reservas vigentes. Con reservas, lo
+   seguro es «Cancelar pedido» primero: las suelta con constancia; después
+   se elimina.
+
+   QUÉ SE BORRA Y QUÉ QUEDA
+   Se van sus líneas, sus contratos generados, sus alertas y las reservas ya
+   sueltas. Su historial (eventos y auditoría) se conserva, con el motivo.
+   La cotización de origen vuelve a estar disponible (aprobada si tenía la
+   firma, si no borrador) o se elimina también, si se marca.
+   ========================================================================== */
+export async function eliminarPedido(
+  id: number,
+  motivo: string,
+  conCotizacion = false,
+): Promise<{ ok: boolean; mensaje: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión expiró. Vuelva a iniciar sesión.' };
+  if (usuario.rol !== 'gerencia') {
+    return {
+      ok: false,
+      mensaje: `${nombreRol(usuario.rol)} no elimina pedidos: lo hace solo ${listaDeRoles(['gerencia'])}. ` +
+        'Para dejarlo sin efecto use «Cancelar pedido» (Gerencia u Operaciones).',
+    };
+  }
+  const limpio = motivo.trim();
+  if (limpio.length < 5) return { ok: false, mensaje: 'Explique por qué se elimina (al menos 5 caracteres): queda en el historial.' };
+
+  const supabase = await crearClienteServidor();
+  const { data, error } = await supabase.rpc('eliminar_pedido', {
+    p_pedido_id: id, p_motivo: limpio, p_con_cotizacion: conCotizacion,
+  });
+  if (error) {
+    const m = String(error.message ?? '');
+    return {
+      ok: false,
+      mensaje: m && !/violates|constraint|column|relation|syntax|function/i.test(m)
+        ? m
+        : 'No se pudo eliminar el pedido. Vuelva a intentarlo; si se repite, avise a Sistemas.',
+    };
+  }
+  revalidatePath('/ventas/pedidos');
+  revalidatePath('/ventas/cotizaciones');
+  revalidatePath('/ventas/control');
+  revalidatePath('/almacenes/reservas');
+  revalidatePath('/panel');
+  return { ok: true, mensaje: String(data) };
 }

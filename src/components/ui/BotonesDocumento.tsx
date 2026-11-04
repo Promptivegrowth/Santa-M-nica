@@ -38,7 +38,7 @@ export function BotonesDocumento({
 }) {
   const [bajando, setBajando] = useState<Formato | null>(null);
   const [problema, setProblema] = useState<{ titulo: string; detalles: string[] } | null>(null);
-  const [aviso, setAviso] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<{ texto: string; detalles: string[] } | null>(null);
 
   async function descargar(formato: Formato) {
     setBajando(formato);
@@ -83,11 +83,23 @@ export function BotonesDocumento({
         // Concordancia de género y número: «1 observación anotada» frente a
         // «3 observaciones anotadas».
         const singular = cuantosAvisos === 1;
-        setAviso(
-          `El documento se descargó, pero la verificación dejó ${cuantosAvisos} ` +
-            `${singular ? 'observación anotada' : 'observaciones anotadas'} dentro. ` +
-            `${singular ? 'Léala' : 'Léalas'} antes de enviarlo al cliente.`
-        );
+        /*
+         * 083 · Las observaciones ya no van impresas dentro del documento
+         * (Oliver: «quitar el recuadro de observaciones»): son para quien lo
+         * emite, no para el cliente. Se enseñan aquí, en pantalla.
+         */
+        let detalles: string[] = [];
+        try {
+          const crudo = r.headers.get('x-avisos-detalle');
+          detalles = crudo ? (JSON.parse(decodeURIComponent(crudo)) as string[]) : [];
+        } catch { detalles = []; }
+        setAviso({
+          texto:
+            `El documento se descargó. La verificación dejó ${cuantosAvisos} ` +
+            `${singular ? 'observación' : 'observaciones'} (no van impresas en el documento); ` +
+            `${singular ? 'revísela' : 'revíselas'} antes de enviarlo al cliente:`,
+          detalles,
+        });
       }
     } catch (e) {
       setProblema({
@@ -147,9 +159,16 @@ export function BotonesDocumento({
       )}
 
       {aviso && (
-        <div className="ficha-aviso ficha-aviso-atencion documento-mensaje" role="status">
+        <div className="ficha-aviso ficha-aviso-atencion documento-mensaje" role="status" data-aviso="observaciones-documento">
           <Icono nombre="alerta" tamano={17} />
-          <span>{aviso}</span>
+          <span>
+            {aviso.texto}
+            {aviso.detalles.length > 0 && (
+              <ul className="documento-detalles">
+                {aviso.detalles.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            )}
+          </span>
         </div>
       )}
     </>

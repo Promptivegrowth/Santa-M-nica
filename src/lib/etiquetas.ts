@@ -260,6 +260,11 @@ export const CAMPOS: Record<string, string> = {
   encargado_id: 'encargado',
   cantidad_kg: 'cantidad (kg)',
   pedido_linea_id: 'línea del pedido',
+  // Programación de embarques (084)
+  semana_despacho: 'semana de despacho',
+  fecha_zarpe: 'fecha de zarpe',
+  operador_logistico: 'operador logístico',
+  numero_packing: 'N.º de packing',
   // Lotes, reservas, traslados
   codigo_pallet: 'código de pallet',
   codigo_lote: 'código de lote',
@@ -387,6 +392,8 @@ export const TABLAS: Record<string, string> = {
   despacho_archivos: 'Archivos de despacho',
   despachos: 'Despachos',
   dictamenes_calidad: 'Dictámenes de calidad',
+  embarque_archivos: 'Documentos de embarque',
+  embarque_comentarios: 'Comentarios de embarque',
   embarque_lineas: 'Líneas de embarque',
   embarques: 'Embarques',
   facturas: 'Comprobantes (facturas y boletas)',

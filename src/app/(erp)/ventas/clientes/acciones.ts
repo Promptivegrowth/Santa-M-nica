@@ -30,6 +30,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { PUEDEN_GESTIONAR_CREDITO, AVISO_LINEA_CREDITO } from '@/lib/permisosFinanzas';
 import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 import type { Rol } from '@/lib/navegacion';
+import { FORMAS_PAGO, type FormaPago } from '@/lib/condicionesVenta';
 
 export type Resultado =
   | { ok: true; id: number; mensaje: string }
@@ -57,6 +58,27 @@ export type DatosCliente = {
   dias_credito: number;
   bloqueado: boolean;
   motivo_bloqueo: string | null;
+  /*
+   * «Observaciones ERP 4», punto 01 (Oliver): «que se puedan poner todos los
+   * datos del Excel». Son las columnas de la lista BASC de Comex (065) que
+   * ya estaban en la base, cargadas por script, pero que el formulario no
+   * dejaba ver ni corregir: la dirección y la identificación fiscal salen
+   * impresas en la cotización, la proforma y el contrato.
+   */
+  direccion: string | null;
+  /** Cómo se llama la identificación fiscal en su país: RUC, CIF, NIF, USCI, EIN… */
+  etiqueta_tax_id: string | null;
+  continente: string | null;
+  web: string | null;
+  /** Importador, intermediario, procesador… tal como la escribe Comex. */
+  condicion: string | null;
+  /** La forma de pago habitual, estructurada: se propone al cotizar. */
+  forma_pago: FormaPago | null;
+  adelanto_pct: number | null;
+  /** La misma forma de pago, tal como la escribió Comex en la lista BASC. */
+  forma_pago_habitual: string | null;
+  referencias_comerciales: string | null;
+  productos_interes: string | null;
 };
 
 /** Refresca todo lo que muestra clientes. */
@@ -132,6 +154,32 @@ function validar(d: DatosCliente): { mensaje: string; campo: string } | null {
   if (d.bloqueado && !d.motivo_bloqueo?.trim()) {
     return { mensaje: 'Si bloquea al cliente, escriba por qué: alguien va a preguntar.', campo: 'motivo_bloqueo' };
   }
+
+  /* ---- Los datos de la lista BASC (punto 01) ---- */
+  const largo = (v: string | null | undefined, max: number) => (v?.trim().length ?? 0) > max;
+  if (largo(d.direccion, 300)) return { mensaje: 'La dirección no puede pasar de 300 caracteres.', campo: 'direccion' };
+  if (largo(d.etiqueta_tax_id, 20)) {
+    return { mensaje: 'El nombre de la identificación fiscal es corto (RUC, CIF, USCI, EIN…): hasta 20 caracteres.', campo: 'etiqueta_tax_id' };
+  }
+  if (largo(d.web, 200)) return { mensaje: 'La página web no puede pasar de 200 caracteres.', campo: 'web' };
+  if (largo(d.condicion, 120)) return { mensaje: 'La condición no puede pasar de 120 caracteres.', campo: 'condicion' };
+  if (largo(d.continente, 40)) return { mensaje: 'El continente no puede pasar de 40 caracteres.', campo: 'continente' };
+  if (largo(d.forma_pago_habitual, 300)) {
+    return { mensaje: 'La forma de pago como la escribe Comex no puede pasar de 300 caracteres.', campo: 'forma_pago_habitual' };
+  }
+  if (largo(d.referencias_comerciales, 1000)) {
+    return { mensaje: 'Las referencias comerciales no pueden pasar de 1000 caracteres.', campo: 'referencias_comerciales' };
+  }
+  if (largo(d.productos_interes, 300)) {
+    return { mensaje: 'Los productos de interés no pueden pasar de 300 caracteres.', campo: 'productos_interes' };
+  }
+  if (d.forma_pago && !(d.forma_pago in FORMAS_PAGO)) {
+    return { mensaje: 'Elija la forma de pago de la lista.', campo: 'forma_pago' };
+  }
+  if (d.adelanto_pct !== null && d.adelanto_pct !== undefined &&
+      !(Number(d.adelanto_pct) >= 0 && Number(d.adelanto_pct) <= 100)) {
+    return { mensaje: 'El % de adelanto va de 0 a 100.', campo: 'adelanto_pct' };
+  }
   return null;
 }
 
@@ -157,6 +205,18 @@ function limpiar(d: DatosCliente) {
     dias_credito: d.dias_credito,
     bloqueado: d.bloqueado,
     motivo_bloqueo: d.bloqueado ? texto(d.motivo_bloqueo) : null,
+    direccion: texto(d.direccion),
+    //  La etiqueta se guarda en mayúsculas, como sale impresa: «cif» es CIF.
+    etiqueta_tax_id: texto(d.etiqueta_tax_id)?.toUpperCase() ?? null,
+    continente: texto(d.continente),
+    web: texto(d.web),
+    condicion: texto(d.condicion),
+    forma_pago: d.forma_pago || null,
+    adelanto_pct: d.adelanto_pct === null || d.adelanto_pct === undefined || Number.isNaN(Number(d.adelanto_pct))
+      ? null : Number(d.adelanto_pct),
+    forma_pago_habitual: texto(d.forma_pago_habitual),
+    referencias_comerciales: texto(d.referencias_comerciales),
+    productos_interes: texto(d.productos_interes),
   };
 }
 
@@ -271,7 +331,7 @@ export async function actualizarCliente(id: number, d: DatosCliente): Promise<Re
    */
   const { data: antes } = await supabase
     .from('clientes')
-    .select('razon_social, ruc_tax_id, linea_credito, dias_credito, bloqueado, motivo_bloqueo, pais')
+    .select('razon_social, ruc_tax_id, linea_credito, dias_credito, bloqueado, motivo_bloqueo, pais, direccion, etiqueta_tax_id, vendedor_id, forma_pago, adelanto_pct')
     .eq('id', id)
     .maybeSingle();
 
@@ -311,6 +371,14 @@ export async function actualizarCliente(id: number, d: DatosCliente): Promise<Re
   if (antes.dias_credito !== d.dias_credito) cambios.push(`días de crédito: ${antes.dias_credito} → ${d.dias_credito}`);
   if (antes.bloqueado !== d.bloqueado) cambios.push(d.bloqueado ? 'se bloqueó' : 'se desbloqueó');
   if (antes.pais !== d.pais.trim()) cambios.push(`país: ${antes.pais} → ${d.pais.trim()} (cambia el IGV)`);
+  //  Lo que sale impreso en los documentos (punto 01): se cuenta en la bitácora.
+  const limpio = limpiar(d);
+  if ((antes.direccion ?? null) !== limpio.direccion) cambios.push(`dirección: «${antes.direccion ?? 'sin dirección'}» → «${limpio.direccion ?? 'sin dirección'}»`);
+  if ((antes.etiqueta_tax_id ?? null) !== limpio.etiqueta_tax_id) cambios.push(`etiqueta fiscal: ${antes.etiqueta_tax_id ?? '—'} → ${limpio.etiqueta_tax_id ?? '—'}`);
+  if ((antes.vendedor_id ?? null) !== limpio.vendedor_id) cambios.push('vendedor asignado');
+  if ((antes.forma_pago ?? null) !== limpio.forma_pago || Number(antes.adelanto_pct ?? -1) !== Number(limpio.adelanto_pct ?? -1)) {
+    cambios.push('forma de pago habitual');
+  }
 
   await supabase.rpc('registrar_evento', {
     p_entidad: 'clientes',

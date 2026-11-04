@@ -17,20 +17,28 @@ import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import { accionSegura } from '@/lib/accionSegura';
 import { crearPacking } from '../acciones';
+import { avisoSaltoPacking, normalizarNumeroPacking, problemaNumeroPacking } from '@/lib/numeroPacking';
 
 export function NuevoPacking({
   embarqueId,
   supervisores,
   puede,
+  codigoPropuesto = null,
 }: {
   embarqueId: number;
   supervisores: { id: string; nombre: string }[];
   puede: boolean;
+  /**
+   * El N.º de packing que propone la base (084): el PL del embarque para su
+   * primer contenedor; si no, el siguiente de la numeración. Editable.
+   */
+  codigoPropuesto?: string | null;
 }) {
   const router = useRouter();
   const [guardando, iniciar] = useTransition();
   const [abierto, setAbierto] = useState(false);
 
+  const [codigo, setCodigo] = useState(codigoPropuesto ?? '');
   const [contenedor, setContenedor] = useState('');
   const [precinto, setPrecinto] = useState('');
   const [filas, setFilas] = useState(22);
@@ -39,11 +47,15 @@ export function NuevoPacking({
   const [turno, setTurno] = useState<'dia' | 'noche'>('dia');
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'mal'; texto: string } | null>(null);
 
+  const problemaCodigo = problemaNumeroPacking(codigo);
+
   function crear() {
     setAviso(null);
     iniciar(async () => {
       const r = await accionSegura(() => crearPacking({
         embarque_id: embarqueId,
+        codigo: codigo || null,
+        codigo_propuesto: codigoPropuesto,
         contenedor: contenedor || null,
         precinto: precinto || null,
         filas_contenedor: filas,
@@ -83,6 +95,21 @@ export function NuevoPacking({
           </p>
 
           <div className="form-rejilla">
+            <label className="form-campo">
+              <span>N.º de packing <b className="req">*</b></span>
+              <input className="campo mono" name="codigo_packing" value={codigo} maxLength={30}
+                     data-error={problemaCodigo ? 'si' : undefined}
+                     onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+                     onBlur={(e) => setCodigo(normalizarNumeroPacking(e.target.value))}
+                     placeholder="PL POT1124" />
+              <small data-aviso-codigo>
+                {problemaCodigo
+                  ?? avisoSaltoPacking(codigo, codigoPropuesto)
+                  ?? (normalizarNumeroPacking(codigo) === normalizarNumeroPacking(codigoPropuesto)
+                    ? 'Propuesto por el sistema; escriba el real si es otro.'
+                    : 'Escrito a mano.')}
+              </small>
+            </label>
             <label className="form-campo">
               <span>N.º de contenedor</span>
               <input className="campo mono" value={contenedor} maxLength={20}
@@ -124,7 +151,8 @@ export function NuevoPacking({
           </div>
 
           <div className="acciones-fila">
-            <button type="button" className="btn btn-primario" onClick={crear} disabled={guardando}>
+            <button type="button" className="btn btn-primario" onClick={crear} disabled={guardando || !!problemaCodigo}
+                    title={problemaCodigo ?? undefined}>
               <Icono nombre="guardar" tamano={15} />
               {guardando ? 'Creando…' : 'Crear contenedor'}
             </button>

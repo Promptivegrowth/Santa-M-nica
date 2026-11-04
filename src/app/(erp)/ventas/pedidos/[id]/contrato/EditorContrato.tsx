@@ -13,6 +13,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { DatosContrato } from '@/lib/contratoVenta';
 import { generarContrato } from './acciones';
+import { accionSegura } from '@/lib/accionSegura';
 
 type Ruta = string;
 
@@ -68,15 +69,16 @@ export function EditorContrato({ pedidoId, inicial, siguiente }: { pedidoId: num
       <fieldset className="form-bloque">
         <legend>Producto y condiciones</legend>
         <div className="contrato-rejilla">
-          {campo('Product (inglés)', ['producto', 'en'], 2, 'Una línea por producto. Se puede agregar el grado: «, GRADE B».')}
-          {campo('Producto (castellano)', ['producto', 'es'], 2)}
+          {campo('Product (inglés)', ['producto', 'en'], 3, 'Una línea por ítem, (1), (2)… Se puede agregar el grado: «, GRADE B».')}
+          {campo('Producto (castellano)', ['producto', 'es'], 3, 'Las mismas líneas que en inglés: el contrato las intercala, (1) inglés / (1) castellano.')}
           {campo('Quantity / Cantidad', ['cantidad'], 1, 'Kilos totales y tolerancia de la proforma.')}
-          {campo('Price / Precio', ['precio'], 2, 'Precio por kilo con el incoterm y el destino.')}
+          {campo('Price / Precio', ['precio'], 3, 'Precio por kilo de cada ítem, con el incoterm y el destino.')}
           {campo('Packing / Empaquetado', ['empaque'])}
           {campo('Period for shipment', ['periodo', 'en'])}
           {campo('Periodo de envío', ['periodo', 'es'])}
           {campo('Loading port / Puerto de carga', ['puertoCarga'])}
-          {campo('Destination port / Puerto de descarga', ['puertoDescarga'])}
+          {campo('Destination port (inglés)', ['puertoDescarga'], 1, 'Como el modelo: «VIGO, SPAIN».')}
+          {campo('Puerto de descarga (castellano)', ['puertoDescargaEs'], 1, '«VIGO, ESPAÑA».')}
         </div>
       </fieldset>
 
@@ -97,7 +99,7 @@ export function EditorContrato({ pedidoId, inicial, siguiente }: { pedidoId: num
       <fieldset className="form-bloque">
         <legend>Documento F (opcional)</legend>
         <div className="contrato-rejilla">
-          {campo('Document F (inglés)', ['documentoF', 'en'], 1, 'Vacío = el contrato no lo lleva. Se propone el certificado de captura para la Unión Europea.')}
+          {campo('Document F (inglés)', ['documentoF', 'en'], 1, 'Vacío = el contrato no lo lleva. Viene de la casilla «Incluye certificado de captura» de la cotización (arriba, en «Documentos y firma»).')}
           {campo('Documento F (castellano)', ['documentoF', 'es'])}
         </div>
       </fieldset>
@@ -107,7 +109,8 @@ export function EditorContrato({ pedidoId, inicial, siguiente }: { pedidoId: num
                 onClick={() => {
                   setAviso(null);
                   iniciar(async () => {
-                    const r = await generarContrato(pedidoId, d);
+                    //  Un corte de red vuelve como mensaje, sin perder lo corregido.
+                    const r = await accionSegura(() => generarContrato(pedidoId, d));
                     setAviso({ ok: r.ok, texto: r.mensaje });
                     if (r.ok) router.refresh();
                   });

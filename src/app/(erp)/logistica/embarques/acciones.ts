@@ -20,6 +20,7 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { mensajeNoPuede, mensajeDeBase } from '@/lib/permisosLogistica';
+import { normalizarNumeroPacking, problemaNumeroPacking, semanaIso } from '@/lib/numeroPacking';
 
 export type Resultado =
   | { ok: true; id: number; numero: string; mensaje: string }
@@ -142,6 +143,77 @@ function sinPrefijo(m: string | undefined) {
 }
 
 /* ==========================================================================
+   LOS DATOS DE PROGRAMACIÓN («Observaciones ERP 4», puntos 07, 11 y 13)
+   --------------------------------------------------------------------------
+   Semana de despacho, fecha de zarpe, operador logístico y N.º de packing
+   (PL). La base los vuelve a comprobar en un disparador (migración 084) con
+   los mismos textos; aquí se revisan antes para poder señalar el campo.
+   ========================================================================== */
+export type DatosProgramacion = {
+  /** Semana ISO del despacho (1–53). Vacía: la de la fecha programada. */
+  semana_despacho: number | null;
+  /** Fecha de zarpe de la nave (ETD): no coincide con la de despacho. */
+  fecha_zarpe: string | null;
+  operador_logistico: string | null;
+  /** N.º de packing que asigna Santa Mónica (PL POT1124). Vacío: sin asignar. */
+  numero_packing: string | null;
+  /** El que propuso el sistema al abrir el formulario, para las carreras. */
+  numero_packing_propuesto?: string | null;
+};
+
+function validarProgramacion(fechaProgramada: string, d: DatosProgramacion): Fallo | null {
+  if (d.semana_despacho !== null && d.semana_despacho !== undefined) {
+    const s = Number(d.semana_despacho);
+    if (!Number.isInteger(s) || s < 1 || s > 53) {
+      return { ok: false, mensaje: 'La semana de despacho tiene que ser un número entre 1 y 53.', campo: 'semana_despacho' };
+    }
+  }
+  if (d.fecha_zarpe && fechaProgramada && d.fecha_zarpe < fechaProgramada) {
+    return {
+      ok: false,
+      mensaje: `La fecha de zarpe (${fechaCorta(d.fecha_zarpe)}) no puede ser antes del despacho programado (${fechaCorta(fechaProgramada)}): ` +
+        'el contenedor tiene que salir de la bodega antes de que zarpe la nave. Corrija una de las dos.',
+      campo: 'fecha_zarpe',
+    };
+  }
+  if ((d.operador_logistico ?? '').trim().length > 80) {
+    return { ok: false, mensaje: 'El operador logístico no puede pasar de 80 caracteres.', campo: 'operador_logistico' };
+  }
+  if ((d.numero_packing ?? '').trim()) {
+    const forma = problemaNumeroPacking(d.numero_packing);
+    if (forma) return { ok: false, mensaje: forma, campo: 'numero_packing' };
+  }
+  return null;
+}
+
+/** 2026-11-05 → 05/11/2026. */
+function fechaCorta(iso: string) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
+/**
+ * Qué PL se guarda. Si la persona dejó el PROPUESTO y mientras llenaba el
+ * formulario otro embarque se lo llevó, se le da el siguiente libre (no lo
+ * eligió a propósito). Si lo escribió ella y está tomado, se le dice.
+ */
+async function elegirNumeroPacking(
+  supabase: Cliente, escrito: string | null | undefined, propuesto: string | null | undefined, embarqueId: number | null,
+): Promise<{ ok: true; numero: string | null; cambiado: boolean } | Fallo> {
+  const numero = normalizarNumeroPacking(escrito);
+  if (!numero) return { ok: true, numero: null, cambiado: false };
+  const { data: problema } = await supabase.rpc('problema_numero_packing', {
+    p_numero: numero, p_embarque_id: embarqueId, p_packing_id: null, p_es_packing: false,
+  });
+  if (!problema) return { ok: true, numero, cambiado: false };
+  if (propuesto && normalizarNumeroPacking(propuesto) === numero) {
+    const { data: otro } = await supabase.rpc('proponer_numero_packing');
+    if (otro) return { ok: true, numero: String(otro), cambiado: true };
+  }
+  return { ok: false, mensaje: String(problema), campo: 'numero_packing' };
+}
+
+/* ==========================================================================
    CREAR UN EMBARQUE
    ========================================================================== */
 
@@ -165,7 +237,7 @@ export type DatosEmbarque = {
    * pedidos enteros, como siempre.
    */
   lineas?: { pedido_linea_id: number; sku_presentacion_id: number; cantidad_kg: number }[];
-};
+} & Partial<DatosProgramacion>;
 
 export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
   const permiso = await autorizar('programar embarques');
@@ -180,6 +252,18 @@ export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
   //  Fecha, destino y vehículo: las mismas reglas que al editarlo.
   const malCabecera = await validarCabecera(supabase, d);
   if (malCabecera) return malCabecera;
+
+  //  Semana, zarpe, operador y PL (punto 07, 11 y 13 de «Observaciones ERP 4»).
+  const prog: DatosProgramacion = {
+    semana_despacho: d.semana_despacho ?? null,
+    fecha_zarpe: d.fecha_zarpe || null,
+    operador_logistico: d.operador_logistico?.trim() || null,
+    numero_packing: d.numero_packing ?? null,
+  };
+  const malProg = validarProgramacion(d.fecha_programada, prog);
+  if (malProg) return malProg;
+  const pl = await elegirNumeroPacking(supabase, d.numero_packing, d.numero_packing_propuesto, null);
+  if (!pl.ok) return pl;
 
   const lineas = (d.lineas ?? []).filter((l) => Number(l.cantidad_kg) > 0);
   if (d.lineas && d.pedidos.length > 0 && lineas.length === 0) {
@@ -211,11 +295,21 @@ export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
       observaciones: d.observaciones?.trim() || null,
       estado: 'planificado',
       creado_por: permiso.usuario!.id,
+      semana_despacho: prog.semana_despacho,
+      fecha_zarpe: prog.fecha_zarpe,
+      operador_logistico: prog.operador_logistico,
+      numero_packing: pl.numero,
     })
-    .select('id')
+    .select('id, numero_packing')
     .single();
 
-  if (error || !embarque) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo crear el embarque') };
+  if (error || !embarque) {
+    //  Dos personas con el mismo PL a la vez: el índice único decide.
+    if (error?.code === '23505') {
+      return { ok: false, mensaje: `El N.º de packing ${pl.numero} lo acaba de tomar otro embarque. Escriba otro o vuelva a abrir el formulario para que le proponga el siguiente.`, campo: 'numero_packing' };
+    }
+    return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo crear el embarque') };
+  }
 
   if (d.pedidos?.length) {
     const { error: errPed } = await supabase
@@ -261,8 +355,10 @@ export async function crearEmbarque(d: DatosEmbarque): Promise<Resultado> {
     id: embarque.id as number,
     numero,
     mensaje:
-      `Embarque ${numero} programado para el ${d.fecha_programada}. ` +
-      'Ya aparece en el calendario. Ahora hay que crearle su contenedor.',
+      `Embarque ${numero} programado para el ${d.fecha_programada}` +
+      (embarque.numero_packing ? ` con el N.º de packing ${embarque.numero_packing}` : '') + '. ' +
+      (pl.ok && pl.cambiado ? `(El PL propuesto lo tomó otro embarque mientras tanto: se le asignó ${embarque.numero_packing}.) ` : '') +
+      'Ya aparece en el calendario y en la programación. Ahora hay que crearle su contenedor.',
   };
 }
 
@@ -279,6 +375,12 @@ export type DatosPackingNuevo = {
   supervisor_id: string | null;
   turno: 'dia' | 'noche';
   fecha_carga: string | null;
+  /**
+   * El N.º de packing del contenedor (084). Si no viene, el que propone la
+   * base: el PL del embarque para el primer contenedor; si no, el siguiente.
+   */
+  codigo?: string | null;
+  codigo_propuesto?: string | null;
 };
 
 export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
@@ -302,13 +404,27 @@ export async function crearPacking(d: DatosPackingNuevo): Promise<Resultado> {
     return { ok: false, mensaje: `El embarque ${emb.numero} está cancelado: no admite contenedores.` };
   }
 
-  /* ---- El código sigue el formato de la casa: PL POT### ---- */
-  const { data: ultimo } = await supabase
-    .from('packing_lists').select('codigo').like('codigo', 'PL POT%')
-    .order('codigo', { ascending: false }).limit(1).maybeSingle();
-
-  const n = Number(String(ultimo?.codigo ?? 'PL POT000').replace('PL POT', '')) || 0;
-  const codigo = `PL POT${String(n + 1).padStart(3, '0')}`;
+  /* ---- El N.º de packing (084): el escrito, o el que propone la base ----
+     Antes se calculaba aquí «el mayor PL POT + 1», y eso numeraba desde
+     PL POT001 mientras la numeración real de Santa Mónica iba por la 1123.
+     Ahora la base propone (el PL del embarque para su primer contenedor) y
+     la persona puede escribir el real. */
+  const { data: propuestoBase } = await supabase.rpc('proponer_codigo_packing', { p_embarque_id: d.embarque_id });
+  let codigo = normalizarNumeroPacking(d.codigo) || String(propuestoBase ?? '');
+  if (!codigo) return { ok: false, mensaje: 'No se pudo calcular el N.º de packing. Escríbalo a mano.', campo: 'codigo' };
+  const forma = problemaNumeroPacking(codigo);
+  if (forma) return { ok: false, mensaje: forma, campo: 'codigo' };
+  const { data: problemaCodigo } = await supabase.rpc('problema_numero_packing', {
+    p_numero: codigo, p_embarque_id: d.embarque_id, p_packing_id: null, p_es_packing: true,
+  });
+  if (problemaCodigo) {
+    //  Si dejó el propuesto y se lo ganaron, el siguiente libre; si lo escribió, se le dice.
+    if (d.codigo_propuesto && normalizarNumeroPacking(d.codigo_propuesto) === codigo && propuestoBase && String(propuestoBase) !== codigo) {
+      codigo = String(propuestoBase);
+    } else {
+      return { ok: false, mensaje: String(problemaCodigo), campo: 'codigo' };
+    }
+  }
 
   const { data: packing, error } = await supabase
     .from('packing_lists')
@@ -608,6 +724,7 @@ export async function cancelarEmbarque(id: number, motivo: string): Promise<Resu
   };
 }
 
+
 /** Lo que se puede cambiar de un embarque ya programado. */
 export type DatosEdicionEmbarque = {
   fecha_programada: string;
@@ -618,12 +735,19 @@ export type DatosEdicionEmbarque = {
   vehiculo_id: number | null;
   conductor_id: number | null;
   observaciones: string | null;
-};
+} & DatosProgramacion;
 
 /**
- * EDITAR: fecha, destino, booking, naviera, transporte y observaciones. No la
- * bodega ni el tipo: los contenedores ya se arman en esa bodega y para ese
- * tipo, y cambiarlos sería otro embarque. No si ya salió o se canceló.
+ * EDITAR: fecha, destino, booking, naviera, transporte, observaciones y los
+ * datos de programación (semana, zarpe, operador logístico, N.º de packing).
+ * No la bodega ni el tipo: los contenedores ya se arman en esa bodega y para
+ * ese tipo, y cambiarlos sería otro embarque.
+ *
+ * YA DESPACHADO: la salida quedó como salió (fecha, destino, transporte),
+ * pero la PROGRAMACIÓN se sigue corrigiendo. La nave puede zarpar más tarde
+ * —un «roll over» de la naviera es cosa de todas las semanas— y el PL puede
+ * tener que alinearse con la numeración real de Santa Mónica (punto 13).
+ * Cancelado: ya no se edita.
  */
 export async function editarEmbarque(id: number, d: DatosEdicionEmbarque): Promise<Resultado> {
   const permiso = await autorizar('editar embarques');
@@ -632,63 +756,133 @@ export async function editarEmbarque(id: number, d: DatosEdicionEmbarque): Promi
   const supabase = await crearClienteServidor();
   const { data: e } = await supabase
     .from('embarques')
-    .select('numero, estado, tipo_despacho, fecha_programada, destino_id, booking, naviera, transportista_id, vehiculo_id, conductor_id, observaciones')
+    .select('numero, estado, tipo_despacho, fecha_programada, destino_id, booking, naviera, transportista_id, vehiculo_id, conductor_id, observaciones, semana_despacho, fecha_zarpe, operador_logistico, numero_packing')
     .eq('id', id).maybeSingle();
   if (!e) return { ok: false, mensaje: 'Ese embarque ya no existe.' };
-  if (e.estado === 'despachado') return { ok: false, mensaje: `El embarque ${e.numero} ya se despachó: sus datos quedan como salieron.` };
   if (e.estado === 'cancelado') return { ok: false, mensaje: `El embarque ${e.numero} está cancelado: ya no se edita.` };
+  const despachado = e.estado === 'despachado';
 
   const texto = (v: string | null | undefined) => (v?.trim() ? v.trim() : null);
-  const nuevo = {
-    fecha_programada: d.fecha_programada,
-    destino_id: d.destino_id || null,
-    booking: texto(d.booking),
-    naviera: texto(d.naviera),
-    transportista_id: d.transportista_id || null,
-    vehiculo_id: d.vehiculo_id || null,
-    conductor_id: d.conductor_id || null,
-    observaciones: texto(d.observaciones),
-  };
+  const salida = despachado
+    ? {
+        //  Lo que ya salió no cambia: se toma lo guardado, no lo que llegue.
+        fecha_programada: String(e.fecha_programada),
+        destino_id: (e.destino_id as number | null) ?? null,
+        booking: (e.booking as string | null) ?? null,
+        naviera: (e.naviera as string | null) ?? null,
+        transportista_id: (e.transportista_id as number | null) ?? null,
+        vehiculo_id: (e.vehiculo_id as number | null) ?? null,
+        conductor_id: (e.conductor_id as number | null) ?? null,
+        observaciones: (e.observaciones as string | null) ?? null,
+      }
+    : {
+        fecha_programada: d.fecha_programada,
+        destino_id: d.destino_id || null,
+        booking: texto(d.booking),
+        naviera: texto(d.naviera),
+        transportista_id: d.transportista_id || null,
+        vehiculo_id: d.vehiculo_id || null,
+        conductor_id: d.conductor_id || null,
+        observaciones: texto(d.observaciones),
+      };
 
-  const mal = await validarCabecera(supabase, { ...nuevo, tipo_despacho: String(e.tipo_despacho) });
-  if (mal) return mal;
-  if ((nuevo.booking ?? '').length > 40) return { ok: false, mensaje: 'El booking no puede pasar de 40 caracteres.', campo: 'booking' };
-  if ((nuevo.naviera ?? '').length > 60) return { ok: false, mensaje: 'La naviera no puede pasar de 60 caracteres.', campo: 'naviera' };
-  if ((nuevo.observaciones ?? '').length > 1000) return { ok: false, mensaje: 'Las observaciones no pueden pasar de 1000 caracteres.', campo: 'observaciones' };
-  //  Lo que exigió confirmar no se puede quitar después.
-  if (e.estado !== 'planificado' && e.tipo_despacho === 'exportacion' && e.booking && !nuevo.booking) {
-    return { ok: false, mensaje: 'Esta exportación ya está confirmada con su booking: puede cambiarlo, pero no dejarlo vacío.', campo: 'booking' };
+  if (!despachado) {
+    const mal = await validarCabecera(supabase, { ...salida, tipo_despacho: String(e.tipo_despacho) });
+    if (mal) return mal;
+    if ((salida.booking ?? '').length > 40) return { ok: false, mensaje: 'El booking no puede pasar de 40 caracteres.', campo: 'booking' };
+    if ((salida.naviera ?? '').length > 60) return { ok: false, mensaje: 'La naviera no puede pasar de 60 caracteres.', campo: 'naviera' };
+    if ((salida.observaciones ?? '').length > 1000) return { ok: false, mensaje: 'Las observaciones no pueden pasar de 1000 caracteres.', campo: 'observaciones' };
+    //  Lo que exigió confirmar no se puede quitar después.
+    if (e.estado !== 'planificado' && e.tipo_despacho === 'exportacion' && e.booking && !salida.booking) {
+      return { ok: false, mensaje: 'Esta exportación ya está confirmada con su booking: puede cambiarlo, pero no dejarlo vacío.', campo: 'booking' };
+    }
   }
+
+  const prog: DatosProgramacion = {
+    semana_despacho: d.semana_despacho === undefined || d.semana_despacho === null || String(d.semana_despacho) === '' ? null : Number(d.semana_despacho),
+    fecha_zarpe: d.fecha_zarpe || null,
+    operador_logistico: texto(d.operador_logistico),
+    numero_packing: texto(d.numero_packing),
+  };
+  const malProg = validarProgramacion(salida.fecha_programada, prog);
+  if (malProg) return malProg;
+  const plActual = normalizarNumeroPacking(e.numero_packing as string | null) || null;
+  const plNuevo = normalizarNumeroPacking(prog.numero_packing) || null;
+  if (plNuevo && plNuevo !== plActual) {
+    const pl = await elegirNumeroPacking(supabase, plNuevo, null, id);
+    if (!pl.ok) return pl;
+  }
+
+  const nuevo = {
+    ...salida,
+    semana_despacho: prog.semana_despacho,
+    fecha_zarpe: prog.fecha_zarpe,
+    operador_logistico: prog.operador_logistico,
+    numero_packing: plNuevo,
+  };
 
   //  Qué cambió, en palabras, para el historial.
   const cambios: string[] = [];
-  const antes = e as Record<string, unknown>;
+  const antes: Record<string, unknown> = { ...(e as Record<string, unknown>), numero_packing: plActual };
   const etiquetas: Record<keyof typeof nuevo, string> = {
-    fecha_programada: 'fecha', destino_id: 'destino', booking: 'booking', naviera: 'naviera',
+    fecha_programada: 'fecha de despacho', destino_id: 'destino', booking: 'booking', naviera: 'naviera',
     transportista_id: 'transportista', vehiculo_id: 'vehículo', conductor_id: 'conductor', observaciones: 'observaciones',
+    semana_despacho: 'semana de despacho', fecha_zarpe: 'fecha de zarpe', operador_logistico: 'operador logístico',
+    numero_packing: 'N.º de packing',
   };
+  const conValor = ['fecha_programada', 'booking', 'naviera', 'semana_despacho', 'fecha_zarpe', 'operador_logistico', 'numero_packing'];
   for (const k of Object.keys(nuevo) as (keyof typeof nuevo)[]) {
     const a = antes[k] == null ? null : String(antes[k]);
     const b = nuevo[k] == null ? null : String(nuevo[k]);
     if (a === b) continue;
-    cambios.push(['fecha_programada', 'booking', 'naviera'].includes(k)
-      ? `${etiquetas[k]}: ${a ?? '—'} → ${b ?? '—'}`
-      : etiquetas[k]);
+    //  La semana que la base calcula sola al mover la fecha no es un cambio de la persona.
+    if (k === 'semana_despacho' && b === null) continue;
+    //  Ni la que el formulario rellenó con la de la fecha cuando no había ninguna escrita.
+    if (k === 'semana_despacho' && a === null && Number(b) === semanaIso(nuevo.fecha_programada)) continue;
+    cambios.push(conValor.includes(k) ? `${etiquetas[k]}: ${a ?? '—'} → ${b ?? '—'}` : etiquetas[k]);
   }
   if (!cambios.length) return { ok: true, id, numero: String(e.numero), mensaje: 'No había nada que cambiar.' };
 
   const { data, error } = await supabase.from('embarques').update(nuevo).eq('id', id).select('id');
-  if (error) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo guardar') };
+  if (error) {
+    if (error.code === '23505') return { ok: false, mensaje: `El N.º de packing ${plNuevo} lo acaba de tomar otro embarque. Escriba otro.`, campo: 'numero_packing' };
+    return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo guardar') };
+  }
   if (!data?.length) return { ok: false, mensaje: 'No tiene permiso para modificar este embarque.' };
 
-  await supabase.rpc('registrar_evento', {
-    p_entidad: 'embarques', p_entidad_id: id, p_tipo: 'embarque_editado',
-    p_descripcion: `Embarque ${e.numero} editado. Cambió: ${cambios.join('; ')}.`,
-    p_severidad: 'info',
-  }).then(() => undefined, () => undefined);
+  /*
+   * El cambio de PL lo cuenta la base en el historial (de X a Y, quién, y si
+   * también cambió en su contenedor): aquí se cuenta el resto.
+   */
+  const sinPl = cambios.filter((c) => !c.startsWith('N.º de packing'));
+  if (sinPl.length) {
+    await supabase.rpc('registrar_evento', {
+      p_entidad: 'embarques', p_entidad_id: id, p_tipo: 'embarque_editado',
+      p_descripcion: `Embarque ${e.numero} editado. Cambió: ${sinPl.join('; ')}.`,
+      p_severidad: 'info',
+    }).then(() => undefined, () => undefined);
+  }
 
   refrescar(id);
   return { ok: true, id, numero: String(e.numero), mensaje: `Cambios guardados: ${cambios.join('; ')}.` };
+}
+
+/**
+ * FIJAR EL PRÓXIMO N.º DE PACKING AUTOMÁTICO (Gerencia u Operaciones). La
+ * primera vez sirve para que el sistema siga la numeración real (p. ej. 1124
+ * después de PL POT1123). La base comprueba el rol y que el número esté libre.
+ */
+export async function fijarProximoNumeroPacking(proximo: number): Promise<Resultado> {
+  const permiso = await autorizar('fijar la numeración de packing', ['gerencia', 'operaciones']);
+  if (permiso.error) return { ok: false, mensaje: permiso.error };
+  if (!Number.isInteger(proximo) || proximo < 1 || proximo > 9999999) {
+    return { ok: false, mensaje: 'El próximo número tiene que ser un entero entre 1 y 9999999.', campo: 'proximo' };
+  }
+  const supabase = await crearClienteServidor();
+  const { data, error } = await supabase.rpc('fijar_proximo_numero_packing', { p_proximo: proximo });
+  if (error) return { ok: false, mensaje: mensajeDeBase(error, 'No se pudo fijar la numeración'), campo: 'proximo' };
+  refrescar();
+  return { ok: true, id: 0, numero: String(data), mensaje: `Listo: el próximo N.º de packing se propondrá como ${data}.` };
 }
 
 /**
