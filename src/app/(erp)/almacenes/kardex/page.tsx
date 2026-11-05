@@ -28,7 +28,11 @@ export const dynamic = 'force-dynamic';
 const POR_PAGINA = 50;
 
 /** Cómo se presenta cada tipo de movimiento en pantalla. */
+//  Las claves son la `clase_movimiento` de v_kardex: el tipo del movimiento,
+//  salvo el saldo con que arrancó el sistema (carga inicial), que es un
+//  «ingreso» con documento «inventario_inicial» y se rotula aparte (086).
 const TIPOS: Record<string, { texto: string; tono: 'ok' | 'critico' | 'atencion' | 'info' | 'neutro' }> = {
+  inventario_inicial: { texto: 'Inventario inicial', tono: 'neutro' },
   ingreso: { texto: 'Ingreso', tono: 'ok' },
   traslado_ingreso: { texto: 'Entrada traslado', tono: 'ok' },
   ingreso_reproceso: { texto: 'Vuelve de reproceso', tono: 'ok' },
@@ -62,7 +66,7 @@ export default async function PaginaKardex(props: PageProps<'/almacenes/kardex'>
       `codigo_pallet.ilike.%${buscar}%,documento_ref.ilike.%${buscar}%,sku_codigo.ilike.%${buscar}%`
     );
   }
-  if (tipo) consulta = consulta.eq('tipo', tipo);
+  if (tipo) consulta = consulta.eq('clase_movimiento', tipo);
   if (almacenId) consulta = consulta.eq('almacen_id', Number(almacenId));
   if (desde) consulta = consulta.gte('fecha', desde);
 
@@ -116,7 +120,7 @@ export default async function PaginaKardex(props: PageProps<'/almacenes/kardex'>
                 </thead>
                 <tbody>
                   {(filas ?? []).map((f) => {
-                    const t = TIPOS[f.tipo as string] ?? {
+                    const t = TIPOS[(f.clase_movimiento ?? f.tipo) as string] ?? {
                       texto: etiquetaEstado(f.tipo as string),
                       tono: 'neutro' as const,
                     };
