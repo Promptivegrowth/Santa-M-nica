@@ -55,6 +55,9 @@ const TIPOS: Record<string, { texto: string; signo: 1 | -1; tono: 'ok' | 'atenci
   salida_muestra:    { texto: 'Muestra de calidad',    signo: -1, tono: 'neutro' },
   ajuste_negativo:   { texto: 'Ajuste que resta',      signo: -1, tono: 'atencion' },
   salida_merma:      { texto: 'Merma',                 signo: -1, tono: 'critico' },
+  //  088 · Dividir pallet.
+  division_salida:   { texto: 'Salida por división',   signo: -1, tono: 'neutro' },
+  division_ingreso:  { texto: 'Ingreso por división',  signo: 1,  tono: 'neutro' },
 };
 
 /** Hora legible de una marca de tiempo. */

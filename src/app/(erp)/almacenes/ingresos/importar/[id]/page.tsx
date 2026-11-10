@@ -20,7 +20,7 @@ import { fechaHora } from '@/lib/formato';
 import { hoyEnLima } from '@/lib/fechas';
 import { leerFecha } from '@/lib/importacionExcel';
 import { PUEDEN_INGRESAR, PUEDEN_VALIDAR_IMPORTACION } from '../../tipos';
-import { cargarCatalogoIngresos, nombresBaseUnicos } from '../revision';
+import { cargarCatalogoIngresos, nombreAlmacen } from '../revision';
 import type { ErrorColumna, EstadoFila } from '../columnas';
 import { RevisionIngresos, type FilaRevision } from './RevisionIngresos';
 
@@ -90,14 +90,19 @@ export default async function PaginaRevisionIngresos(props: PageProps<'/almacene
         recienSubida={q.subida === '1'}
         puedeValidar={(PUEDEN_VALIDAR_IMPORTACION as readonly string[]).includes(rol)}
         opciones={{
-          //  También los nombres de su base que bastan solos (079).
-          productos: [...cat.productos.map((p) => p.etiqueta), ...nombresBaseUnicos(cat.productos).keys()],
+          //  087 · Primero los nombres de su base (OPERACIÓN INGRESO), después los textos del sistema.
+          productos: [
+            ...[...new Set(cat.productos.map((p) => p.nombre_base).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
+            ...cat.productos.map((p) => p.etiqueta),
+          ],
           bodegas: cat.bodegas.filter((b) => b.activo).map((b) => ({
             nombre: b.nombre, produccion: b.recibe_produccion, compras: b.recibe_compras,
+            almacen: nombreAlmacen(b.nombre).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(),
           })),
           camaras: cat.camaras.map((c) => ({ nombre: c.nombre, bodega: nombreBodega.get(c.almacen_id) ?? '' })),
           plantas: cat.plantas.map((p) => p.nombre),
           lineas: cat.lineas.map((l) => l.nombre),
+          presentaciones: [...new Set(cat.productos.map((p) => p.presentacion))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
         }}
       />
     </>

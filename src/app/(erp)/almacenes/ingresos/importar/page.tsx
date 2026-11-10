@@ -68,9 +68,9 @@ export default async function PaginaImportarIngresos() {
         <Panel titulo="1 · Descargue la plantilla">
           <div style={{ padding: '1rem' }}>
             <p style={{ marginTop: 0 }}>
-              Trae los encabezados correctos, una fila de ejemplo, listas desplegables (producto, origen, bodega, cámara,
-              turno…) y las listas válidas de hoy: productos con su código, qué bodegas reciben producción y cuáles compras,
-              y las cámaras de cada una.
+              Los mismos títulos y el mismo orden de su hoja GENERAL (N°PALLET, OPERACIÓN INGRESO, CODIGO, PRESENTACION,
+              ALMACEN, CAMARA DE ALMACENAMIENTO, TOTAL, PESO NETO…): copie sus filas de ingreso y péguelas. Trae una fila de
+              ejemplo, listas desplegables con sus nombres y las hojas Productos y Almacenes con lo válido de hoy.
             </p>
             <a href="/almacenes/ingresos/importar/plantilla" className="btn btn-secundario" data-accion="descargar-plantilla" download>
               <Icono nombre="descargar" tamano={15} /> Descargar plantilla

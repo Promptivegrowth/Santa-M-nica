@@ -23,6 +23,7 @@
  * ============================================================================
  */
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MARCA } from './excel';
@@ -288,6 +289,35 @@ function textoCelda(v: ExcelJS.CellValue, tipo: ColumnaPlantilla['tipo']): strin
 export type FilaLeida = { fila: number; valores: Record<string, string> };
 
 /**
+ * 087 · Abre el libro. ExcelJS se cae con algunas «tablas» de Excel (las de
+ * Insertar › Tabla, que su base usa en casi todas las hojas): «Cannot read
+ * properties of undefined (reading 'name')». Si pasa, se vuelve a abrir sin
+ * esas tablas —solo se quita la referencia a la tabla; las celdas quedan
+ * igual—. null si tampoco así es un Excel.
+ */
+async function abrirLibro(archivo: ArrayBuffer): Promise<ExcelJS.Workbook | null> {
+  const libro = new ExcelJS.Workbook();
+  try {
+    await libro.xlsx.load(archivo);
+    return libro;
+  } catch {
+    try {
+      const zip = await JSZip.loadAsync(archivo);
+      const hojas = Object.keys(zip.files).filter((n) => /^xl\/worksheets\/[^/]+\.xml$/.test(n));
+      for (const n of hojas) {
+        const xml = await zip.file(n)!.async('string');
+        zip.file(n, xml.replace(/<tableParts[^>]*\/>/g, '').replace(/<tableParts[^>]*>[\s\S]*?<\/tableParts>/g, ''));
+      }
+      const otro = new ExcelJS.Workbook();
+      await otro.xlsx.load(await zip.generateAsync({ type: 'arraybuffer' }));
+      return otro;
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
  * Lee la hoja de datos de una plantilla.
  *
  * Busca la hoja por su nombre y, si no está, usa la primera. Dentro, busca la
@@ -299,18 +329,14 @@ export async function leerPlantilla(
   archivo: ArrayBuffer,
   op: { hoja: string; columnas: ColumnaPlantilla[]; claveEjemplo: string }
 ): Promise<{ ok: true; filas: FilaLeida[]; ignoradas: string[] } | { ok: false; mensaje: string }> {
-  const libro = new ExcelJS.Workbook();
-  try {
-    await libro.xlsx.load(archivo);
-  } catch {
+  const libro = await abrirLibro(archivo);
+  if (!libro) {
     return {
       ok: false,
       mensaje: 'No se pudo leer el archivo como Excel. Guárdelo como «Libro de Excel (.xlsx)» —no .xls ni .csv— y vuelva a subirlo.',
     };
   }
-
-  const hoja = libro.getWorksheet(op.hoja) ?? libro.worksheets[0];
-  if (!hoja) return { ok: false, mensaje: 'El archivo no tiene ninguna hoja.' };
+  if (!libro.worksheets.length) return { ok: false, mensaje: 'El archivo no tiene ninguna hoja.' };
 
   const porTitulo = new Map<string, ColumnaPlantilla>();
   for (const c of op.columnas) {
@@ -318,18 +344,30 @@ export async function leerPlantilla(
     for (const a of c.alias ?? []) porTitulo.set(tituloNormal(a), c);
   }
 
-  /* ---- La fila de encabezados ---- */
-  let filaEnc = 0;
-  let mejor = 0;
-  let columnas = new Map<number, ColumnaPlantilla>();
-  for (let r = 1; r <= Math.min(15, hoja.rowCount); r++) {
-    const mapa = new Map<number, ColumnaPlantilla>();
-    hoja.getRow(r).eachCell({ includeEmpty: false }, (celda, col) => {
-      const c = porTitulo.get(tituloNormal(textoCelda(celda.value, 'texto')));
-      if (c && ![...mapa.values()].includes(c)) mapa.set(col, c);
-    });
-    if (mapa.size > mejor) { mejor = mapa.size; filaEnc = r; columnas = mapa; }
-  }
+  /* ---- La hoja y su fila de encabezados ----
+     087 · Primero la hoja con el nombre de la plantilla; si no está (suben su
+     propio libro), la que reconozca más columnas entre las quince primeras
+     filas de cada hoja: así vale su hoja de ingresos aunque no sea la primera. */
+  const enHoja = (h: ExcelJS.Worksheet) => {
+    let fila = 0;
+    let mapa = new Map<number, ColumnaPlantilla>();
+    for (let r = 1; r <= Math.min(15, h.rowCount); r++) {
+      const m = new Map<number, ColumnaPlantilla>();
+      h.getRow(r).eachCell({ includeEmpty: false }, (celda, col) => {
+        const c = porTitulo.get(tituloNormal(textoCelda(celda.value, 'texto')));
+        if (c && ![...m.values()].includes(c)) m.set(col, c);
+      });
+      if (m.size > mapa.size) { fila = r; mapa = m; }
+    }
+    return { hoja: h, fila, mapa };
+  };
+  const propia = libro.getWorksheet(op.hoja);
+  const elegida = propia
+    ? enHoja(propia)
+    : libro.worksheets.map(enHoja).reduce((a, b) => (b.mapa.size > a.mapa.size ? b : a));
+  const { hoja } = elegida;
+  const filaEnc = elegida.fila;
+  const columnas = elegida.mapa;
 
   const obligatorias = op.columnas.filter((c) => c.obligatoria);
   const faltan = obligatorias.filter((c) => ![...columnas.values()].includes(c));

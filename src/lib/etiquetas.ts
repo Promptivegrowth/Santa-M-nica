@@ -105,6 +105,8 @@ export const ESTADOS: Record<string, string> = {
   ingreso_reproceso: 'Ingreso de reproceso',
   salida_muestra: 'Muestra',
   salida_merma: 'Merma',
+  division_salida: 'Salida por división',
+  division_ingreso: 'Ingreso por división',
   // Turno y proceso
   dia: 'Día',
   noche: 'Noche',

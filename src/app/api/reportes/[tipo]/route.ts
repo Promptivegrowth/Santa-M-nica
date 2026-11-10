@@ -147,6 +147,8 @@ const NOMBRE_MOVIMIENTO: Record<string, string> = {
   salida_muestra: 'Muestra de calidad',
   ajuste_negativo: 'Ajuste que resta',
   salida_merma: 'Merma',
+  division_salida: 'Salida por división',
+  division_ingreso: 'Ingreso por división',
 };
 
 const REPORTES: Record<string, DefinicionReporte> = {

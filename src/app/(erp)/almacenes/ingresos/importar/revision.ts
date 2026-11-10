@@ -21,7 +21,7 @@ import { normalizarTexto, leerNumero, leerFecha } from '@/lib/importacionExcel';
 import { hoyEnLima } from '@/lib/fechas';
 import type { DatosIngreso } from '../tipos';
 import { cargarContexto, revisarIngreso, normalizarCodigo, type ClienteBase, type ContextoIngreso } from '../registro';
-import { COLUMNA_DE_CAMPO, type ErrorColumna, type EstadoFila } from './columnas';
+import { COLUMNA_DE_CAMPO, MOTIVOS_INGRESO, type ErrorColumna, type EstadoFila } from './columnas';
 
 /* ==========================================================================
    EL CATÁLOGO: lo que existe, con el texto con que se muestra en la plantilla
@@ -171,6 +171,38 @@ const leerCongelamiento = (t: string) => {
   return /^plac/.test(x) ? 'placas' : /^tun/.test(x) ? 'tunel' : '';
 };
 
+/**
+ * 087 · Lo que la fila dice además del nombre, para elegir la presentación:
+ * su PRESENTACION («2 X 10 KG»), su TIPO DE CONGELAMIENTO (o su ID_PRES,
+ * «PLACAS20 KG») y su CODIGO (el del SKU, igual en su base y en la nuestra).
+ */
+export type PistasProducto = { codigo?: string; presentacion?: string; congelamiento?: string; id_pres?: string };
+
+const congelamientoDe = (x: PistasProducto) => leerCongelamiento(x.congelamiento || x.id_pres || '');
+
+/**
+ * Filtra por presentación y congelamiento, si vienen. Cada filtro se aplica
+ * solo si deja algo: lo que no cuadra no se descarta en silencio, lo dice
+ * `explicarDescarte`.
+ */
+function filtrarPorPistas(candidatos: ProductoCatalogo[], x: PistasProducto): ProductoCatalogo[] {
+  let lista = candidatos;
+  const pres = claveNombre(x.presentacion ?? '');
+  if (pres) lista = lista.filter((p) => claveNombre(p.presentacion) === pres);
+  const c = congelamientoDe(x);
+  if (c) lista = lista.filter((p) => p.congelamiento === c);
+  return lista;
+}
+
+/** «2 X 10 KG en túnel»: lo que se pidió y no existe para ese producto. */
+function explicarDescarte(candidatos: ProductoCatalogo[], x: PistasProducto, que: string): string {
+  const c = congelamientoDe(x);
+  const pedida = [x.presentacion?.trim(), c ? `en ${TEXTO_CONGELAMIENTO[c].toLowerCase()}` : ''].filter(Boolean).join(' ');
+  const hay = [...new Set(candidatos.map((p) => `${p.presentacion} (${TEXTO_CONGELAMIENTO[p.congelamiento] ?? p.congelamiento})`))];
+  return `${que} no tiene la presentación ${pedida}: tiene ${hay.join(', ')}. ` +
+    'Revise PRESENTACION y TIPO DE CONGELAMIENTO, o pida a Gerencia u Operaciones que la habilite en Ventas › Productos.';
+}
+
 /** Si con el congelamiento escrito queda una sola opción, esa. */
 function porCongelamiento(candidatos: ProductoCatalogo[], congelamiento: string): ProductoCatalogo | null {
   const c = leerCongelamiento(congelamiento);
@@ -179,15 +211,27 @@ function porCongelamiento(candidatos: ProductoCatalogo[], congelamiento: string)
   return con.length === 1 ? con[0] : null;
 }
 
-function buscarPorNombreBase(texto: string, cat: CatalogoIngresos, congelamiento = ''): { id: number } | { error: string } | null {
+function buscarPorNombreBase(texto: string, cat: CatalogoIngresos, pistas: PistasProducto = {}): { id: number } | { error: string } | null {
   const partes = partirNombreBase(texto);
   if (!partes) return null;
   const clave = claveNombre(partes.texto);
-  const delProducto = cat.productos.filter((p) => p.formato && claveNombre(`${p.formato}-${p.corte}`) === clave);
+  let delProducto = cat.productos.filter((p) => p.formato && claveNombre(`${p.formato}-${p.corte}`) === clave);
+  //  Dos SKU con el mismo nombre (p. ej. ALETAS-300-500 es el 49 y el 151): manda el CODIGO, si vino.
+  const cod = sinCeros(normalizarTexto(pistas.codigo ?? ''));
+  if (cod && delProducto.some((p) => sinCeros(normalizarTexto(p.codigo)) === cod)) {
+    delProducto = delProducto.filter((p) => sinCeros(normalizarTexto(p.codigo)) === cod);
+  }
   if (!delProducto.length) return null;
   const conPeso = delProducto.filter((p) => Math.abs(p.kg_bulto - partes.kg) < 0.0005);
+  //  087 · La presentación y el congelamiento escritos mandan: antes, si el
+  //  peso dejaba una sola opción, se tomaba aunque fuera de otro congelamiento.
+  const conPistas = filtrarPorPistas(conPeso, pistas);
+  if (conPistas.length === 1) return { id: conPistas[0].id };
+  if (conPeso.length > 0 && conPistas.length === 0) {
+    return { error: explicarDescarte(conPeso, pistas, `«${texto}» (producto ${conPeso[0].codigo})`) };
+  }
   if (conPeso.length === 1) return { id: conPeso[0].id };
-  const elegido = porCongelamiento(conPeso, congelamiento);
+  const elegido = porCongelamiento(conPeso, pistas.congelamiento ?? '');
   if (elegido) return { id: elegido.id };
   if (conPeso.length === 0) {
     const pesos = [...new Set(delProducto.map((p) => `${kgTexto(p.kg_bulto)} kg (${p.presentacion})`))];
@@ -205,23 +249,56 @@ function buscarPorNombreBase(texto: string, cat: CatalogoIngresos, congelamiento
   return {
     error: `«${texto}» puede ser ${conPeso.length} presentaciones del producto ${conPeso[0].codigo} con ${kgTexto(partes.kg)} kg por bulto: ` +
       `${conPeso.map((p) => `«${p.etiqueta}»${cong(p)}`).join(' o ')}. ` +
-      'Escriba en «Producto» una de esas opciones (están en la lista desplegable)' +
-      //  081 · La columna ya viene en la plantilla (la última).
-      (difiereCong ? ', o elija Placas o Túnel en la columna «Tipo de congelamiento» (la última de la plantilla).' : '.'),
+      'Escriba cuál en PRESENTACION (p. ej. «2 X 10 KG»)' +
+      (difiereCong ? ' y elija PLACAS o TUNEL en TIPO DE CONGELAMIENTO.' : '.'),
   };
 }
 
-function buscarProducto(texto: string, cat: CatalogoIngresos, congelamiento = ''): { id: number } | { error: string } {
+/**
+ * 087 · Por su CODIGO (el del SKU: 169, 35…) más la presentación y el
+ * congelamiento. Es la llave que su base ya trae: coincide con la nuestra en
+ * todas las filas de 2026, y sirve cuando OPERACIÓN INGRESO viene vacía.
+ */
+function buscarPorCodigo(cat: CatalogoIngresos, x: PistasProducto, kgBulto: number): { id: number } | { error: string } {
+  const cod = sinCeros(normalizarTexto(x.codigo ?? ''));
+  const delSku = cat.productos.filter((p) => sinCeros(normalizarTexto(p.codigo)) === cod);
+  if (!delSku.length) return { error: `No existe el producto con CODIGO ${x.codigo}. Revise el código o escriba OPERACIÓN INGRESO.` };
+  let lista = filtrarPorPistas(delSku, x);
+  if (lista.length > 1 && kgBulto > 0) lista = lista.filter((p) => Math.abs(p.kg_bulto - kgBulto) < 0.0005);
+  if (lista.length === 1) return { id: lista[0].id };
+  const nombre = `El CODIGO ${delSku[0].codigo} (${delSku[0].nombre_base.replace(/ X [\d.]+ KG$/, '') || delSku[0].corte})`;
+  if (!lista.length) return { error: explicarDescarte(delSku, x, nombre) };
+  return {
+    error: `${nombre} tiene ${lista.length} presentaciones posibles: ${lista.map((p) => `${p.presentacion} (${TEXTO_CONGELAMIENTO[p.congelamiento] ?? p.congelamiento})`).join(', ')}. ` +
+      'Escriba cuál en PRESENTACION y TIPO DE CONGELAMIENTO.',
+  };
+}
+
+function buscarProducto(texto: string, cat: CatalogoIngresos, pistas: PistasProducto = {}, kgBulto = 0): { id: number } | { error: string } {
   const t = normalizarTexto(texto);
-  if (!t) return { error: 'Falta el producto.' };
+  if (!t) {
+    if (pistas.codigo?.trim()) return buscarPorCodigo(cat, pistas, kgBulto);
+    return { error: 'Falta el producto: escriba OPERACIÓN INGRESO, o CODIGO y PRESENTACION.' };
+  }
 
   const exacto = cat.productos.find((p) => normalizarTexto(p.etiqueta) === t);
   if (exacto) return { id: exacto.id };
 
   //  El nombre con que lo ven en su base («FILETE-"B" 0-500 X 20 KG»): así
   //  pueden pegar su tabla tal cual.
-  const porNombre = buscarPorNombreBase(texto, cat, congelamiento);
-  if (porNombre) return porNombre;
+  const porNombre = buscarPorNombreBase(texto, cat, pistas);
+  if (porNombre) {
+    //  Si además vino el CODIGO y es OTRO producto, se avisa: una de las dos columnas está mal.
+    if ('id' in porNombre && pistas.codigo?.trim()) {
+      const p = cat.productos.find((x) => x.id === porNombre.id);
+      if (p && sinCeros(normalizarTexto(p.codigo)) !== sinCeros(normalizarTexto(pistas.codigo))) {
+        return { error: `OPERACIÓN INGRESO dice «${texto}» (producto ${p.codigo}), pero CODIGO dice ${pistas.codigo}. Corrija una de las dos.` };
+      }
+    }
+    return porNombre;
+  }
+  //  Un nombre que no está en el catálogo, pero con CODIGO: manda el código.
+  if (pistas.codigo?.trim() && partirNombreBase(texto)) return buscarPorCodigo(cat, pistas, kgBulto);
 
   //  «01 · 4 X 7 KG …»: el código del SKU y la presentación bastan.
   const partes = t.split(' · ').map((x) => x.trim());
@@ -241,7 +318,7 @@ function buscarProducto(texto: string, cat: CatalogoIngresos, congelamiento = ''
     if (conPres.length > 1) candidatos = conPres;
   }
   if (delSku.length === 1) return { id: delSku[0].id };
-  const elegido = porCongelamiento(candidatos, congelamiento);
+  const elegido = porCongelamiento(candidatos, pistas.congelamiento || pistas.id_pres || '');
   if (elegido) return { id: elegido.id };
   return {
     error: `El SKU ${delSku[0].codigo} tiene ${candidatos.length} presentaciones posibles (${candidatos.map((p) => `«${p.etiqueta}»`).join(', ')}): ` +
@@ -249,12 +326,41 @@ function buscarProducto(texto: string, cat: CatalogoIngresos, congelamiento = ''
   };
 }
 
-function buscarBodega(texto: string, cat: CatalogoIngresos): { id: number } | { error: string } {
+/**
+ * 087 · El ALMACEN como lo escriben en su base. «SANTA MONICA» son tres
+ * bodegas en el sistema («Santa Mónica · Cámara 01/02/03»): la elige el número
+ * de su CAMARA DE ALMACENAMIENTO («CAMARA N° 02» → la 02).
+ */
+export const nombreAlmacen = (nombre: string) => nombre.split(' · ')[0].trim();
+
+/** «CAMARA N° 02», «Cámara 2», «C2» → 2; null si el texto no trae número. */
+const numeroCamara = (t: string) => {
+  const x = /(\d+)\s*$/.exec(normalizarTexto(t));
+  return x ? Number(x[1]) : null;
+};
+
+function buscarBodega(texto: string, cat: CatalogoIngresos, camara = ''): { id: number } | { error: string } {
   const t = normalizarTexto(texto);
-  if (!t) return { error: 'Falta la bodega.' };
+  if (!t) return { error: 'Falta el ALMACEN.' };
   const b = cat.bodegas.find((x) => normalizarTexto(x.nombre) === t || normalizarTexto(x.codigo) === t);
   if (b) return { id: b.id };
-  return { error: `No existe la bodega «${texto}». Elíjala de la lista (hoja «Listas»).` };
+  //  «STM-DEPSA», «OCEANO-COINREFRI»: en su base, de quién es el producto y dónde está. Manda dónde está.
+  const dondeEsta = /^(stm|oceano)-(.+)$/.exec(t);
+  if (dondeEsta) return buscarBodega(dondeEsta[2], cat, camara);
+  const delAlmacen = cat.bodegas.filter((x) => x.activo && normalizarTexto(nombreAlmacen(x.nombre)) === t);
+  if (delAlmacen.length === 1) return { id: delAlmacen[0].id };
+  if (delAlmacen.length > 1) {
+    const n = numeroCamara(camara);
+    const conCamara = n === null ? [] : delAlmacen.filter((x) =>
+      cat.camaras.some((c) => c.almacen_id === x.id && numeroCamara(c.nombre) === n));
+    if (conCamara.length === 1) return { id: conCamara[0].id };
+    const camaras = delAlmacen.flatMap((x) => cat.camaras.filter((c) => c.almacen_id === x.id).map((c) => c.nombre));
+    return {
+      error: `${texto} tiene ${delAlmacen.length} cámaras (${camaras.join(', ')}): ` +
+        (camara.trim() ? `«${camara}» no es ninguna de ellas.` : 'escriba en CAMARA DE ALMACENAMIENTO a cuál entra, p. ej. «CAMARA N° 02».'),
+    };
+  }
+  return { error: `No existe el ALMACEN «${texto}». Elíjalo de la lista (hoja «Listas»).` };
 }
 
 function buscarCamara(texto: string, almacenId: number, cat: CatalogoIngresos): { id: number | null } | { error: string } {
@@ -262,6 +368,13 @@ function buscarCamara(texto: string, almacenId: number, cat: CatalogoIngresos): 
   if (!t) return { id: null };
   const deLaBodega = cat.camaras.find((c) => c.almacen_id === almacenId && normalizarTexto(c.nombre) === t);
   if (deLaBodega) return { id: deLaBodega.id };
+  //  087 · «CAMARA N° 02» es la «Cámara 02» de esa bodega.
+  const n = numeroCamara(texto);
+  const porNumero = n === null ? undefined : cat.camaras.find((c) => c.almacen_id === almacenId && numeroCamara(c.nombre) === n);
+  if (porNumero) return { id: porNumero.id };
+  //  En su base, los almacenes externos repiten su nombre como cámara (FREEKO / FREEKO): es «sin cámara».
+  const bodega = cat.bodegas.find((b) => b.id === almacenId);
+  if (bodega && [bodega.nombre, nombreAlmacen(bodega.nombre), bodega.codigo].some((x) => normalizarTexto(x) === t)) return { id: null };
   //  Existe, pero en otra bodega: se devuelve igual y la regla común lo dice
   //  («La Cámara 01 es de la bodega …, no de la elegida»).
   const otra = cat.camaras.find((c) => normalizarTexto(c.nombre) === t);
@@ -286,26 +399,57 @@ export type FilaInterpretada = {
   errores: ErrorColumna[];
 };
 
+const pistasDe = (v: Record<string, string>): PistasProducto => ({
+  codigo: v.codigo ?? '', presentacion: v.presentacion ?? '', congelamiento: v.congelamiento ?? '', id_pres: v.id_pres ?? '',
+});
+
+/**
+ * 087 · Su MOTIVO INGRESO → origen y proceso del ingreso. PRIMER PROCESO (o
+ * vacío) es producción propia; MAQUILA, producción por maquila; COMPRA, un
+ * producto comprado. REPROCESO, REEMPAQUE, REIMPORTACIÓN y M.C PRIMER PROCESO
+ * entran como producción y el motivo queda escrito en el pallet. Un traslado
+ * no es un ingreso: tiene su propio registro, con su triple firma.
+ */
+function leerMotivo(t: string): {
+  origen: DatosIngreso['origen_ingreso']; proceso: DatosIngreso['proceso']; nota: string; error?: string;
+} {
+  const x = normalizarTexto(t);
+  const propio = { origen: 'produccion' as const, proceso: 'propia' as const, nota: '' };
+  if (!x) return propio;
+  if (/traslado/.test(x)) {
+    return { ...propio, origen: '', error: `«${t}» no es un ingreso: los traslados se registran en Stock › Traslados (a mano o con su plantilla).` };
+  }
+  if (/^compra/.test(x)) return { ...propio, origen: 'compras' };
+  if (/maquila/.test(x)) return { ...propio, proceso: 'maquila' };
+  if (/^primer proceso$/.test(x)) return propio;
+  if (/reproceso|reempaque|reimport|^m\.?\s?c\b/.test(x)) return { ...propio, nota: `MOTIVO INGRESO: ${t.trim().toUpperCase()}` };
+  return { ...propio, origen: '', error: `«${t}» no es un motivo de ingreso: elija uno de la lista (${MOTIVOS_INGRESO.join(', ')}).` };
+}
+
 export function interpretarFila(v: Record<string, string>, cat: CatalogoIngresos, hoy: string): FilaInterpretada {
   const errores: ErrorColumna[] = [];
   const mal = (columna: string, mensaje: string) => errores.push({ columna, mensaje });
 
-  const producto = buscarProducto(v.producto ?? '', cat, v.congelamiento ?? '');
-  if ('error' in producto && v.producto?.trim()) mal('producto', producto.error);
+  const producto = buscarProducto(v.producto ?? '', cat, pistasDe(v), leerNumero(v.kg_bulto ?? '') || 0);
+  if ('error' in producto && (v.producto?.trim() || v.codigo?.trim())) mal('producto', producto.error);
 
+  /* 087 · El origen y el proceso salen de su MOTIVO INGRESO. Las columnas
+     Origen y Proceso de la plantilla anterior, si vienen, mandan. */
+  const motivo = leerMotivo(v.motivo ?? '');
+  if (motivo.error) mal('motivo', motivo.error);
   const o = normalizarTexto(v.origen);
   const origen: DatosIngreso['origen_ingreso'] =
-    /^produc/.test(o) ? 'produccion' : /^compr/.test(o) ? 'compras' : '';
-  if (o && !origen) mal('origen', `«${v.origen}» no es un origen: escriba Producción o Compras.`);
+    /^produc/.test(o) ? 'produccion' : /^compr/.test(o) ? 'compras' : o ? '' : motivo.origen;
+  if (o && !origen) mal('motivo', `«${v.origen}» no es un origen: escriba Producción o Compras.`);
 
-  const bodega = buscarBodega(v.bodega ?? '', cat);
+  const bodega = buscarBodega(v.bodega ?? '', cat, v.camara ?? '');
   if ('error' in bodega && v.bodega?.trim()) mal('bodega', bodega.error);
   const almacenId = 'id' in bodega ? bodega.id : 0;
 
   const camara = buscarCamara(v.camara ?? '', almacenId, cat);
   if ('error' in camara) mal('camara', camara.error);
 
-  const bultos = v.bultos?.trim() ? leerNumero(v.bultos) : 0;
+  let bultos = v.bultos?.trim() ? leerNumero(v.bultos) : 0;
   if (v.bultos?.trim() && Number.isNaN(bultos)) mal('bultos', `«${v.bultos}» no es un número.`);
 
   let peso = v.peso_kg?.trim() ? leerNumero(v.peso_kg) : 0;
@@ -314,6 +458,16 @@ export function interpretarFila(v: Record<string, string>, cat: CatalogoIngresos
     const kb = leerNumero(v.kg_bulto);
     if (Number.isNaN(kb)) mal('kg_bulto', `«${v.kg_bulto}» no es un número.`);
     else peso = Math.round((bultos || 0) * kb * 1000) / 1000;
+  }
+
+  /* 087 · Medio saco. En su base TOTAL = N° AROS ÷ bloques por saco: 97 aros
+     de «2 X 10 KG» son 48.5. Ese medio es un saco con un solo bloque: se
+     registran 49 bultos con el peso neto exacto, y queda anotado. */
+  let notaSaco = '';
+  if (bultos > 0 && !Number.isInteger(Math.round(bultos * 1000) / 1000)) {
+    const enteros = Math.ceil(bultos - 0.001);
+    notaSaco = `TOTAL ${Math.round(bultos * 100) / 100}${v.aros?.trim() ? ` (${v.aros.trim()} aros)` : ''}: ${enteros} bultos, uno incompleto`;
+    bultos = enteros;
   }
 
   const fecha = leerFecha(v.fecha_produccion ?? '');
@@ -326,8 +480,8 @@ export function interpretarFila(v: Record<string, string>, cat: CatalogoIngresos
   if (t && !/^(d|n)/.test(t)) mal('turno', `«${v.turno}» no es un turno: escriba Día o Noche.`);
 
   const pr = normalizarTexto(v.proceso);
-  const proceso: DatosIngreso['proceso'] = /maquila/.test(pr) ? 'maquila' : 'propia';
-  if (pr && !/maquila|propia|produccion/.test(pr)) mal('proceso', `«${v.proceso}» no es un proceso: escriba Producción propia o Maquila.`);
+  const proceso: DatosIngreso['proceso'] = pr ? (/maquila/.test(pr) ? 'maquila' : 'propia') : motivo.proceso;
+  if (pr && !/maquila|propia|produccion/.test(pr)) mal('motivo', `«${v.proceso}» no es un proceso: escriba Producción propia o Maquila.`);
 
   const planta = buscarNombre(v.planta ?? '', cat.plantas, 'planta');
   if ('error' in planta) mal('planta', planta.error);
@@ -345,7 +499,9 @@ export function interpretarFila(v: Record<string, string>, cat: CatalogoIngresos
     else if (f > hoy) fechaLlegada = f;
   }
 
-  if ((v.observaciones ?? '').length > 200) mal('observaciones', 'Las observaciones pasan de 200 caracteres: acórtelas.');
+  //  Un motivo distinto del de siempre (REPROCESO, REEMPAQUE…) queda escrito en el pallet.
+  const observaciones = [motivo.nota, notaSaco, v.observaciones?.trim()].filter(Boolean).join(' · ');
+  if (observaciones.length > 200) mal('observaciones', 'Las observaciones pasan de 200 caracteres: acórtelas.');
 
   const datos: DatosIngreso = {
     codigo_pallet: normalizarCodigo(v.codigo_pallet ?? ''),
@@ -360,7 +516,7 @@ export function interpretarFila(v: Record<string, string>, cat: CatalogoIngresos
     bultos: Number.isNaN(bultos) ? 0 : bultos,
     peso_neto_kg: Number.isNaN(peso) ? 0 : peso,
     costo_unitario: Number.isNaN(costo) ? 0 : costo,
-    observaciones: v.observaciones?.trim() || null,
+    observaciones: observaciones || null,
     origen_ingreso: origen,
     proveedor: v.proveedor?.trim() || null,
   };
@@ -468,7 +624,7 @@ export async function contextoDeFilas(supabase: ClienteBase, filas: { datos: Rec
   const hoy = hoyEnLima();
   const codigos = filas.map((f) => normalizarCodigo(f.datos.codigo_pallet ?? ''));
   const skus = filas.map((f) => {
-    const p = buscarProducto(f.datos.producto ?? '', cat, f.datos.congelamiento ?? '');
+    const p = buscarProducto(f.datos.producto ?? '', cat, pistasDe(f.datos), leerNumero(f.datos.kg_bulto ?? '') || 0);
     return 'id' in p ? p.id : 0;
   });
   return cargarContexto(supabase, codigos, skus, hoy);

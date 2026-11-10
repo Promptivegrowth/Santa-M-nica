@@ -6,27 +6,36 @@
  *  de HOY: si mañana se agrega un producto o se habilita una bodega para
  *  compras, la próxima plantilla ya lo trae.
  *
- *  Hojas: «Ingresos» (la que se llena), «Listas» (productos con su código,
- *  bodegas y qué admite cada una, cámaras, plantas, líneas…) e
- *  «Instrucciones».
+ *  Hojas: «Ingresos» (la que se llena), «Listas» (las listas desplegables),
+ *  «Productos», «Almacenes» e «Instrucciones».
  *
- *  079 · Las columnas van en el orden que dejó Operaciones (columnas.ts), con
- *  todas sus listas desplegables. La hoja «Productos» trae además el Formato
- *  (su CLASIFICACIÓN: FILETE, LAMINADO, ALETAS…) y el «Nombre en su base»
- *  («FILETE-"B" 0-500 X 20 KG», su OPERACIÓN INGRESO): el importador acepta
- *  ese nombre en «Producto», para que peguen su tabla tal cual.
+ *  087 · Habla como su base (reunión con Dany, 10/11): los títulos y el orden
+ *  de su hoja GENERAL, y en las listas sus nombres —OPERACIÓN INGRESO
+ *  («ALETAS-"P" 1000-UP X 20 KG»), ALMACEN («SANTA MONICA»), CAMARA DE
+ *  ALMACENAMIENTO («CAMARA N° 02»), DIA / NOCHE, PLACAS / TUNEL—. La hoja
+ *  «Productos» va ordenada por ese nombre y trae su CODIGO, PRESENTACION y
+ *  TIPO DE CONGELAMIENTO, para encontrar cada producto como él lo busca.
  * ============================================================================
  */
 import { NextResponse } from 'next/server';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
-import { generarPlantilla } from '@/lib/importacionExcel';
+import { generarPlantilla, normalizarTexto } from '@/lib/importacionExcel';
 import { hoyEnLima } from '@/lib/fechas';
 import { rolNoPuede } from '@/lib/mensajesBase';
 import { PUEDEN_INGRESAR } from '../../tipos';
-import { COLUMNAS_INGRESO, HOJA_INGRESOS } from '../columnas';
-import { cargarCatalogoIngresos, nombresBaseUnicos } from '../revision';
+import { COLUMNAS_INGRESO, HOJA_INGRESOS, MOTIVOS_INGRESO } from '../columnas';
+import { cargarCatalogoIngresos, nombreAlmacen } from '../revision';
 
 export const dynamic = 'force-dynamic';
+
+/** Como lo escriben en su base: mayúsculas y sin tildes («Santa Mónica» → «SANTA MONICA»). */
+const comoSuBase = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+/** «Cámara 02» → «CAMARA N° 02». */
+const camaraSuBase = (t: string) => {
+  const n = /(\d+)\s*$/.exec(t);
+  return n ? `CAMARA N° ${n[1].padStart(2, '0')}` : comoSuBase(t);
+};
+const CONGELAMIENTO: Record<string, string> = { placas: 'PLACAS', tunel: 'TUNEL' };
 
 export async function GET() {
   const usuario = await obtenerUsuarioActual();
@@ -38,89 +47,93 @@ export async function GET() {
   const supabase = await crearClienteServidor();
   const cat = await cargarCatalogoIngresos(supabase);
   const activas = cat.bodegas.filter((b) => b.activo && (b.recibe_produccion || b.recibe_compras));
-  const nombreBodega = new Map(cat.bodegas.map((b) => [b.id, b.nombre]));
   const hoy = hoyEnLima();
   const [a, m, d] = hoy.split('-');
 
-  const ejProducto = cat.productos[0];
-  const ejBodega = activas.find((b) => b.recibe_produccion) ?? activas[0];
-  /* Los nombres de su base que apuntan a un solo producto también van en la
-     lista desplegable de «Producto» (los repetidos no: no bastan solos). */
-  const unicos = nombresBaseUnicos(cat.productos);
-  const repetido = new Set(cat.productos.filter((p) => p.nombre_base && !unicos.has(p.nombre_base)).map((p) => p.nombre_base));
+  const almacenes = [...new Set(activas.map((b) => comoSuBase(nombreAlmacen(b.nombre))))];
+  const camaras = [...new Set(cat.camaras.map((c) => camaraSuBase(c.nombre)))].sort();
+  const productos = [...cat.productos].sort((x, y) =>
+    (x.nombre_base || x.etiqueta).localeCompare(y.nombre_base || y.etiqueta, 'es') || x.congelamiento.localeCompare(y.congelamiento));
+  const nombres = [...new Set(productos.map((p) => p.nombre_base).filter(Boolean))];
+
+  //  El ejemplo, con un producto de todos los días.
+  const ej = productos.find((p) => normalizarTexto(p.nombre_base) === normalizarTexto('ALETAS-"P" 1000-UP X 20 KG') && p.congelamiento === 'placas')
+    ?? productos.find((p) => p.nombre_base) ?? productos[0];
+  const ejBodega = activas.find((b) => b.recibe_produccion && cat.camaras.some((c) => c.almacen_id === b.id));
+  const ejCamara = ejBodega && cat.camaras.find((c) => c.almacen_id === ejBodega.id);
 
   const buffer = await generarPlantilla({
-    titulo: 'Plantilla de ingresos a cámara',
+    titulo: 'INGRESO DE PRODUCCIÓN DIARIA · plantilla',
     subtitulo:
-      'Pegue sus pallets debajo de los encabezados (una fila por pallet) y suba el archivo en Stock › Ingresos › Importar desde Excel. ' +
-      'Las columnas con * son obligatorias. La fila gris es de ejemplo: el sistema la salta.',
+      'Los mismos títulos y el mismo orden de su hoja GENERAL: copie sus filas de ingreso y péguelas debajo (una fila por pallet). ' +
+      'Las columnas con * son obligatorias. La fila gris es de ejemplo: el sistema la salta. Súbala en Stock › Ingresos › Importar desde Excel.',
     hoja: HOJA_INGRESOS,
     columnas: COLUMNAS_INGRESO,
     ejemplo: {
-      codigo_pallet: 'EJEMPLO 0001',
-      producto: ejProducto?.etiqueta ?? '',
-      origen: 'Producción',
-      bodega: ejBodega?.nombre ?? '',
-      bultos: 40,
-      peso_kg: ejProducto ? Math.round(40 * (ejProducto.kg_bulto || 20) * 10) / 10 : 800,
       fecha_produccion: `${d}/${m}/${a}`,
-      turno: 'Día',
-      proceso: 'Producción propia',
+      codigo_pallet: 'EJEMPLO 0001',
+      codigo: ej?.codigo ?? '',
+      producto: ej?.nombre_base || ej?.etiqueta || '',
+      presentacion: ej?.presentacion ?? '',
+      congelamiento: CONGELAMIENTO[ej?.congelamiento ?? ''] ?? '',
+      kg_bulto: ej?.kg_bulto || 20,
+      bultos: 56,
+      peso_kg: Math.round(56 * (ej?.kg_bulto || 20) * 10) / 10,
+      bodega: ejBodega ? comoSuBase(nombreAlmacen(ejBodega.nombre)) : almacenes[0] ?? '',
+      camara: ejCamara ? camaraSuBase(ejCamara.nombre) : '',
+      turno: 'DIA',
+      linea: cat.lineas[0]?.nombre ?? '',
+      motivo: 'PRIMER PROCESO',
       observaciones: 'FILA DE EJEMPLO: escriba encima o bórrela',
     },
     listas: [
-      { clave: 'producto', titulo: 'Producto', valores: [...cat.productos.map((p) => p.etiqueta), ...[...unicos.keys()].sort((a, b) => a.localeCompare(b, 'es'))] },
-      { clave: 'origen', titulo: 'Origen', valores: ['Producción', 'Compras'] },
-      { clave: 'bodega', titulo: 'Bodega', valores: activas.map((b) => b.nombre) },
-      { clave: 'camara', titulo: 'Cámara', valores: [...new Set(cat.camaras.map((c) => c.nombre))] },
-      { clave: 'turno', titulo: 'Turno', valores: ['Día', 'Noche'] },
-      { clave: 'proceso', titulo: 'Proceso', valores: ['Producción propia', 'Maquila'] },
-      { clave: 'planta', titulo: 'Planta', valores: cat.plantas.map((p) => p.nombre) },
-      { clave: 'linea', titulo: 'Línea procesadora', valores: cat.lineas.map((l) => l.nombre) },
-      //  081 · Al final, como la columna.
-      { clave: 'congelamiento', titulo: 'Tipo de congelamiento', valores: ['Placas', 'Túnel'] },
+      { clave: 'producto', titulo: 'OPERACIÓN INGRESO', valores: nombres },
+      {
+        clave: 'presentacion', titulo: 'PRESENTACION',
+        valores: [...new Set(cat.productos.map((p) => p.presentacion))].sort((x, y) => x.localeCompare(y, 'es', { numeric: true })),
+      },
+      { clave: 'congelamiento', titulo: 'TIPO DE CONGELAMIENTO', valores: ['PLACAS', 'TUNEL'] },
+      { clave: 'bodega', titulo: 'ALMACEN', valores: almacenes },
+      { clave: 'camara', titulo: 'CAMARA DE ALMACENAMIENTO', valores: camaras },
+      { clave: 'turno', titulo: 'TURNO', valores: ['DIA', 'NOCHE'] },
+      { clave: 'linea', titulo: 'LINEA PROCESADORA', valores: cat.lineas.map((l) => l.nombre) },
+      { clave: 'motivo', titulo: 'MOTIVO INGRESO', valores: MOTIVOS_INGRESO },
+      { clave: 'planta', titulo: 'PLANTA', valores: cat.plantas.map((p) => p.nombre) },
     ],
     referencias: [
       {
         hoja: 'Productos',
-        titulo: 'Productos activos: copie en «Producto» el texto de la primera columna, o el «Nombre en su base» cuando basta solo',
-        encabezados: ['Producto (copie este texto)', 'Código SKU', 'Presentación', 'Congelamiento', 'Especie', 'Formato', 'Corte', 'Kg por bulto', 'Nombre en su base', '¿Basta el nombre solo?'],
-        anchos: [56, 11, 15, 14, 14, 16, 30, 11, 44, 24],
-        filas: cat.productos.map((p) => [
-          p.etiqueta, p.codigo, p.presentacion, p.congelamiento === 'tunel' ? 'Túnel' : p.congelamiento === 'placas' ? 'Placas' : '',
-          p.especie, p.formato, p.corte, p.kg_bulto,
-          p.nombre_base,
-          !p.nombre_base ? '' : repetido.has(p.nombre_base) ? 'No: hay varias presentaciones con ese nombre' : 'Sí',
+        titulo: 'Productos activos, por su nombre en su base. Copie OPERACIÓN INGRESO, o escriba CODIGO + PRESENTACION + TIPO DE CONGELAMIENTO',
+        encabezados: ['OPERACIÓN INGRESO', 'CODIGO', 'PRESENTACION', 'TIPO DE CONGELAMIENTO', 'PESO BULTO', 'Especie', 'Formato', 'Corte', 'Texto del sistema'],
+        anchos: [46, 9, 13, 13, 10, 12, 14, 30, 52],
+        filas: productos.map((p) => [
+          p.nombre_base, p.codigo, p.presentacion, CONGELAMIENTO[p.congelamiento] ?? '', p.kg_bulto,
+          p.especie, p.formato, p.corte, p.etiqueta,
         ]),
       },
       {
-        hoja: 'Bodegas',
-        titulo: 'Qué recibe cada bodega (lo define Gerencia u Operaciones en Configuración › Maestros › Almacenes)',
-        encabezados: ['Bodega', 'Código', 'Recibe producción', 'Recibe compras', 'Cámaras'],
-        anchos: [28, 10, 17, 15, 30],
-        filas: cat.bodegas.filter((b) => b.activo).map((b) => [
-          b.nombre, b.codigo, b.recibe_produccion ? 'Sí' : 'No', b.recibe_compras ? 'Sí' : 'No',
-          cat.camaras.filter((c) => c.almacen_id === b.id).map((c) => c.nombre).join(', ') || '—',
-        ]),
-      },
-      {
-        hoja: 'Cámaras',
-        titulo: 'Cámaras de cada bodega',
-        encabezados: ['Cámara', 'Bodega'],
-        anchos: [18, 28],
-        filas: cat.camaras.map((c) => [c.nombre, nombreBodega.get(c.almacen_id) ?? '—']),
+        hoja: 'Almacenes',
+        titulo: 'Cómo escribir cada almacén (lo define Gerencia u Operaciones en Configuración › Maestros › Almacenes)',
+        encabezados: ['ALMACEN', 'CAMARA DE ALMACENAMIENTO', 'Bodega en el sistema', 'Recibe producción', 'Recibe compras'],
+        anchos: [18, 26, 30, 17, 15],
+        filas: cat.bodegas.filter((b) => b.activo).flatMap((b) => {
+          const suyas = cat.camaras.filter((c) => c.almacen_id === b.id);
+          const fila = (camara: string) => [comoSuBase(nombreAlmacen(b.nombre)), camara, b.nombre,
+            b.recibe_produccion ? 'Sí' : 'No', b.recibe_compras ? 'Sí' : 'No'];
+          return suyas.length ? suyas.map((c) => fila(camaraSuBase(c.nombre))) : [fila('(vacía)')];
+        }),
       },
     ],
     instrucciones: [
-      'Una fila por pallet. Copie sus tablas debajo de los encabezados de la hoja «Ingresos» (pegado especial › valores, para no traer formatos raros).',
-      'No cambie el nombre de los encabezados. Puede dejar vacías las columnas opcionales o incluso borrarlas.',
-      'Producto, origen, bodega, cámara, turno, proceso, planta, línea y tipo de congelamiento tienen lista desplegable. Las listas completas están en las hojas «Listas», «Productos», «Bodegas» y «Cámaras».',
-      'En «Producto» vale el texto de la hoja «Productos» (primera columna) o el nombre que usan en su base, tal como sale en su columna OPERACIÓN INGRESO (p. ej. «FILETE-"B" 0-500 X 20 KG»): el sistema lo busca por la clasificación, el corte y el peso del bulto. Si con ese nombre hay más de una presentación posible (p. ej. «4 X 5 KG» y «2 X 10 KG», que pesan 20 kg las dos), el sistema se lo dice y le propone las opciones.',
-      'La última columna, «Tipo de congelamiento» (Placas o Túnel, con lista desplegable), es opcional: el sistema la usa para elegir la presentación cuando el producto o el nombre de su base no basta, p. ej. cuando hay «2 X 10 KG» en placas y en túnel. Si pega su tabla con su columna «TIPO DE CONGELAMIENTO», se lee igual.',
-      'Cada origen entra solo por ciertas bodegas: la producción por las que «Recibe producción» y las compras por las que «Recibe compras» (hoja «Bodegas»). Una compra necesita el proveedor.',
-      'El código de pallet no se puede repetir: ni dentro del archivo ni con un pallet que ya exista en el sistema.',
-      'Si un pallet TODAVÍA NO LLEGA, ponga en «Llega el» la fecha en que se espera: quedará como ingreso programado y no moverá stock hasta que se confirme su llegada en Stock › Ingresos › Ingresos programados.',
-      'Suba el archivo en Stock › Ingresos › Importar desde Excel. El sistema revisa cada fila con las mismas reglas del formulario y le dice qué filas están bien, cuáles no y por qué. Las que tengan error se corrigen en la misma pantalla (o en el Excel, y se vuelve a subir).',
+      'Una fila por pallet. Copie sus filas de ingreso (p. ej. de su hoja GENERAL) y péguelas debajo de los encabezados de la hoja «Ingresos» (pegado especial › valores). Los títulos son los mismos de su base, en el mismo orden.',
+      'No cambie el nombre de los encabezados. Puede dejar vacías las columnas opcionales o borrarlas. Si su tabla trae columnas de más (N° AROS, ESTATUS, CLIENTE…), no pasa nada: el sistema las salta y se lo avisa.',
+      'El PRODUCTO se reconoce por su OPERACIÓN INGRESO («ALETAS-"P" 1000-UP X 20 KG»), o por su CODIGO (169) con PRESENTACION («2 X 10 KG») y TIPO DE CONGELAMIENTO (PLACAS o TUNEL). Con las tres columnas el producto queda exacto, aunque el nombre venga vacío.',
+      'Si un producto existe pero no con esa presentación o ese congelamiento, el sistema se lo dice con las presentaciones que sí tiene: se habilita en Ventas › Productos (Gerencia u Operaciones).',
+      'ALMACEN y CAMARA DE ALMACENAMIENTO se escriben como en su base: SANTA MONICA + «CAMARA N° 01/02/03»; en FREEKO, HAYDUK y los demás la cámara puede ir vacía. La hoja «Almacenes» dice qué recibe cada uno.',
+      'MOTIVO INGRESO: PRIMER PROCESO (o vacío) entra como producción propia; MAQUILA, como producción por maquila; COMPRA, como producto comprado y pide el PROVEEDOR. REPROCESO, REEMPAQUE, REIMPORTACIÓN y M.C PRIMER PROCESO entran como producción y el motivo queda anotado en el pallet. Un TRASLADO ALM TERCERO no es un ingreso: va en Stock › Traslados.',
+      'El N°PALLET no se puede repetir: ni dentro del archivo ni con un pallet que ya exista en el sistema.',
+      'Si un pallet TODAVÍA NO LLEGA, ponga en «LLEGA EL» la fecha en que se espera: quedará como ingreso programado y no moverá stock hasta que se confirme su llegada en Stock › Ingresos › Ingresos programados.',
+      'Suba el archivo en Stock › Ingresos › Importar desde Excel. También puede subir su propio libro: el sistema busca la hoja que tenga estos títulos. Revisa cada fila con las mismas reglas del formulario y le dice qué filas están bien, cuáles no y por qué; las que tengan error se corrigen en la misma pantalla.',
       'Almacén deja la importación «Lista para validar»; el stock entra cuando Gerencia u Operaciones pulsa «Validar y registrar».',
     ],
     usuario: String(usuario.nombre ?? usuario.email ?? ''),

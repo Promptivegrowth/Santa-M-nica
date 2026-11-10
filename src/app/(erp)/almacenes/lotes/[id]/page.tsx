@@ -32,6 +32,7 @@ import { fecha, fechaHora, num, dinero, tm, etiquetaEstado, diasDesdeHoy } from 
 import { veCostos, rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 import { uno, campo } from '@/lib/relaciones';
 import { FormularioDictamen } from '@/components/almacenes/Dictamen';
+import { DividirPallet } from '@/components/almacenes/DividirPallet';
 import { motivosCalidad } from '@/app/(erp)/almacenes/calidad/acciones';
 
 export const dynamic = 'force-dynamic';
@@ -178,10 +179,11 @@ async function CuerpoLote({
     { data: traza },
     { data: antiguedad },
     { data: stock },
+    { data: familia },
   ] = await Promise.all([
     supabase
       .from('existencias')
-      .select('bultos, peso_neto_kg, costo_promedio, actualizado_en, almacenes(id, nombre, tipo), camaras(nombre)')
+      .select('almacen_id, bultos, peso_neto_kg, costo_promedio, actualizado_en, almacenes(id, nombre, tipo), camaras(nombre)')
       .eq('lote_id', loteId),
     supabase
       .from('dictamenes_calidad')
@@ -205,7 +207,15 @@ async function CuerpoLote({
       .from('v_stock_lote')
       .select('almacen_id, fisico_kg, bloqueado_kg, reservado_kg, preparacion_kg, disponible_kg, solo_nacional_kg')
       .eq('lote_id', loteId),
+    /* 088 · Divisiones: de qué pallet salió este y qué pallets se separaron de él.
+       Sin la columna (base sin la 088) la consulta falla y simplemente no se muestra. */
+    supabase
+      .from('lotes')
+      .select('id, codigo_pallet, bultos_iniciales, peso_neto_inicial_kg, lote_origen_id')
+      .or(`lote_origen_id.eq.${loteId}${lote.lote_origen_id ? `,id.eq.${Number(lote.lote_origen_id)}` : ''}`),
   ]);
+  const origen = (familia ?? []).find((x) => Number(x.id) === Number(lote.lote_origen_id));
+  const hijos = (familia ?? []).filter((x) => Number(x.lote_origen_id) === loteId);
 
   /* ---- Cuánto hay, cuánto está comprometido, cuánto queda libre ---- */
   const fisicoKg = (existencias ?? []).reduce((s, e) => s + Number(e.peso_neto_kg ?? 0), 0);
@@ -343,7 +353,23 @@ async function CuerpoLote({
             <div><dt>Turno / proceso</dt><dd>{etiquetaEstado(String(lote.turno))} · {etiquetaEstado(String(lote.proceso))}</dd></div>
             <div><dt>SKU</dt><dd className="mono">{campo(sku, 'codigo')}</dd></div>
             <div><dt>Presentación</dt><dd>{campo(sp?.presentaciones, 'descripcion')}</dd></div>
-            <div><dt>Producción inicial</dt><dd>{num(Number(lote.bultos_iniciales))} bultos · {tm(Number(lote.peso_neto_inicial_kg))}</dd></div>
+            <div><dt>{origen ? 'Nació con' : 'Producción inicial'}</dt><dd>{num(Number(lote.bultos_iniciales))} bultos · {tm(Number(lote.peso_neto_inicial_kg))}</dd></div>
+            {origen && (
+              <div data-campo="dividido-de"><dt>Dividido del pallet</dt><dd className="mono">
+                <Link href={`/almacenes/lotes/${origen.id}`} className="enlace-ficha">{origen.codigo_pallet as string}</Link>
+              </dd></div>
+            )}
+            {hijos.length > 0 && (
+              <div data-campo="pallets-separados"><dt>Pallets separados de este</dt><dd className="mono">
+                {hijos.map((h, i) => (
+                  <span key={h.id as number}>
+                    {i > 0 && ', '}
+                    <Link href={`/almacenes/lotes/${h.id}`} className="enlace-ficha">{h.codigo_pallet as string}</Link>
+                    {' '}({num(Number(h.bultos_iniciales))} b)
+                  </span>
+                ))}
+              </dd></div>
+            )}
             {puedeVerCostos && (
               <div><dt>Costo unitario de origen</dt><dd>{dinero(Number(lote.costo_unitario), 'USD', 4)}/kg</dd></div>
             )}
@@ -374,7 +400,14 @@ async function CuerpoLote({
                     <tr key={i}>
                       <td>{campo(e.almacenes, 'nombre')}</td>
                       <td>{campo(e.camaras, 'nombre', 'Sin cámara')}</td>
-                      <td className="num">{num(e.bultos)}</td>
+                      <td className="num">
+                        {num(e.bultos)}
+                        {/* 088 · Como en su base: un pallet al que ya le sacaron sacos es un SALDO. */}
+                        {/* Saldo es el PALLET (todas sus bodegas), no cada posición: uno repartido no es saldo. */}
+                        {Number(e.bultos) > 0 && bultos < Number(lote.bultos_iniciales) && (
+                          <> <Etiqueta texto={`Saldo de ${num(Number(lote.bultos_iniciales))}`} tono="atencion" /></>
+                        )}
+                      </td>
                       <td className="num">{tm(Number(e.peso_neto_kg))}</td>
                       <td className="num" style={{ fontSize: '.72rem' }}>
                         {fecha(e.actualizado_en as string)}
@@ -385,6 +418,18 @@ async function CuerpoLote({
               </table>
             </div>
           )}
+          <DividirPallet
+            loteId={loteId}
+            pallet={lote.codigo_pallet as string}
+            puede={['gerencia', 'operaciones', 'almacen'].includes(usuario?.rol ?? '')}
+            posiciones={(existencias ?? []).map((e) => ({
+              almacen_id: Number(e.almacen_id),
+              almacen: campo(e.almacenes, 'nombre'),
+              bultos: Number(e.bultos),
+              kg: Number(e.peso_neto_kg),
+              libre_kg: Number((stock ?? []).find((v) => Number(v.almacen_id) === Number(e.almacen_id))?.disponible_kg ?? 0),
+            }))}
+          />
         </Panel>
       </div>
 

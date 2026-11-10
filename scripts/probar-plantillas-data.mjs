@@ -62,12 +62,11 @@ const SELLO = String(Date.now()).slice(-5);
 const COD = (n) => `PRB PD ${SELLO} ${String(n).padStart(2, '0')}`;
 const ANIO = Number(hoy.slice(0, 4));
 
-/* El orden que dejó Oliver en «Plantilla importación de ingresos (para Oliver).xlsx» (sin el hueco de la columna O). */
-const ORDEN_OLIVER = ['Origen *', 'Fecha de producción *', 'Código de pallet *', 'Producto *', 'Bodega *', 'Cámara', 'Kg por bulto', 'Bultos *',
-  'Peso neto total (kg) *', 'Turno', 'Proceso', 'Planta', 'Proveedor (si es compra)', 'Línea procesadora', 'Costo por kg (US$)',
-  'Llega el (si es programado)', 'Observaciones',
-  //  081 · Pedido de Oliver: «Tipo de congelamiento» al final, sin mover lo demás.
-  'Tipo de congelamiento'];
+/* 087 · El orden de la hoja GENERAL de Dany (Almacén), con sus títulos. Reemplaza al que dejó
+   Oliver en la 079/081: esos títulos siguen aceptándose como alias (lo prueba la sección 3). */
+const ORDEN_OLIVER = ['FECHA DE PRODUCCIÓN *', 'N°PALLET *', 'CODIGO', 'OPERACIÓN INGRESO *', 'PRESENTACION', 'TIPO DE CONGELAMIENTO',
+  'PESO BULTO', 'TOTAL *', 'PESO NETO *', 'ALMACEN *', 'CAMARA DE ALMACENAMIENTO', 'TURNO', 'LINEA PROCESADORA', 'MOTIVO INGRESO',
+  'PLANTA', 'PROVEEDOR (si es compra)', 'COSTO POR KG (US$)', 'LLEGA EL (si es programado)', 'OBSERVACIONES'];
 
 /* ---- Lo que hay antes, para devolverlo todo ---- */
 const [prev] = await consultar(`
@@ -218,14 +217,16 @@ try {
     const hi = libro.getWorksheet('Ingresos');
     const enc = [];
     hi.getRow(4).eachCell({ includeEmpty: true }, (c) => enc.push(c.value === null ? '' : String(c.value)));
-    ok(JSON.stringify(enc) === JSON.stringify(ORDEN_OLIVER), 'las columnas van exactamente en el orden de Oliver, sin huecos', enc.join(' | '));
-    ok(String(hi.getCell(5, 3).value).startsWith('EJEMPLO') && hi.getCell(5, 1).value === 'Producción', 'la fila de ejemplo sigue el mismo orden (Origen primero, el código en la C)');
+    ok(JSON.stringify(enc) === JSON.stringify(ORDEN_OLIVER), 'las columnas van exactamente en el orden de su hoja GENERAL (087), sin huecos', enc.join(' | '));
+    ok(String(hi.getCell(5, 2).value).startsWith('EJEMPLO') && hi.getCell(5, 10).value === 'SANTA MONICA' && /^CAMARA N° \d\d$/.test(String(hi.getCell(5, 11).value)),
+      'la fila de ejemplo sigue el mismo orden (N°PALLET en la B, ALMACEN y CAMARA como en su base)');
     const col = (t) => enc.findIndex((e) => e.replace(' *', '') === t) + 1;
     const listas = libro.getWorksheet('Listas');
     const tituloLista = {};
     listas.getRow(1).eachCell((c, k) => { tituloLista[String.fromCharCode(64 + k)] = String(c.value); });
-    const desplegables = { 'Origen': 'Origen', 'Producto': 'Producto', 'Bodega': 'Bodega', 'Cámara': 'Cámara', 'Turno': 'Turno',
-      'Proceso': 'Proceso', 'Planta': 'Planta', 'Línea procesadora': 'Línea procesadora', 'Tipo de congelamiento': 'Tipo de congelamiento' };
+    const desplegables = { 'OPERACIÓN INGRESO': 'OPERACIÓN INGRESO', 'PRESENTACION': 'PRESENTACION', 'TIPO DE CONGELAMIENTO': 'TIPO DE CONGELAMIENTO',
+      'ALMACEN': 'ALMACEN', 'CAMARA DE ALMACENAMIENTO': 'CAMARA DE ALMACENAMIENTO', 'TURNO': 'TURNO', 'LINEA PROCESADORA': 'LINEA PROCESADORA',
+      'MOTIVO INGRESO': 'MOTIVO INGRESO', 'PLANTA': 'PLANTA' };
     const malas = Object.entries(desplegables).filter(([t, lista]) => {
       const dv = hi.getCell(6, col(t)).dataValidation;
       const letra = /Listas!\$([A-Z])\$/.exec(dv?.formulae?.[0] ?? '')?.[1];
@@ -238,27 +239,31 @@ try {
     hInst.eachRow((f) => { const v = String(f.getCell(1).value ?? ''); if (ORDEN_OLIVER.includes(v)) enInst.push(v); });
     ok(JSON.stringify(enInst) === JSON.stringify(ORDEN_OLIVER), 'las instrucciones explican las columnas en el mismo orden');
 
+    //  087 · La hoja Productos va por su nombre (OPERACIÓN INGRESO) con CODIGO, PRESENTACION y congelamiento.
     const hp = libro.getWorksheet('Productos');
     const encP = [];
     hp.getRow(2).eachCell((c) => encP.push(String(c.value)));
-    ok(encP.includes('Formato') && encP.includes('Nombre en su base'), 'la hoja Productos trae «Formato» y «Nombre en su base»', encP.join(' | '));
-    const iF = encP.indexOf('Formato') + 1, iN = encP.indexOf('Nombre en su base') + 1, iB = encP.indexOf('¿Basta el nombre solo?') + 1;
-    let filaUnico = null, filaAmb = null;
+    ok(encP.slice(0, 4).join('|') === 'OPERACIÓN INGRESO|CODIGO|PRESENTACION|TIPO DE CONGELAMIENTO' && encP.includes('Formato'),
+      'la hoja Productos empieza por OPERACIÓN INGRESO, CODIGO, PRESENTACION y TIPO DE CONGELAMIENTO', encP.join(' | '));
+    const iF = encP.indexOf('Formato') + 1, iT = encP.indexOf('Texto del sistema') + 1;
+    let filaUnico = null, filasAmb = 0;
     hp.eachRow((f, r) => {
       if (r < 3) return;
-      if (f.getCell(1).value === etiqueta(unico)) filaUnico = [f.getCell(iF).value, f.getCell(iN).value, f.getCell(iB).value];
-      if (f.getCell(1).value === etiqueta(ambiguo)) filaAmb = [f.getCell(iF).value, f.getCell(iN).value, f.getCell(iB).value];
+      if (f.getCell(iT).value === etiqueta(unico)) filaUnico = [f.getCell(iF).value, f.getCell(1).value];
+      if (f.getCell(1).value === nombreBase(ambiguo)) filasAmb++;
     });
-    ok(filaUnico?.[0] === unico.formato && filaUnico?.[1] === nombreBase(unico) && filaUnico?.[2] === 'Sí', 'cada producto con su formato y su nombre en su base', JSON.stringify(filaUnico));
-    ok(filaAmb?.[1] === nombreBase(ambiguo) && /^No/.test(String(filaAmb?.[2])), 'y dice cuándo ese nombre no basta solo', JSON.stringify(filaAmb));
+    ok(filaUnico?.[0] === unico.formato && filaUnico?.[1] === nombreBase(unico), 'cada producto con su formato y su nombre en su base', JSON.stringify(filaUnico));
+    ok(filasAmb > 1, 'un nombre con varias presentaciones sale una vez por presentación (la elige PRESENTACION)', `${filasAmb} filas`);
     const lProd = [];
-    listas.getColumn(Object.keys(tituloLista).find((k) => tituloLista[k] === 'Producto').charCodeAt(0) - 64).eachCell((c, r) => { if (r > 1) lProd.push(String(c.value)); });
-    ok(lProd.includes(nombreBase(unico)) && !lProd.includes(nombreBase(ambiguo)) && lProd.includes(etiqueta(normal)),
-      'la lista desplegable de Producto suma los nombres de su base que bastan solos (no los ambiguos)', `${lProd.length} opciones`);
-    const bod = libro.getWorksheet('Bodegas');
+    listas.getColumn(Object.keys(tituloLista).find((k) => tituloLista[k] === 'OPERACIÓN INGRESO').charCodeAt(0) - 64).eachCell((c, r) => { if (r > 1) lProd.push(String(c.value)); });
+    ok(lProd.includes(nombreBase(unico)) && lProd.includes(nombreBase(ambiguo)) && new Set(lProd).size === lProd.length,
+      'la lista desplegable de OPERACIÓN INGRESO trae los nombres de su base, sin repetir', `${lProd.length} opciones`);
+    const bod = libro.getWorksheet('Almacenes');
     const qr = {};
-    bod.eachRow((f) => { qr[String(f.getCell(1).value)] = [f.getCell(3).value, f.getCell(4).value]; });
-    ok(qr.Exalmar?.[1] === 'Sí' && qr.Peruvian?.[1] === 'Sí' && qr.Elamar?.[1] === 'No' && qr.Perufrost?.[1] === 'No', 'la hoja Bodegas: Exalmar y Peruvian reciben compras; Elamar y Perufrost no');
+    bod.eachRow((f) => { qr[String(f.getCell(3).value)] = [f.getCell(1).value, f.getCell(2).value, f.getCell(4).value, f.getCell(5).value]; });
+    ok(qr.Exalmar?.[3] === 'Sí' && qr.Peruvian?.[3] === 'Sí' && qr.Elamar?.[3] === 'No' && qr.Perufrost?.[3] === 'No', 'la hoja Almacenes: Exalmar y Peruvian reciben compras; Elamar y Perufrost no');
+    ok(qr['Santa Mónica · Cámara 02']?.[0] === 'SANTA MONICA' && qr['Santa Mónica · Cámara 02']?.[1] === 'CAMARA N° 02',
+      'y dice cómo escribirlo: SANTA MONICA + CAMARA N° 02', JSON.stringify(qr['Santa Mónica · Cámara 02']));
   }
 
   /* ======================================================================

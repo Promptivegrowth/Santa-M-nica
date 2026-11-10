@@ -24,7 +24,7 @@ import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import { accionSegura } from '@/lib/accionSegura';
 import {
-  COLUMNAS_INGRESO, TITULO_COLUMNA, TEXTO_ESTADO_FILA, TEXTO_ESTADO_IMPORTACION,
+  COLUMNAS_INGRESO, COLUMNAS_VISIBLES, MOTIVOS_INGRESO, TITULO_COLUMNA, TEXTO_ESTADO_FILA, TEXTO_ESTADO_IMPORTACION,
   type ErrorColumna, type EstadoFila,
 } from '../columnas';
 import { corregirFilaIngreso, descartarFilaIngreso, dejarListaParaValidar, validarYRegistrar } from '../acciones';
@@ -44,10 +44,12 @@ export type FilaRevision = {
 
 type Opciones = {
   productos: string[];
-  bodegas: { nombre: string; produccion: boolean; compras: boolean }[];
+  /** `almacen`: como lo escriben en su base («SANTA MONICA»), 087. */
+  bodegas: { nombre: string; almacen: string; produccion: boolean; compras: boolean }[];
   camaras: { nombre: string; bodega: string }[];
   plantas: string[];
   lineas: string[];
+  presentaciones: string[];
 };
 
 const TONO: Record<EstadoFila, string> = {
@@ -218,8 +220,8 @@ export function RevisionIngresos({
           <table className="datos tabla-importacion">
             <thead>
               <tr>
-                <th className="num">Fila</th><th>Estado</th><th>Pallet</th><th style={{ minWidth: '15rem' }}>Producto</th><th>Origen</th>
-                <th>Bodega · cámara</th><th className="num">Bultos</th><th className="num">Kg</th>
+                <th className="num">Fila</th><th>Estado</th><th>N°pallet</th><th style={{ minWidth: '15rem' }}>Operación ingreso</th><th>Motivo</th>
+                <th>Almacén · cámara</th><th className="num">Total</th><th className="num">Peso neto</th>
                 <th>F. producción</th><th>Llega el</th><th></th>
               </tr>
             </thead>
@@ -247,11 +249,18 @@ export function RevisionIngresos({
                   <td><span className={`pill ${TONO[f.estado]}`}>{f.estado === 'valida' && f.programar ? 'Lista · programada' : TEXTO_ESTADO_FILA[f.estado]}</span></td>
                   <td className="mono" style={{ whiteSpace: 'nowrap' }}>{f.datos.codigo_pallet || '—'}</td>
                   <td style={{ fontSize: '.76rem' }}>
-                    {f.datos.producto || '—'}
-                    {/* 081 · El tipo de congelamiento, si vino: ayuda a elegir la presentación. */}
-                    {f.datos.congelamiento ? <><br /><small style={{ color: 'var(--tinta-3)' }} data-campo="congelamiento">Congelamiento: {f.datos.congelamiento}</small></> : null}
+                    {f.datos.producto || (f.datos.codigo ? `CODIGO ${f.datos.codigo}` : '—')}
+                    {/* 081 · El tipo de congelamiento, si vino: ayuda a elegir la presentación. 087: y la presentación. */}
+                    {f.datos.presentacion || f.datos.congelamiento ? (
+                      <><br /><small style={{ color: 'var(--tinta-3)' }} data-campo="congelamiento">
+                        {[f.datos.presentacion, f.datos.congelamiento].filter(Boolean).join(' · ')}
+                      </small></>
+                    ) : null}
                   </td>
-                  <td style={{ fontSize: '.78rem' }}>{f.datos.origen || '—'}{f.datos.proveedor ? <><br /><small style={{ color: 'var(--tinta-3)' }}>{f.datos.proveedor}</small></> : null}</td>
+                  <td style={{ fontSize: '.78rem' }}>
+                    {f.datos.motivo || f.datos.origen || 'PRIMER PROCESO'}
+                    {f.datos.proveedor ? <><br /><small style={{ color: 'var(--tinta-3)' }}>{f.datos.proveedor}</small></> : null}
+                  </td>
                   <td style={{ fontSize: '.78rem' }}>{f.datos.bodega || '—'}{f.datos.camara ? ` · ${f.datos.camara}` : ''}</td>
                   <td className="num">{f.datos.bultos || '—'}</td>
                   <td className="num">{f.datos.peso_kg || (f.datos.kg_bulto ? `${f.datos.kg_bulto}/bulto` : '—')}</td>
@@ -334,17 +343,21 @@ function EditorFila({
   const conError = new Map(fila.errores.map((e) => [e.columna, e.mensaje]));
   const cambiar = (k: string, x: string) => setV((p) => ({ ...p, [k]: x }));
 
-  const o = v.origen.toLowerCase();
+  //  087 · El origen sale del MOTIVO INGRESO (o de la columna Origen de la plantilla anterior).
+  const o = `${v.origen ?? ''} ${v.motivo ?? ''}`.toLowerCase().trim();
   const bodegas = opciones.bodegas.filter((b) =>
-    o.startsWith('produc') ? b.produccion : o.startsWith('compr') ? b.compras : b.produccion || b.compras);
-  const camaras = opciones.camaras.filter((c) => c.bodega === v.bodega);
+    /^produc/.test(o) ? b.produccion : /compr/.test(o) ? b.compras : b.produccion || b.compras);
+  //  «SANTA MONICA» es el almacén de las tres bodegas «Santa Mónica · Cámara 0x».
+  const sinTildes = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const camaras = opciones.camaras.filter((c) => c.bodega === v.bodega || sinTildes(c.bodega).startsWith(`${sinTildes(v.bodega)} · `));
 
   /** Un desplegable que conserva el valor actual aunque no esté en la lista: así se ve qué venía mal. */
   const elegir = (k: string, lista: string[], vacio = 'Sin especificar') => (
     <select className="campo" name={k} value={v[k]} data-error={conError.has(k) ? 'si' : undefined}
             onChange={(e) => cambiar(k, e.target.value)}>
       <option value="">{vacio}</option>
-      {v[k] && !lista.includes(v[k]) && <option value={v[k]}>{v[k]} (no reconocido)</option>}
+      {/* 087 · Un valor escrito a su manera («SANTA MONICA», «CAMARA N° 02») vale aunque no esté tal cual en la lista. */}
+      {v[k] && !lista.includes(v[k]) && <option value={v[k]}>{v[k]}{conError.has(k) ? ' (no reconocido)' : ''}</option>}
       {lista.map((x) => <option key={x} value={x}>{x}</option>)}
     </select>
   );
@@ -352,14 +365,14 @@ function EditorFila({
   const control = (k: string) => {
     switch (k) {
       case 'producto': return elegir(k, opciones.productos, 'Elija el producto…');
-      case 'origen': return elegir(k, ['Producción', 'Compras'], 'Elija…');
-      case 'bodega': return elegir(k, bodegas.map((b) => b.nombre), 'Elija la bodega…');
+      case 'bodega': return elegir(k, [...new Set([...bodegas.map((b) => b.almacen), ...bodegas.map((b) => b.nombre)])], 'Elija el almacén…');
       case 'camara': return elegir(k, camaras.map((c) => c.nombre));
-      case 'turno': return elegir(k, ['Día', 'Noche'], 'Día');
-      case 'proceso': return elegir(k, ['Producción propia', 'Maquila'], 'Producción propia');
+      case 'turno': return elegir(k, ['DIA', 'NOCHE'], 'DIA');
+      case 'motivo': return elegir(k, MOTIVOS_INGRESO, 'PRIMER PROCESO');
       case 'planta': return elegir(k, opciones.plantas);
       case 'linea': return elegir(k, opciones.lineas);
-      case 'congelamiento': return elegir(k, ['Placas', 'Túnel'], 'No hace falta');
+      case 'congelamiento': return elegir(k, ['PLACAS', 'TUNEL'], 'Sin especificar');
+      case 'presentacion': return elegir(k, opciones.presentaciones, 'Sin especificar');
       default:
         return (
           <input className={`campo${['codigo_pallet', 'bultos', 'peso_kg', 'kg_bulto', 'costo'].includes(k) ? ' mono' : ''}`}
@@ -374,7 +387,7 @@ function EditorFila({
     <div data-bloque="editor-fila" style={{ padding: '1rem', background: 'var(--superficie-2)' }}>
       <strong>Corregir la fila {fila.fila}</strong>
       <div className="form-rejilla" style={{ padding: 0, marginTop: '.6rem' }}>
-        {COLUMNAS_INGRESO.map((c) => (
+        {COLUMNAS_VISIBLES.map((c) => (
           <label key={c.clave} className={`form-campo${c.clave === 'producto' || c.clave === 'observaciones' ? ' form-campo-ancho' : ''}`}>
             <span>{c.titulo}{c.obligatoria && <b className="req"> *</b>}</span>
             {control(c.clave)}

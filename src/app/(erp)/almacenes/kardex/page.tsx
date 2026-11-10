@@ -43,6 +43,9 @@ const TIPOS: Record<string, { texto: string; tono: 'ok' | 'critico' | 'atencion'
   salida_muestra: { texto: 'Muestra', tono: 'neutro' },
   salida_merma: { texto: 'Merma', tono: 'critico' },
   ajuste_negativo: { texto: 'Ajuste (−)', tono: 'critico' },
+  //  088 · Dividir pallet: el stock total no cambia.
+  division_salida: { texto: 'Salida por división', tono: 'neutro' },
+  division_ingreso: { texto: 'Ingreso por división', tono: 'neutro' },
 };
 
 export default async function PaginaKardex(props: PageProps<'/almacenes/kardex'>) {

@@ -20,6 +20,7 @@ import { AccionesLista } from '@/components/ui/Acciones';
 import { num, fecha, tm, dinero } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { traerTodo } from '@/lib/traerTodo';
+import { uno, campo } from '@/lib/relaciones';
 
 export const metadata: Metadata = { title: 'Existencias' };
 export const dynamic = 'force-dynamic';
@@ -117,9 +118,37 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
   if (formato) consulta = consulta.eq('formato', formato);
   if (corte) consulta = consulta.eq('corte', corte);
 
-  const { data: filas, count } = await consulta
-    .order('fisico_kg', { ascending: false })
-    .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
+  /* 088 · Dany (Almacén) trabaja FIFO: «los sacos salen del pallet más antiguo».
+     Con «Más antiguo primero» la tabla va por fecha de producción. */
+  const orden = (q.orden as string) ?? '';
+  consulta = orden === 'fifo'
+    ? consulta.order('fecha_produccion', { ascending: true }).order('codigo_pallet', { ascending: true })
+    : consulta.order('fisico_kg', { ascending: false });
+  const { data: filas, count } = await consulta.range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
+
+  /* 088 · Lo que él mira de cada pallet y la vista no trae: cuántos sacos le
+     quedan, de cuántos nació (si le sacaron, es un SALDO), su presentación y
+     su cámara. Solo de los pallets de esta página. */
+  const ids = [...new Set((filas ?? []).map((f) => Number(f.lote_id)))];
+  const { data: detalle } = ids.length
+    ? await supabase
+        .from('existencias')
+        .select('lote_id, almacen_id, bultos, camaras(nombre), lotes(bultos_iniciales, sku_presentaciones(presentaciones(descripcion, congelamiento)))')
+        .in('lote_id', ids)
+    : { data: [] };
+  //  Saldo es el PALLET entero: lo que le queda sumando todas sus bodegas.
+  const totalLote = new Map<number, number>();
+  for (const d of detalle ?? []) totalLote.set(Number(d.lote_id), (totalLote.get(Number(d.lote_id)) ?? 0) + Number(d.bultos));
+  const posicion = new Map((detalle ?? []).map((d) => {
+    const lote = uno<Record<string, unknown>>(d.lotes);
+    const pres = uno<Record<string, unknown>>(uno<Record<string, unknown>>(lote?.sku_presentaciones)?.presentaciones);
+    return [`${d.lote_id}-${d.almacen_id}`, {
+      bultos: Number(d.bultos),
+      iniciales: Number(lote?.bultos_iniciales ?? 0),
+      camara: campo(d.camaras, 'nombre', ''),
+      presentacion: pres ? `${pres.descripcion}${pres.congelamiento === 'tunel' ? ' · túnel' : ''}` : '',
+    }];
+  }));
 
   /*
    * LA DISTRIBUCIÓN DEL STOCK POR GRUPO DE PRODUCTO.
@@ -349,7 +378,9 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
       </Panel>
       </div>
 
-      <Panel titulo={`${num(count ?? 0)} posiciones con saldo`}>
+      {/* 088 · «Busco la aleta y me dice qué pallets tengo y la suma de todo su total»: el total de lo
+          filtrado (el mismo que suma el gráfico; con el buscador de texto no se puede sumar aquí). */}
+      <Panel titulo={`${num(count ?? 0)} posiciones con saldo${!buscar ? ` · ${tm(kgTotal)} TM en total` : ''}`}>
         <Filtros
           campos={[
             { tipo: 'texto', clave: 'buscar', etiqueta: 'Pallet, SKU o corte', ancho: '13rem' },
@@ -378,6 +409,10 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
                 { valor: '>24', texto: 'Más de 24 meses' },
               ],
             },
+            {
+              tipo: 'select', clave: 'orden', etiqueta: 'Orden',
+              opciones: [{ valor: 'fifo', texto: 'Más antiguo primero (FIFO)' }],
+            },
           ]}
         />
 
@@ -391,7 +426,8 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
                   <tr>
                     <th>Pallet</th>
                     <th>Producto</th>
-                    <th>Almacén</th>
+                    <th>Almacén · cámara</th>
+                    <th className="num">Sacos</th>
                     <th className="num">Físico</th>
                     <th className="num">Disponible</th>
                     <th className="num">Producción</th>
@@ -402,7 +438,10 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
                   </tr>
                 </thead>
                 <tbody>
-                  {(filas ?? []).map((f) => (
+                  {(filas ?? []).map((f) => {
+                    const p = posicion.get(`${f.lote_id}-${f.almacen_id}`);
+                    const saldo = p && p.bultos > 0 && (totalLote.get(Number(f.lote_id)) ?? 0) < p.iniciales;
+                    return (
                     <tr key={`${f.lote_id}-${f.almacen_id}`}>
                       <td className="mono">
                         <Link href={`/almacenes/lotes/${f.lote_id}`} className="enlace-ficha">
@@ -413,9 +452,21 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
                         <span className="mono" style={{ color: 'var(--tinta-3)' }}>{f.sku_codigo}</span>{' '}
                         {f.especie} · {f.formato}
                         <br />
-                        <span style={{ color: 'var(--tinta-3)', fontSize: '.74rem' }}>{f.corte}</span>
+                        <span style={{ color: 'var(--tinta-3)', fontSize: '.74rem' }}>
+                          {f.corte}{p?.presentacion ? ` · ${p.presentacion}` : ''}
+                        </span>
                       </td>
-                      <td>{f.almacen}</td>
+                      <td>
+                        {f.almacen}
+                        {p?.camara && !String(f.almacen).endsWith(p.camara) && (
+                          <><br /><span style={{ color: 'var(--tinta-3)', fontSize: '.74rem' }}>{p.camara}</span></>
+                        )}
+                      </td>
+                      <td className="num" data-campo="sacos">
+                        {p ? num(p.bultos) : '—'}
+                        {/* Como en su base: COMPLETO o SALDO (ya le sacaron sacos). */}
+                        {saldo && <><br /><Etiqueta texto={`Saldo de ${num(p.iniciales)}`} tono="atencion" /></>}
+                      </td>
                       <td className="num">{tm(f.fisico_kg)}</td>
                       <td className="num">
                         <strong style={{ color: Number(f.disponible_kg) > 0 ? 'var(--ok)' : 'var(--tinta-3)' }}>
@@ -448,7 +499,8 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
                         />
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
