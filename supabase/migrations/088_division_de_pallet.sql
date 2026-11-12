@@ -133,7 +133,7 @@ declare
   v_mover     numeric(14,3);               -- kilos reservados que pasan al pallet nuevo
   v_n         numeric(14,3);
   v_b         int;
-  r           record;
+  rv          record;   -- no «r»: choca con el alias de reservas de arriba
 begin
   /* ---- Quién ---- */
   if auth.uid() is null or not puede('gerencia','operaciones','almacen') then
@@ -245,7 +245,7 @@ begin
      Lo que no alcanzó con lo libre sale de lo apartado: esa parte de la
      reserva pasa al pallet nuevo, para el mismo pedido. Una reserva que pasa
      entera cambia de pallet; una que pasa en parte se parte en dos. */
-  for r in
+  for rv in
     select * from reservas
      where lote_id = p_lote_id and almacen_id = p_almacen_id
        and estado in ('activa', 'en_preparacion')
@@ -253,20 +253,20 @@ begin
      for update
   loop
     exit when v_mover <= 0.0005;
-    v_n := least(r.peso_neto_kg, v_mover);
-    if r.peso_neto_kg - v_n <= 0.0005 then
+    v_n := least(rv.peso_neto_kg, v_mover);
+    if rv.peso_neto_kg - v_n <= 0.0005 then
       update reservas
          set lote_id = v_nuevo_id,
              observaciones = concat_ws(' · ', observaciones, format('Pasa al pallet %s al dividir %s (%s)', v_codigo, l.codigo_pallet, v_doc))
-       where id = r.id;
+       where id = rv.id;
     else
-      v_b := least(greatest(1, round(r.bultos * v_n / r.peso_neto_kg)::int), p_bultos);
+      v_b := least(greatest(1, round(rv.bultos * v_n / rv.peso_neto_kg)::int), p_bultos);
       update reservas
-         set peso_neto_kg = r.peso_neto_kg - v_n, bultos = greatest(1, r.bultos - v_b)
-       where id = r.id;
+         set peso_neto_kg = rv.peso_neto_kg - v_n, bultos = greatest(1, rv.bultos - v_b)
+       where id = rv.id;
       insert into reservas (pedido_linea_id, lote_id, almacen_id, bultos, peso_neto_kg, estado,
                             vence_el, creado_por, observaciones)
-      values (r.pedido_linea_id, v_nuevo_id, p_almacen_id, v_b, v_n, r.estado, r.vence_el, auth.uid(),
+      values (rv.pedido_linea_id, v_nuevo_id, p_almacen_id, v_b, v_n, rv.estado, rv.vence_el, auth.uid(),
               format('Parte de la reserva del pallet %s que pasó al dividirlo (%s)', l.codigo_pallet, v_doc));
     end if;
     v_mover := v_mover - v_n;
