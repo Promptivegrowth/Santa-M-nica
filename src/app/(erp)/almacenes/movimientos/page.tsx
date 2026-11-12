@@ -58,6 +58,8 @@ const TIPOS: Record<string, { texto: string; signo: 1 | -1; tono: 'ok' | 'atenci
   //  088 · Dividir pallet.
   division_salida:   { texto: 'Salida por división',   signo: -1, tono: 'neutro' },
   division_ingreso:  { texto: 'Ingreso por división',  signo: 1,  tono: 'neutro' },
+  //  089 · Despacho eliminado: lo que salió vuelve a cámara.
+  anulacion_despacho: { texto: 'Vuelve por despacho eliminado', signo: 1, tono: 'atencion' },
 };
 
 /** Hora legible de una marca de tiempo. */

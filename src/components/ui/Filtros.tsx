@@ -69,7 +69,11 @@ export function Filtros({ campos }: { campos: CampoFiltro[] }) {
   }
 
   function aplicar(nuevos: Record<string, string>) {
-    const p = new URLSearchParams();
+    /* Lo que no es un filtro de esta barra se conserva —p. ej. cómo se agrupa
+       el gráfico de Existencias («eje»)—; antes se perdía al filtrar. No se
+       conservan la página ni los avisos de una sola vez. */
+    const p = new URLSearchParams(params.toString());
+    for (const k of [...campos.map((c) => c.clave), 'pagina', 'eliminado']) p.delete(k);
     Object.entries(nuevos).forEach(([k, v]) => { if (v) p.set(k, v); });
     // Al cambiar un filtro se vuelve a la primera página
     iniciar(() => router.replace(`${ruta}?${p.toString()}`, { scroll: false }));

@@ -42,6 +42,8 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
   const especie = (q.especie as string) ?? '';
   const formato = (q.formato as string) ?? '';
   const corte = (q.corte as string) ?? '';
+  /* Reunión del 12/11: filtrar también por familia comercial. */
+  const familia = (q.familia as string) ?? '';
   /* Cómo se agrupa el gráfico de arriba. Por formato es lo que se pidió
      —«filete 300 toneladas, aleta 200»— y los otros dos ejes salen gratis. */
   const eje = (q.eje as string) || 'formato';
@@ -96,11 +98,14 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
     [...new Set(xs.filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, 'es'));
 
   const opcionesEspecie = unicos(cat.map((c) => c.especie as string));
+  const opcionesFamilia = unicos(
+    cat.filter((c) => !especie || c.especie === especie).map((c) => c.familia as string)
+  );
   const opcionesFormato = unicos(
     cat.filter((c) => !especie || c.especie === especie).map((c) => c.formato as string)
   );
   const opcionesCorte = unicos(
-    cat.filter((c) => (!especie || c.especie === especie) && (!formato || c.formato === formato))
+    cat.filter((c) => (!especie || c.especie === especie) && (!formato || c.formato === formato) && (!familia || c.familia === familia))
        .map((c) => c.corte as string)
   );
 
@@ -117,6 +122,7 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
   if (especie) consulta = consulta.eq('especie', especie);
   if (formato) consulta = consulta.eq('formato', formato);
   if (corte) consulta = consulta.eq('corte', corte);
+  if (familia) consulta = consulta.eq('familia', familia);
 
   /* 088 · Dany (Almacén) trabaja FIFO: «los sacos salen del pallet más antiguo».
      Con «Más antiguo primero» la tabla va por fecha de producción. */
@@ -163,8 +169,9 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
    * devuelve mil igual—. Con 1 519 lotes en cámara, el gráfico se pintaba con
    * dos tercios del inventario y con cifras que parecían razonables.
    */
-  const campoEje: 'especie' | 'familia' | 'formato' =
-    eje === 'especie' ? 'especie' : eje === 'familia' ? 'familia' : 'formato';
+  /* Reunión del 12/11, Oliver: «tengo por especie, familia… que sea por corte». */
+  const campoEje: 'especie' | 'familia' | 'formato' | 'corte' =
+    eje === 'especie' ? 'especie' : eje === 'familia' ? 'familia' : eje === 'corte' ? 'corte' : 'formato';
 
   /*
    * El gráfico responde a LOS MISMOS FILTROS que la tabla.
@@ -183,6 +190,7 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
     if (especie && c.especie !== especie) continue;
     if (formato && c.formato !== formato) continue;
     if (corte && c.corte !== corte) continue;
+    if (familia && c.familia !== familia) continue;
     if (almacenId && String(c.almacen_id) !== almacenId) continue;
     if (rango && c.rango !== rango) continue;
 
@@ -215,6 +223,7 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
     { clave: 'formato', titulo: 'Por formato' },
     { clave: 'familia', titulo: 'Por familia comercial' },
     { clave: 'especie', titulo: 'Por especie' },
+    { clave: 'corte', titulo: 'Por corte' },
   ];
 
   /** Conserva los filtros al cambiar de eje. */
@@ -226,6 +235,7 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
     if (especie) p.set('especie', especie);
     if (formato) p.set('formato', formato);
     if (corte) p.set('corte', corte);
+    if (familia) p.set('familia', familia);
     if (clave !== 'formato') p.set('eje', clave);
     const t = p.toString();
     return `/almacenes/existencias${t ? '?' + t : ''}`;
@@ -391,6 +401,10 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
             {
               tipo: 'select', clave: 'especie', etiqueta: 'Especie',
               opciones: opcionesEspecie.map((e) => ({ valor: e, texto: e })),
+            },
+            {
+              tipo: 'select', clave: 'familia', etiqueta: 'Familia',
+              opciones: opcionesFamilia.map((f) => ({ valor: f, texto: f })),
             },
             {
               tipo: 'select', clave: 'formato', etiqueta: 'Formato',

@@ -42,7 +42,7 @@
  */
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
-import { PUEDEN_DESPACHAR, mensajeNoPuede } from '@/lib/permisosLogistica';
+import { PUEDEN_DESPACHAR, PUEDEN_ELIMINAR_DESPACHO, mensajeNoPuede } from '@/lib/permisosLogistica';
 
 export type Resultado =
   | { ok: true; id: number; numero: string; mensaje: string }
@@ -378,4 +378,50 @@ function validarAjustes(lineas: LineaRevision[], ajustes: AjusteDespacho[]) {
     efectivos.push({ lote_id: l.lote_id, bultos: b, kg, motivo, detalle });
   }
   return { detalles, efectivos };
+}
+
+/* ==========================================================================
+   ELIMINAR UN DESPACHO (089 · reunión del 12/11)
+   --------------------------------------------------------------------------
+   «Que pueda eliminar el despacho, solamente las personas autorizadas, y que
+   se retorne todo». Lo hace solo Gerencia, con motivo, y queda en el
+   historial de despachos eliminados. Todo lo hace eliminar_despacho() en
+   una transacción: el Kardex devuelve lo que salió con su propio
+   movimiento, las reservas vuelven a apartarse y el packing queda en carga.
+   ========================================================================== */
+
+export async function eliminarDespacho(
+  despachoId: number,
+  motivo: string
+): Promise<{ ok: true; mensaje: string } | { ok: false; mensaje: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { ok: false, mensaje: 'Su sesión caducó. Vuelva a entrar.' };
+  if (!PUEDEN_ELIMINAR_DESPACHO.includes(usuario.rol)) {
+    return { ok: false, mensaje: 'Eliminar un despacho lo hace solo Gerencia.' };
+  }
+  const texto = String(motivo ?? '').trim();
+  if (texto.length < 5) {
+    return { ok: false, mensaje: 'Explique por qué se elimina (al menos 5 caracteres): queda en el historial.' };
+  }
+
+  const supabase = await crearClienteServidor();
+  const { data, error } = await supabase.rpc('eliminar_despacho', { p_despacho_id: despachoId, p_motivo: texto });
+  if (error) {
+    //  Sin la migración 089 la función no existe: se dice en palabras.
+    if (/eliminar_despacho/.test(error.message) && /(find|exist|schema cache)/i.test(error.message)) {
+      return { ok: false, mensaje: 'Eliminar despachos todavía no está activado en la base (migración 089). Avise a sistemas.' };
+    }
+    const tecnico = /violates|constraint|permission denied|row-level security|syntax error|does not exist/i.test(error.message);
+    return {
+      ok: false,
+      mensaje: tecnico
+        ? 'No se pudo eliminar: la base de datos rechazó la operación y no cambió nada. Si se repite, avise a Sistemas.'
+        : `No se pudo eliminar: ${error.message} No cambió nada.`,
+    };
+  }
+
+  refrescar();
+  revalidatePath('/logistica/despachos/eliminados');
+  revalidatePath('/finanzas/facturas');
+  return { ok: true, mensaje: String(data) };
 }

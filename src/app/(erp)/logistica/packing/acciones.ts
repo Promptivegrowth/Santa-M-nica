@@ -264,6 +264,8 @@ export type LoteCargable = {
   kg_por_bulto: number;
   /** Si está apartado para un pedido de este embarque, cuál. */
   reservado_para: string | null;
+  /** La bodega del embarque: hace falta para dividir el pallet al cargarlo (12/11). */
+  almacen_id: number;
 };
 
 export async function lotesCargables(packingId: number): Promise<LoteCargable[]> {
@@ -394,6 +396,7 @@ export async function lotesCargables(packingId: number): Promise<LoteCargable[]>
         kg_disponibles: Number(r.peso_neto_kg ?? 0),
         kg_por_bulto: info?.kgBulto ?? 1,
         reservado_para: `${ped?.numero_proforma ?? '—'} · ${cli?.razon_social ?? ''}`.trim(),
+        almacen_id: almacenId,
       });
     }
   }
@@ -422,6 +425,7 @@ export async function lotesCargables(packingId: number): Promise<LoteCargable[]>
         kg_disponibles: kg,
         kg_por_bulto: info?.kgBulto ?? 1,
         reservado_para: null as string | null,
+        almacen_id: almacenId,
       };
     })
     .filter((l) => l.bultos_disponibles > 0);

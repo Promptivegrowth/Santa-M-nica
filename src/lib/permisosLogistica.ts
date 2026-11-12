@@ -24,6 +24,8 @@ export const PUEDEN_DECIDIR_EMBARQUE: Rol[] = ['gerencia', 'operaciones', 'comex
 export const PUEDEN_PACKING: Rol[] = ['gerencia', 'operaciones', 'almacen', 'comex'];
 /** Sacan la mercadería de cámara y adjuntan la guía y las fotos. */
 export const PUEDEN_DESPACHAR: Rol[] = ['gerencia', 'operaciones', 'almacen', 'comex'];
+/** Eliminan un despacho y devuelven lo que salió (089): «únicamente lo autorizado». */
+export const PUEDEN_ELIMINAR_DESPACHO: Rol[] = ['gerencia'];
 /**
  * Arman el traslado de consolidación («Armar el traslado de … TM»).
  * ESPEJO de PUEDEN_SOLICITAR en `almacenes/traslados/acciones.ts`, que es la

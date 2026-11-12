@@ -46,6 +46,8 @@ const TIPOS: Record<string, { texto: string; tono: 'ok' | 'critico' | 'atencion'
   //  088 · Dividir pallet: el stock total no cambia.
   division_salida: { texto: 'Salida por división', tono: 'neutro' },
   division_ingreso: { texto: 'Ingreso por división', tono: 'neutro' },
+  //  089 · Lo que salió en un despacho que Gerencia eliminó vuelve a cámara.
+  anulacion_despacho: { texto: 'Vuelve por despacho eliminado', tono: 'atencion' },
 };
 
 export default async function PaginaKardex(props: PageProps<'/almacenes/kardex'>) {

@@ -23,9 +23,11 @@
 --     documento (DIV-000123): «Salida por división» del original y «Ingreso
 --     por división» del nuevo, en la misma bodega y cámara. El stock total no
 --     cambia, y no cuenta como producción ni como ajuste (tipos propios, 088a).
---   · Solo se separa lo LIBRE: no lo reservado para un pedido ni lo que está
---     en un packing o un traslado abierto, y no un pallet que Calidad tiene
---     observado o inmovilizado (el hijo nacería sin su dictamen).
+--   · Se separa primero lo LIBRE; si los sacos que salen están apartados
+--     para un pedido, esa parte de la reserva pasa con ellos al pallet nuevo
+--     (reunión del 12/11: Dany divide en pleno despacho). No se divide un
+--     pallet que está en un packing o un traslado abierto, ni uno que Calidad
+--     tiene observado o inmovilizado (el hijo nacería sin su dictamen).
 --   · El original tiene que quedar con algo: separarlo entero es cambiarle el
 --     código, no dividirlo.
 --
@@ -55,6 +57,7 @@ language sql immutable as $$
     when 'ajuste_positivo'   then  1
     when 'ingreso_reproceso' then  1
     when 'division_ingreso'  then  1   -- 088
+    when 'anulacion_despacho' then 1   -- 089
     else -1
   end;
 $$;
@@ -91,6 +94,7 @@ language sql immutable as $$
     when 'salida_merma'         then 'Merma'
     when 'division_salida'      then 'Salida por división'
     when 'division_ingreso'     then 'Ingreso por división'
+    when 'anulacion_despacho'   then 'Vuelve por despacho eliminado'
     when 'dia'                  then 'Día'
     when 'critica'              then 'Crítica'
     else upper(left(replace(coalesce(p, ''), '_', ' '), 1)) || substr(replace(coalesce(p, ''), '_', ' '), 2)
@@ -126,6 +130,10 @@ declare
   v_doc       text;
   v_costo     numeric(14,6);
   v_detalle   text := nullif(btrim(coalesce(p_detalle, '')), '');
+  v_mover     numeric(14,3);               -- kilos reservados que pasan al pallet nuevo
+  v_n         numeric(14,3);
+  v_b         int;
+  r           record;
 begin
   /* ---- Quién ---- */
   if auth.uid() is null or not puede('gerencia','operaciones','almacen') then
@@ -188,10 +196,11 @@ begin
    where r.lote_id = p_lote_id and r.almacen_id = p_almacen_id
      and r.estado in ('activa','en_preparacion');
   v_libre := e.peso_neto_kg - v_reservado;
-  if p_peso_kg > v_libre + 0.001 then
-    raise exception 'El pallet % tiene % kg reservados para %: solo se pueden separar los % kg libres. Si los sacos van para ese pedido, cárguelos en su packing sin dividir.',
-      l.codigo_pallet, texto_kg(v_reservado), v_pedidos, texto_kg(greatest(v_libre, 0));
-  end if;
+  /*  Reunión del 12/11: Dany divide «en pleno despacho», y el pallet suele
+      estar apartado para el pedido que sale. Se separa primero lo libre; si
+      hace falta más, la reserva viaja con los sacos al pallet nuevo (sigue
+      siendo del mismo pedido). Ver «La reserva sigue a los sacos», abajo. */
+  v_mover := greatest(round(p_peso_kg - greatest(v_libre, 0), 3), 0);
 
   /* ---- El código nuevo ---- */
   if length(v_codigo) < 3 then
@@ -231,6 +240,37 @@ begin
   values ('division_ingreso', v_nuevo_id, p_almacen_id, e.camara_id, p_bultos, p_peso_kg, v_costo,
           'division', v_mov_id, v_doc, auth.uid(),
           concat_ws(' · ', format('Vienen del pallet %s', l.codigo_pallet), v_detalle));
+
+  /* ---- La reserva sigue a los sacos (12/11) ----
+     Lo que no alcanzó con lo libre sale de lo apartado: esa parte de la
+     reserva pasa al pallet nuevo, para el mismo pedido. Una reserva que pasa
+     entera cambia de pallet; una que pasa en parte se parte en dos. */
+  for r in
+    select * from reservas
+     where lote_id = p_lote_id and almacen_id = p_almacen_id
+       and estado in ('activa', 'en_preparacion')
+     order by id
+     for update
+  loop
+    exit when v_mover <= 0.0005;
+    v_n := least(r.peso_neto_kg, v_mover);
+    if r.peso_neto_kg - v_n <= 0.0005 then
+      update reservas
+         set lote_id = v_nuevo_id,
+             observaciones = concat_ws(' · ', observaciones, format('Pasa al pallet %s al dividir %s (%s)', v_codigo, l.codigo_pallet, v_doc))
+       where id = r.id;
+    else
+      v_b := least(greatest(1, round(r.bultos * v_n / r.peso_neto_kg)::int), p_bultos);
+      update reservas
+         set peso_neto_kg = r.peso_neto_kg - v_n, bultos = greatest(1, r.bultos - v_b)
+       where id = r.id;
+      insert into reservas (pedido_linea_id, lote_id, almacen_id, bultos, peso_neto_kg, estado,
+                            vence_el, creado_por, observaciones)
+      values (r.pedido_linea_id, v_nuevo_id, p_almacen_id, v_b, v_n, r.estado, r.vence_el, auth.uid(),
+              format('Parte de la reserva del pallet %s que pasó al dividirlo (%s)', l.codigo_pallet, v_doc));
+    end if;
+    v_mover := v_mover - v_n;
+  end loop;
 
   /* ---- Historial de los dos pallets, en cristiano ---- */
   perform registrar_evento('lotes', l.id, 'pallet_dividido',

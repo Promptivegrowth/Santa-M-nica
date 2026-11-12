@@ -107,6 +107,7 @@ export const ESTADOS: Record<string, string> = {
   salida_merma: 'Merma',
   division_salida: 'Salida por división',
   division_ingreso: 'Ingreso por división',
+  anulacion_despacho: 'Vuelve por despacho eliminado',
   // Turno y proceso
   dia: 'Día',
   noche: 'Noche',

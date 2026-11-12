@@ -29,8 +29,9 @@ import { Icono } from '@/components/estructura/Icono';
 import { cargarDespachos, MOTIVO_DIFERENCIA, DESTINO_DIFERENCIA } from '@/lib/despachosDatos';
 import { fechaHora, fecha, num, tm, etiquetaEstado } from '@/lib/formato';
 import { uno } from '@/lib/relaciones';
-import { PUEDEN_DESPACHAR } from '@/lib/permisosLogistica';
+import { PUEDEN_DESPACHAR, PUEDEN_ELIMINAR_DESPACHO } from '@/lib/permisosLogistica';
 import { ArchivosDespacho, type ArchivoVisible } from './ArchivosDespacho';
+import { EliminarDespacho } from './EliminarDespacho';
 
 export const dynamic = 'force-dynamic';
 
@@ -91,6 +92,15 @@ export default async function FichaDespacho(props: PageProps<'/logistica/despach
   const cargadoKg = d.items.reduce((t, i) => t + i.kg_cargados, 0);
   const cargadoBultos = d.items.reduce((t, i) => t + i.bultos_cargados, 0);
   const conDiferencia = d.items.filter((i) => i.motivo);
+
+  /* 089 · Eliminar el despacho: solo Gerencia, y no con un comprobante vigente. */
+  const puedeEliminar = (PUEDEN_ELIMINAR_DESPACHO as string[]).includes(usuario?.rol ?? '');
+  const { data: comprobantes } = puedeEliminar
+    ? await supabase.from('facturas').select('numero').eq('despacho_id', d.id).neq('estado', 'anulada')
+    : { data: [] };
+  const bloqueoEliminar = (comprobantes ?? []).length
+    ? `Tiene el comprobante ${(comprobantes ?? []).map((c) => c.numero).join(', ')} vigente: anúlelo primero en Finanzas.`
+    : null;
 
   return (
     <>
@@ -230,9 +240,22 @@ export default async function FichaDespacho(props: PageProps<'/logistica/despach
         )}
       </Panel>
 
-      <Panel titulo="Historial del despacho">
+      <Panel titulo="Historial del despacho" className={puedeEliminar ? 'mb-espacio' : undefined}>
         <Historial entidad="despachos" entidadId={d.id} />
       </Panel>
+
+      {puedeEliminar && (
+        <Panel titulo="Eliminar el despacho">
+          <div style={{ padding: '.7rem 1rem 1rem' }}>
+            <p className="pie-explicativo" style={{ marginTop: 0 }}>
+              Para despachos de prueba o hechos por error. Lo que salió vuelve a cámara, las reservas
+              vuelven a su pedido y el packing queda en carga. Lo hace solo Gerencia, con motivo, y queda
+              en el <Link href="/logistica/despachos/eliminados" className="enlace-dato">historial de despachos eliminados</Link>.
+            </p>
+            <EliminarDespacho despachoId={d.id} numero={d.numero} puede={puedeEliminar} bloqueo={bloqueoEliminar} />
+          </div>
+        </Panel>
+      )}
     </>
   );
 }

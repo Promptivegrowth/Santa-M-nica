@@ -149,6 +149,7 @@ const NOMBRE_MOVIMIENTO: Record<string, string> = {
   salida_merma: 'Merma',
   division_salida: 'Salida por división',
   division_ingreso: 'Ingreso por división',
+  anulacion_despacho: 'Vuelve por despacho eliminado',
 };
 
 const REPORTES: Record<string, DefinicionReporte> = {

@@ -26,6 +26,7 @@ import {
   lotesCargables, agregarLoteAlPacking, quitarLoteDelPacking,
   type LoteCargable,
 } from '../acciones';
+import { dividirPallet } from '@/app/(erp)/almacenes/lotes/acciones';
 
 const cifra = (n: number, d = 0) =>
   n.toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -77,6 +78,10 @@ export function CargarLotes({
   const [elegido, setElegido] = useState<LoteCargable | null>(null);
   const [bultos, setBultos] = useState(0);
   const [aviso, setAviso] = useState<{ tipo: 'ok' | 'mal'; texto: string } | null>(null);
+  /* Dividir el pallet al cargar solo una parte (12/11). */
+  const [dividir, setDividir] = useState(true);
+  const [codigoNuevo, setCodigoNuevo] = useState('');
+  const parcial = !!elegido && bultos > 0 && bultos < elegido.bultos_disponibles;
 
   function abrir() {
     setAviso(null);
@@ -97,11 +102,27 @@ export function CargarLotes({
   function agregar() {
     if (!elegido) return;
     setAviso(null);
+    const kg = bultos * elegido.kg_por_bulto;
     iniciarGuardado(async () => {
-      const r = await conRed(() => agregarLoteAlPacking(
-        packingId, elegido.lote_id, bultos, bultos * elegido.kg_por_bulto
-      ));
-      setAviso({ tipo: r.ok ? 'ok' : 'mal', texto: r.mensaje });
+      /* Reunión del 12/11 · Dany divide «en pleno despacho»: si sale solo una
+         parte del pallet, esos sacos se arman en un pallet NUEVO con su
+         número, y es ese el que entra al contenedor. Lo que queda en el
+         original es su saldo. Primero se divide; si falla, no se carga nada. */
+      let loteId = elegido.lote_id;
+      let previo = '';
+      if (parcial && dividir) {
+        const d = await conRed(() => dividirPallet({
+          lote_id: elegido.lote_id, almacen_id: elegido.almacen_id, bultos, peso_kg: kg,
+          codigo_nuevo: codigoNuevo, detalle: 'Al cargar el contenedor',
+        }));
+        if (!d.ok) { setAviso({ tipo: 'mal', texto: d.mensaje }); return; }
+        loteId = d.lote_nuevo_id;
+        previo = d.mensaje + ' ';
+      }
+      const r = await conRed(() => agregarLoteAlPacking(packingId, loteId, bultos, kg));
+      setAviso({ tipo: r.ok ? 'ok' : 'mal', texto: previo + r.mensaje });
+      if (previo) router.refresh();
+      setCodigoNuevo('');
       if (r.ok) {
         setElegido(null);
         router.refresh();
@@ -377,11 +398,33 @@ export function CargarLotes({
                   {cifra(bultos * elegido.kg_por_bulto, 1)} kg
                 </small>
               </label>
+              {parcial && (
+                <div className="form-campo" data-bloque="dividir-al-cargar" style={{ maxWidth: '26rem' }}>
+                  <label style={{ display: 'inline-flex', gap: '.4rem', alignItems: 'center' }}>
+                    <input type="checkbox" name="dividir" checked={dividir} onChange={(e) => setDividir(e.target.checked)} />
+                    <span>Dividir el pallet: estos {cifra(bultos)} bultos salen con un <b>N° de pallet nuevo</b></span>
+                  </label>
+                  {dividir ? (
+                    <>
+                      <input className="campo mono" name="codigo_nuevo" value={codigoNuevo}
+                             placeholder={`N° del pallet nuevo, p. ej. ${elegido.codigo_pallet}-A`}
+                             onChange={(e) => setCodigoNuevo(e.target.value)} autoComplete="off" />
+                      <small>
+                        Al <b className="mono">{elegido.codigo_pallet}</b> le quedan{' '}
+                        {cifra(elegido.bultos_disponibles - bultos)} bultos como saldo. Si estaban apartados
+                        para un pedido, la reserva pasa con los sacos al pallet nuevo.
+                      </small>
+                    </>
+                  ) : (
+                    <small>Se cargan con el mismo número; lo que queda sigue en cámara como saldo del mismo pallet.</small>
+                  )}
+                </div>
+              )}
               <div className="acciones-fila">
                 <button type="button" className="btn btn-primario" onClick={agregar}
-                        disabled={guardando || !(bultos > 0)}>
+                        disabled={guardando || !(bultos > 0) || (parcial && dividir && codigoNuevo.trim().length < 3)}>
                   <Icono nombre="guardar" tamano={15} />
-                  {guardando ? 'Agregando…' : 'Agregar al contenedor'}
+                  {guardando ? 'Agregando…' : parcial && dividir ? 'Dividir y agregar al contenedor' : 'Agregar al contenedor'}
                 </button>
                 <button type="button" className="btn btn-sutil" onClick={() => setElegido(null)}>
                   Cancelar

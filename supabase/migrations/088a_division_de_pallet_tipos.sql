@@ -15,3 +15,7 @@
 
 alter type tipo_movimiento add value if not exists 'division_salida';
 alter type tipo_movimiento add value if not exists 'division_ingreso';
+
+--  089 · Eliminar un despacho (reunión del 12/11): lo que salió vuelve a
+--  cámara con su propio movimiento, no borrando el Kardex.
+alter type tipo_movimiento add value if not exists 'anulacion_despacho';
