@@ -22,6 +22,7 @@ import { fechaHora, num } from '@/lib/formato';
 import { traerTodo } from '@/lib/traerTodo';
 import { PUEDEN_INGRESAR, PUEDEN_VALIDAR_IMPORTACION } from '../tipos';
 import { TEXTO_ESTADO_IMPORTACION } from './columnas';
+import { resultadoCarga } from '@/lib/falloCarga';
 import { SubirArchivo } from './SubirArchivo';
 import { subirImportacionIngresos } from './acciones';
 
@@ -97,7 +98,7 @@ export default async function PaginaImportarIngresos() {
             <table className="datos" data-tabla="importaciones">
               <thead>
                 <tr>
-                  <th>Subida</th><th>Archivo</th><th>Subió</th><th>Estado</th>
+                  <th>Subida</th><th>Archivo</th><th>Subió</th><th>Estado</th><th>Resultado</th>
                   <th className="num">Filas</th><th className="num">Listas</th><th className="num">Con error</th>
                   <th className="num">Registradas</th><th className="num">Programadas</th><th>Validó</th><th></th>
                 </tr>
@@ -105,13 +106,16 @@ export default async function PaginaImportarIngresos() {
               <tbody>
                 {(importaciones ?? []).map((i) => {
                   const id = Number(i.id);
-                  const total = filas.filter((f) => Number(f.importacion_id) === id).length;
+                  const mias = filas.filter((f) => Number(f.importacion_id) === id);
+                  const total = mias.length;
+                  const res = resultadoCarga(mias.map((f) => f.estado));
                   return (
                     <tr key={id} data-importacion={id}>
                       <td>{fechaHora(i.creado_en as string)}</td>
                       <td>{String(i.archivo)}</td>
                       <td>{nombre(i.autor)}</td>
                       <td><Etiqueta texto={TEXTO_ESTADO_IMPORTACION[String(i.estado)] ?? String(i.estado)} tono={TONO_ESTADO[String(i.estado)] ?? 'neutro'} /></td>
+                      <td data-resultado={res.texto}><Etiqueta texto={res.texto} tono={res.tono} /></td>
                       <td className="num">{num(total)}</td>
                       <td className="num">{num(cuenta(id, 'valida'))}</td>
                       <td className="num">{num(cuenta(id, 'con_error', 'fallida'))}</td>

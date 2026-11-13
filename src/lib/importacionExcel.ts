@@ -27,6 +27,7 @@ import JSZip from 'jszip';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MARCA } from './excel';
+import type { TipoFalloCarga } from './falloCarga';
 
 export type ColumnaPlantilla = {
   clave: string;
@@ -328,15 +329,15 @@ async function abrirLibro(archivo: ArrayBuffer): Promise<ExcelJS.Workbook | null
 export async function leerPlantilla(
   archivo: ArrayBuffer,
   op: { hoja: string; columnas: ColumnaPlantilla[]; claveEjemplo: string }
-): Promise<{ ok: true; filas: FilaLeida[]; ignoradas: string[] } | { ok: false; mensaje: string }> {
+): Promise<{ ok: true; filas: FilaLeida[]; ignoradas: string[] } | { ok: false; mensaje: string; tipo: TipoFalloCarga }> {
   const libro = await abrirLibro(archivo);
   if (!libro) {
     return {
-      ok: false,
+      ok: false, tipo: 'archivo',
       mensaje: 'No se pudo leer el archivo como Excel. Guárdelo como «Libro de Excel (.xlsx)» —no .xls ni .csv— y vuelva a subirlo.',
     };
   }
-  if (!libro.worksheets.length) return { ok: false, mensaje: 'El archivo no tiene ninguna hoja.' };
+  if (!libro.worksheets.length) return { ok: false, tipo: 'archivo', mensaje: 'El archivo no tiene ninguna hoja.' };
 
   const porTitulo = new Map<string, ColumnaPlantilla>();
   for (const c of op.columnas) {
@@ -373,7 +374,7 @@ export async function leerPlantilla(
   const faltan = obligatorias.filter((c) => ![...columnas.values()].includes(c));
   if (!filaEnc || faltan.length) {
     return {
-      ok: false,
+      ok: false, tipo: 'formato',
       mensaje: filaEnc
         ? `Al archivo le faltan columnas obligatorias: ${faltan.map((c) => `«${c.titulo}»`).join(', ')}. ` +
           'Descargue la plantilla y pegue sus datos debajo de los encabezados, sin cambiarles el nombre.'
@@ -405,14 +406,14 @@ export async function leerPlantilla(
     filas.push({ fila: r, valores });
     if (filas.length > MAXIMO_FILAS) {
       return {
-        ok: false,
+        ok: false, tipo: 'filas',
         mensaje: `El archivo tiene más de ${MAXIMO_FILAS} filas con datos. Divídalo en varios archivos y súbalos por separado.`,
       };
     }
   }
 
   if (!filas.length) {
-    return { ok: false, mensaje: 'El archivo no tiene filas con datos debajo de los encabezados (la fila de ejemplo no cuenta).' };
+    return { ok: false, tipo: 'vacio', mensaje: 'El archivo no tiene filas con datos debajo de los encabezados (la fila de ejemplo no cuenta).' };
   }
   return { ok: true, filas, ignoradas };
 }

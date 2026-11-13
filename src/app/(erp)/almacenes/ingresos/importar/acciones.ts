@@ -29,6 +29,7 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { leerPlantilla } from '@/lib/importacionExcel';
+import type { FalloCarga } from '@/lib/falloCarga';
 import { rolNoPuede, traducirErrorBase } from '@/lib/mensajesBase';
 import { PUEDEN_INGRESAR, PUEDEN_VALIDAR_IMPORTACION } from '../tipos';
 import { crearIngreso, crearProgramado, refrescarIngresos, normalizarCodigo } from '../registro';
@@ -38,7 +39,7 @@ import {
   type FilaGuardada,
 } from './revision';
 
-export type Resultado = { ok: true; id: number; mensaje: string } | { ok: false; mensaje: string };
+export type Resultado = { ok: true; id: number; mensaje: string } | FalloCarga;
 
 /** Un archivo de un mega ya son miles de filas; más es casi seguro otra cosa. */
 const MAXIMO_BYTES = 950 * 1024;
@@ -62,23 +63,27 @@ function refrescar(id?: number) {
    ========================================================================== */
 export async function subirImportacionIngresos(formulario: FormData): Promise<Resultado> {
   const permiso = await autorizar(PUEDEN_INGRESAR, 'importar ingresos a cámara');
-  if (permiso.error) return { ok: false, mensaje: permiso.error };
+  if (permiso.error) return { ok: false, tipo: 'permiso', mensaje: permiso.error };
 
   const archivo = formulario.get('archivo');
   if (!(archivo instanceof File) || archivo.size === 0) {
-    return { ok: false, mensaje: 'Elija el archivo de Excel que quiere subir.' };
+    return { ok: false, tipo: 'vacio', mensaje: 'Elija el archivo de Excel que quiere subir.' };
   }
   if (!/\.xlsx$/i.test(archivo.name)) {
-    return { ok: false, mensaje: `«${archivo.name}» no es un libro de Excel .xlsx. Guárdelo como «Libro de Excel (.xlsx)» y vuelva a subirlo.` };
+    return { ok: false, tipo: 'archivo', mensaje: `«${archivo.name}» no es un libro de Excel .xlsx. Guárdelo como «Libro de Excel (.xlsx)» y vuelva a subirlo.` };
   }
   if (archivo.size > MAXIMO_BYTES) {
-    return { ok: false, mensaje: `El archivo pesa ${Math.round(archivo.size / 1024)} KB y el máximo son ${Math.round(MAXIMO_BYTES / 1024)} KB. Divídalo en dos.` };
+    return { ok: false, tipo: 'tamano', mensaje: `El archivo pesa ${Math.round(archivo.size / 1024)} KB y el máximo son ${Math.round(MAXIMO_BYTES / 1024)} KB. Divídalo en dos.` };
   }
 
   const leido = await leerPlantilla(await archivo.arrayBuffer(), {
     hoja: HOJA_INGRESOS, columnas: COLUMNAS_INGRESO, claveEjemplo: 'codigo_pallet',
+  }).catch((e) => {
+    //  Un libro que ExcelJS abre pero no sabe recorrer: es del archivo, no de la red.
+    console.error('No se pudo recorrer el Excel de ingresos:', e);
+    return { ok: false as const, tipo: 'archivo' as const, mensaje: 'El archivo se abrió pero no se pudo recorrer: puede tener hojas protegidas, vínculos rotos u objetos que el sistema no lee. Copie sus filas a la plantilla en blanco y súbala.' };
   });
-  if (!leido.ok) return { ok: false, mensaje: leido.mensaje };
+  if (!leido.ok) return { ok: false, tipo: leido.tipo, mensaje: leido.mensaje };
 
   const supabase = await crearClienteServidor();
 
@@ -88,7 +93,7 @@ export async function subirImportacionIngresos(formulario: FormData): Promise<Re
     .select('id')
     .single();
   if (error || !imp) {
-    return { ok: false, mensaje: traducirErrorBase(error, { que: 'guardar la importación', quien: PUEDEN_INGRESAR }) };
+    return { ok: false, tipo: 'base', mensaje: traducirErrorBase(error, { que: 'guardar la importación', quien: PUEDEN_INGRESAR }) };
   }
 
   /* Se revisan todas juntas (para los duplicados dentro del archivo) y se
@@ -108,7 +113,7 @@ export async function subirImportacionIngresos(formulario: FormData): Promise<Re
   );
   if (errFilas) {
     await supabase.from('importaciones_excel').delete().eq('id', imp.id);
-    return { ok: false, mensaje: traducirErrorBase(errFilas, { que: 'guardar las filas de la importación', quien: PUEDEN_INGRESAR }) };
+    return { ok: false, tipo: 'base', mensaje: traducirErrorBase(errFilas, { que: 'guardar las filas de la importación', quien: PUEDEN_INGRESAR }) };
   }
 
   const validas = [...revisadas.values()].filter((f) => f.estado === 'valida').length;

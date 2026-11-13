@@ -15,6 +15,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Panel, Vacio, Etiqueta } from '@/components/ui/Pagina';
 import { Icono } from '@/components/estructura/Icono';
 import { fechaHora, num } from '@/lib/formato';
+import { resultadoCarga } from '@/lib/falloCarga';
 import { traerTodo } from '@/lib/traerTodo';
 import { PUEDEN_SOLICITAR } from '../registro';
 import { SubirArchivo } from '../../ingresos/importar/SubirArchivo';
@@ -77,13 +78,14 @@ export default async function PaginaImportarTraslados() {
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
             <table className="datos">
               <thead>
-                <tr><th>Subida</th><th>Archivo</th><th>Subió</th><th>Estado</th><th className="num">Filas</th>
+                <tr><th>Subida</th><th>Archivo</th><th>Subió</th><th>Estado</th><th>Resultado</th><th className="num">Filas</th>
                   <th className="num">Registradas</th><th className="num">Traslados registrados</th><th></th></tr>
               </thead>
               <tbody>
                 {(importaciones ?? []).map((i) => {
                   const id = Number(i.id);
                   const mias = filas.filter((f) => Number(f.importacion_id) === id);
+                  const res = resultadoCarga(mias.map((f) => f.estado));
                   return (
                     <tr key={id}>
                       <td>{fechaHora(i.creado_en as string)}</td>
@@ -91,6 +93,7 @@ export default async function PaginaImportarTraslados() {
                       <td>{nombre(i.autor)}</td>
                       <td><Etiqueta texto={i.estado === 'validada' ? 'Validada' : i.estado === 'lista' ? 'Lista para validar' : 'En revisión'}
                                     tono={i.estado === 'validada' ? 'ok' : i.estado === 'lista' ? 'atencion' : 'neutro'} /></td>
+                      <td data-resultado={res.texto}><Etiqueta texto={res.texto} tono={res.tono} /></td>
                       <td className="num">{num(mias.length)}</td>
                       <td className="num">{num(mias.filter((f) => f.estado === 'registrada').length)}</td>
                       <td className="num">{num(new Set(mias.map((f) => f.traslado_id).filter(Boolean)).size)}</td>

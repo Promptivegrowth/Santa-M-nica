@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import { accionSegura } from '@/lib/accionSegura';
+import { ResumenCarga } from '@/components/ui/ResumenCarga';
 import {
   TEXTO_ESTADO_FILA, TEXTO_ESTADO_IMPORTACION, type ErrorColumna, type EstadoFila,
 } from '../../../ingresos/importar/columnas';
@@ -45,8 +46,8 @@ export function RevisionTraslados({
 }) {
   const router = useRouter();
   const [trabajando, iniciar] = useTransition();
-  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(
-    recienSubida ? { ok: true, texto: 'Archivo leído. Revise las filas con error: puede corregirlas aquí mismo o descartarlas.' } : null);
+  //  13/11 · Lo que dejó la subida lo dice ResumenCarga, con los tipos de error.
+  const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [filtro, setFiltro] = useState<Filtro>('todas');
   const [editando, setEditando] = useState<number | null>(null);
   const [progreso, setProgreso] = useState<string | null>(null);
@@ -121,6 +122,8 @@ export function RevisionTraslados({
           </div>
         ))}
       </div>
+
+      <ResumenCarga estado={estado} filas={filas} titulos={TITULO_COLUMNA_TRASLADO} recienSubida={recienSubida} />
 
       {aviso && (
         <div className={`ficha-aviso ${aviso.ok ? 'ficha-aviso-ok' : 'ficha-aviso-critico'}`} role={aviso.ok ? 'status' : 'alert'}

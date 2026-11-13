@@ -204,11 +204,15 @@ async function pruebasSeguridad() {
     .insert({ numero_proforma: 'X-TEST', cliente_id: 1, creado_por: '00000000-0000-0000-0000-000000000000' });
   comprobar('El rol Calidad NO puede crear pedidos', !!pedidoCalidad);
 
+  //  13/11 · Desde la recarga con la data real ya no hay «lote 1»: se usa un lote
+  //  que sí tenga stock (con un id inexistente, la base rechazaba por otra razón).
+  const unLote = await fila(`select lote_id from existencias where bultos > 0 order by lote_id limit 1;`);
+
   // --- Comercial: no emite dictámenes sanitarios ---
   const comercial = await sesion('comercial');
   const { error: dictComercial } = await comercial
     .from('dictamenes_calidad')
-    .insert({ lote_id: 1, tipo: 'calidad', estado: 'observado', motivo_texto: 'PRUEBA' });
+    .insert({ lote_id: unLote.lote_id, tipo: 'calidad', estado: 'observado', motivo_texto: 'PRUEBA' });
   comprobar('El rol Comercial NO puede emitir dictámenes de calidad', !!dictComercial);
 
   // --- Nadie puede escribir en la auditoría ---
@@ -222,12 +226,12 @@ async function pruebasSeguridad() {
   const { error: existOper } = await operaciones
     .from('existencias')
     .update({ bultos: 99999 })
-    .eq('lote_id', 1);
+    .eq('lote_id', unLote.lote_id);
   comprobar('NADIE puede editar las existencias a mano (las calcula el sistema)',
     !!existOper || true); // RLS sin política de escritura: la actualización no afecta filas
 
-  const verif = await fila(`select bultos from existencias where lote_id = 1 limit 1;`);
-  comprobar('El saldo del lote 1 no fue alterado por el intento anterior',
+  const verif = await fila(`select bultos from existencias where lote_id = ${unLote.lote_id} limit 1;`);
+  comprobar('El saldo del lote no fue alterado por el intento anterior',
     verif && Number(verif.bultos) !== 99999, `bultos = ${verif?.bultos}`);
 }
 
@@ -291,11 +295,16 @@ async function pruebasReglas() {
   }
 
   // --- No se puede sacar producto de una bodega donde no está ---
+  //  Un lote real, en una bodega donde NO tiene existencias.
+  const fuera = await fila(`
+    select e.lote_id, (select a.id from almacenes a where not exists (
+             select 1 from existencias x where x.lote_id = e.lote_id and x.almacen_id = a.id) order by a.id limit 1) almacen_id
+      from existencias e where e.bultos > 0 order by e.lote_id limit 1;`);
   let sinStock = false;
   try {
     await ejecutarSQL(`
       insert into movimientos (tipo, lote_id, almacen_id, bultos, peso_neto_kg, usuario_id)
-      values ('salida_despacho', 1, 9, 999999, 999999,
+      values ('salida_despacho', ${fuera.lote_id}, ${fuera.almacen_id}, 999999, 999999,
               (select id from usuarios where rol='almacen' limit 1));
     `);
   } catch (e) {

@@ -26,6 +26,7 @@
 import { revalidatePath } from 'next/cache';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
 import { leerPlantilla } from '@/lib/importacionExcel';
+import type { FalloCarga } from '@/lib/falloCarga';
 import { rolNoPuede, traducirErrorBase } from '@/lib/mensajesBase';
 import { PUEDEN_VALIDAR_IMPORTACION } from '../../ingresos/tipos';
 import { PUEDEN_SOLICITAR, problemaLinea, type LineaTraslado } from '../registro';
@@ -35,7 +36,7 @@ import {
   type FilaGuardadaT,
 } from './revision';
 
-export type Resultado = { ok: true; id: number; mensaje: string } | { ok: false; mensaje: string };
+export type Resultado = { ok: true; id: number; mensaje: string } | FalloCarga;
 
 const MAXIMO_BYTES = 950 * 1024;
 
@@ -55,26 +56,30 @@ function refrescar(id?: number) {
 
 export async function subirImportacionTraslados(formulario: FormData): Promise<Resultado> {
   const permiso = await autorizar('importar traslados');
-  if (permiso.error) return { ok: false, mensaje: permiso.error };
+  if (permiso.error) return { ok: false, tipo: 'permiso', mensaje: permiso.error };
 
   const archivo = formulario.get('archivo');
-  if (!(archivo instanceof File) || archivo.size === 0) return { ok: false, mensaje: 'Elija el archivo de Excel que quiere subir.' };
+  if (!(archivo instanceof File) || archivo.size === 0) return { ok: false, tipo: 'vacio', mensaje: 'Elija el archivo de Excel que quiere subir.' };
   if (!/\.xlsx$/i.test(archivo.name)) {
-    return { ok: false, mensaje: `«${archivo.name}» no es un libro de Excel .xlsx. Guárdelo como «Libro de Excel (.xlsx)» y vuelva a subirlo.` };
+    return { ok: false, tipo: 'archivo', mensaje: `«${archivo.name}» no es un libro de Excel .xlsx. Guárdelo como «Libro de Excel (.xlsx)» y vuelva a subirlo.` };
   }
   if (archivo.size > MAXIMO_BYTES) {
-    return { ok: false, mensaje: `El archivo pesa ${Math.round(archivo.size / 1024)} KB y el máximo son ${Math.round(MAXIMO_BYTES / 1024)} KB. Borre la hoja «Pallets disponibles» antes de subirlo, o divídalo en dos.` };
+    return { ok: false, tipo: 'tamano', mensaje: `El archivo pesa ${Math.round(archivo.size / 1024)} KB y el máximo son ${Math.round(MAXIMO_BYTES / 1024)} KB. Borre la hoja «Pallets disponibles» antes de subirlo, o divídalo en dos.` };
   }
 
-  const leido = await leerPlantilla(await archivo.arrayBuffer(), { hoja: HOJA_TRASLADOS, columnas: COLUMNAS_TRASLADO, claveEjemplo: 'codigo_pallet' });
-  if (!leido.ok) return { ok: false, mensaje: leido.mensaje };
+  const leido = await leerPlantilla(await archivo.arrayBuffer(), { hoja: HOJA_TRASLADOS, columnas: COLUMNAS_TRASLADO, claveEjemplo: 'codigo_pallet' })
+    .catch((e) => {
+      console.error('No se pudo recorrer el Excel de traslados:', e);
+      return { ok: false as const, tipo: 'archivo' as const, mensaje: 'El archivo se abrió pero no se pudo recorrer: puede tener hojas protegidas, vínculos rotos u objetos que el sistema no lee. Copie sus filas a la plantilla en blanco y súbala.' };
+    });
+  if (!leido.ok) return { ok: false, tipo: leido.tipo, mensaje: leido.mensaje };
 
   const supabase = await crearClienteServidor();
   const { data: imp, error } = await supabase
     .from('importaciones_excel')
     .insert({ tipo: 'traslados', archivo: archivo.name.slice(0, 200), archivo_bytes: archivo.size, creado_por: permiso.usuario!.id })
     .select('id').single();
-  if (error || !imp) return { ok: false, mensaje: traducirErrorBase(error, { que: 'guardar la importación', quien: PUEDEN_SOLICITAR }) };
+  if (error || !imp) return { ok: false, tipo: 'base', mensaje: traducirErrorBase(error, { que: 'guardar la importación', quien: PUEDEN_SOLICITAR }) };
 
   const borrador: FilaGuardadaT[] = leido.filas.map((f, i) => ({
     id: -(i + 1), importacion_id: Number(imp.id), fila: f.fila, datos: f.valores, errores: [], estado: 'con_error', resultado: null,
@@ -87,7 +92,7 @@ export async function subirImportacionTraslados(formulario: FormData): Promise<R
   }));
   if (errFilas) {
     await supabase.from('importaciones_excel').delete().eq('id', imp.id);
-    return { ok: false, mensaje: traducirErrorBase(errFilas, { que: 'guardar las filas de la importación', quien: PUEDEN_SOLICITAR }) };
+    return { ok: false, tipo: 'base', mensaje: traducirErrorBase(errFilas, { que: 'guardar las filas de la importación', quien: PUEDEN_SOLICITAR }) };
   }
 
   const validas = [...revisadas.values()].filter((f) => f.estado === 'valida').length;
