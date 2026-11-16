@@ -56,6 +56,8 @@ const NOMBRE_GRUPO: Record<string, string> = {
   logistica: 'Logística y despacho',
   empresa: 'Datos de la empresa',
   sistema: 'Sistema',
+  /* 090 · Portal de clientes: correo del Jefe de Calidad, direcciones y adjuntos. */
+  portal: 'Portal de clientes y reclamos',
   general: 'General',
 };
 

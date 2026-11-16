@@ -405,6 +405,8 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
               <dd data-semana>{e.semana_despacho == null ? semanaIso(String(e.fecha_programada)) ?? '—' : String(e.semana_despacho)}</dd>
             </div>
             <div><dt>Fecha de zarpe</dt><dd data-zarpe>{e.fecha_zarpe ? fecha(e.fecha_zarpe as string) : 'Sin fecha de zarpe'}</dd></div>
+            {/* Portal de clientes (090): zarpe = «En tránsito»; entrega = «Entregado». */}
+            <div><dt>Fecha de entrega</dt><dd data-entrega>{e.fecha_entrega ? fecha(e.fecha_entrega as string) : 'Sin fecha de entrega'}</dd></div>
             <div><dt>Operador logístico</dt><dd data-operador>{(e.operador_logistico as string) ?? '—'}</dd></div>
             <div><dt>N.º de packing</dt><dd className="mono" data-numero-packing>{(e.numero_packing as string) ?? 'Sin asignar'}</dd></div>
           </dl>
@@ -432,6 +434,7 @@ async function CuerpoEmbarque({ embId, e }: { embId: number; e: Record<string, u
                 observaciones: (e.observaciones as string) ?? null,
                 semana_despacho: (e.semana_despacho as number | null) ?? null,
                 fecha_zarpe: (e.fecha_zarpe as string | null) ?? null,
+                fecha_entrega: (e.fecha_entrega as string | null) ?? null,
                 operador_logistico: (e.operador_logistico as string | null) ?? null,
                 numero_packing: (e.numero_packing as string | null) ?? null,
               }}

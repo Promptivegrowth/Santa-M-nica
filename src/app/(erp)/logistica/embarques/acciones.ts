@@ -735,6 +735,12 @@ export type DatosEdicionEmbarque = {
   vehiculo_id: number | null;
   conductor_id: number | null;
   observaciones: string | null;
+  /**
+   * Portal de clientes (090): la fecha en que el contenedor llegó al cliente.
+   * Alimenta el hito «Entregado» de la línea de tiempo que ve el cliente; el
+   * zarpe alimenta «En tránsito». Opcional: sin el campo, no se toca.
+   */
+  fecha_entrega?: string | null;
 } & DatosProgramacion;
 
 /**
@@ -756,7 +762,7 @@ export async function editarEmbarque(id: number, d: DatosEdicionEmbarque): Promi
   const supabase = await crearClienteServidor();
   const { data: e } = await supabase
     .from('embarques')
-    .select('numero, estado, tipo_despacho, fecha_programada, destino_id, booking, naviera, transportista_id, vehiculo_id, conductor_id, observaciones, semana_despacho, fecha_zarpe, operador_logistico, numero_packing')
+    .select('numero, estado, tipo_despacho, fecha_programada, destino_id, booking, naviera, transportista_id, vehiculo_id, conductor_id, observaciones, semana_despacho, fecha_zarpe, fecha_entrega, operador_logistico, numero_packing')
     .eq('id', id).maybeSingle();
   if (!e) return { ok: false, mensaje: 'Ese embarque ya no existe.' };
   if (e.estado === 'cancelado') return { ok: false, mensaje: `El embarque ${e.numero} está cancelado: ya no se edita.` };
@@ -806,6 +812,17 @@ export async function editarEmbarque(id: number, d: DatosEdicionEmbarque): Promi
   };
   const malProg = validarProgramacion(salida.fecha_programada, prog);
   if (malProg) return malProg;
+  const fechaEntrega = d.fecha_entrega === undefined ? ((e.fecha_entrega as string | null) ?? null) : (d.fecha_entrega || null);
+  if (fechaEntrega) {
+    const desde = prog.fecha_zarpe ?? salida.fecha_programada;
+    if (desde && fechaEntrega < desde) {
+      return {
+        ok: false,
+        mensaje: `La fecha de entrega (${fechaCorta(fechaEntrega)}) no puede ser antes ${prog.fecha_zarpe ? 'del zarpe' : 'del despacho programado'} (${fechaCorta(desde)}).`,
+        campo: 'fecha_entrega',
+      };
+    }
+  }
   const plActual = normalizarNumeroPacking(e.numero_packing as string | null) || null;
   const plNuevo = normalizarNumeroPacking(prog.numero_packing) || null;
   if (plNuevo && plNuevo !== plActual) {
@@ -817,6 +834,7 @@ export async function editarEmbarque(id: number, d: DatosEdicionEmbarque): Promi
     ...salida,
     semana_despacho: prog.semana_despacho,
     fecha_zarpe: prog.fecha_zarpe,
+    fecha_entrega: fechaEntrega,
     operador_logistico: prog.operador_logistico,
     numero_packing: plNuevo,
   };
@@ -827,10 +845,10 @@ export async function editarEmbarque(id: number, d: DatosEdicionEmbarque): Promi
   const etiquetas: Record<keyof typeof nuevo, string> = {
     fecha_programada: 'fecha de despacho', destino_id: 'destino', booking: 'booking', naviera: 'naviera',
     transportista_id: 'transportista', vehiculo_id: 'vehículo', conductor_id: 'conductor', observaciones: 'observaciones',
-    semana_despacho: 'semana de despacho', fecha_zarpe: 'fecha de zarpe', operador_logistico: 'operador logístico',
-    numero_packing: 'N.º de packing',
+    semana_despacho: 'semana de despacho', fecha_zarpe: 'fecha de zarpe', fecha_entrega: 'fecha de entrega',
+    operador_logistico: 'operador logístico', numero_packing: 'N.º de packing',
   };
-  const conValor = ['fecha_programada', 'booking', 'naviera', 'semana_despacho', 'fecha_zarpe', 'operador_logistico', 'numero_packing'];
+  const conValor = ['fecha_programada', 'booking', 'naviera', 'semana_despacho', 'fecha_zarpe', 'fecha_entrega', 'operador_logistico', 'numero_packing'];
   for (const k of Object.keys(nuevo) as (keyof typeof nuevo)[]) {
     const a = antes[k] == null ? null : String(antes[k]);
     const b = nuevo[k] == null ? null : String(nuevo[k]);

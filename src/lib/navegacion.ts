@@ -140,6 +140,20 @@ export const NAVEGACION: Grupo[] = [
     ],
   },
   {
+    /*
+     * Portal de clientes (COT-2026-11-253): los reclamos que registran los
+     * clientes en el portal llegan aquí. Clasifican, investigan y cierran con
+     * PDF Calidad y Gerencia; Comercial, Comercio Exterior y Operaciones los
+     * consultan porque atienden al cliente.
+     */
+    grupo: 'Calidad y reclamos',
+    entradas: [
+      { titulo: 'Bandeja de reclamos',     ruta: '/calidad/reclamos',      icono: 'reclamo',     ayuda: 'Reclamos del portal: clasificación, plazo y respuesta', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'calidad'] },
+      { titulo: 'Indicadores de reclamos', ruta: '/calidad/indicadores',   icono: 'indicadores', ayuda: 'Por motivo, cliente y tiempo de cierre', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'calidad'] },
+      { titulo: 'Portal y reclamos',       ruta: '/calidad/configuracion', icono: 'portal',      ayuda: 'Motivos, plazos, hitos, plantillas y cuenta de seguimiento', roles: ['gerencia', 'calidad'] },
+    ],
+  },
+  {
     grupo: 'Contable / Finanzas',
     entradas: [
       /*
@@ -159,6 +173,7 @@ export const NAVEGACION: Grupo[] = [
       { titulo: 'Buscador universal', ruta: '/trazabilidad',           icono: 'trazabilidad', ayuda: 'Busque cualquier código del negocio', roles: TODOS },
       { titulo: 'Retiro sanitario',   ruta: '/trazabilidad/retiro',    icono: 'retiro',       ayuda: 'Alcance de un lote observado', roles: ['gerencia', 'operaciones', 'calidad', 'comex'] },
       { titulo: 'Auditoría',          ruta: '/trazabilidad/auditoria', icono: 'auditoria',    ayuda: 'Quién cambió qué y cuándo', roles: ['gerencia', 'operaciones'] },
+      { titulo: 'Correos enviados', ruta: '/correos', icono: 'correo', ayuda: 'Accesos, proformas y avisos de reclamos que salieron', roles: ['gerencia', 'operaciones', 'comercial', 'comex', 'calidad'] },
       { titulo: 'Reportes',      ruta: '/reportes',      icono: 'reportes',      ayuda: 'Exportar a Excel o PDF con la marca', roles: TODOS },
       { titulo: 'Configuración', ruta: '/configuracion', icono: 'configuracion', ayuda: 'Parámetros, maestros y reglas', roles: ['gerencia', 'operaciones'] },
     ],

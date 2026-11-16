@@ -22,7 +22,53 @@ import { rolPuedeVerRuta, type Rol } from '@/lib/navegacion';
 /** Rutas que se pueden visitar sin haber iniciado sesión. */
 const RUTAS_PUBLICAS = ['/login', '/auth'];
 
+/*
+ * ----------------------------------------------------------------------------
+ *  DOS DIRECCIONES, UNA APLICACIÓN (portal de clientes, COT-2026-11-253 · M8)
+ * ----------------------------------------------------------------------------
+ *   clientes.santamonicafishing.com → SOLO el portal (/portal…). Cualquier
+ *       dirección del ERP escrita a mano se rechaza y vuelve al portal.
+ *   erp.santamonicafishing.com      → SOLO el ERP. /portal no se abre ahí.
+ *   Otra dirección (la de Vercel, localhost) → las dos, para pruebas.
+ *
+ *  Las cookies de sesión de cada una son «host-only» (sin dominio), así que
+ *  la del portal no viaja al ERP ni al revés. El portal no usa la sesión de
+ *  Supabase: su puerta es la cookie opaca sm_portal (ver lib/portal).
+ */
+const HOST_PORTAL = (process.env.PORTAL_HOST ?? 'clientes.santamonicafishing.com').toLowerCase();
+const HOST_ERP = (process.env.ERP_HOST ?? 'erp.santamonicafishing.com').toLowerCase();
+
+function esRutaPortal(ruta: string) {
+  return ruta === '/portal' || ruta.startsWith('/portal/');
+}
+
 export async function proxy(request: NextRequest) {
+  const host = (request.headers.get('host') ?? '')
+    .split(':')[0].toLowerCase();
+  const rutaPedida = request.nextUrl.pathname;
+
+  if (host === HOST_PORTAL) {
+    if (rutaPedida === '/') {
+      const destino = request.nextUrl.clone();
+      destino.pathname = '/portal';
+      return NextResponse.rewrite(destino);
+    }
+    if (!esRutaPortal(rutaPedida)) {
+      const destino = request.nextUrl.clone();
+      destino.pathname = '/portal';
+      destino.search = '';
+      return NextResponse.redirect(destino);
+    }
+    return NextResponse.next();
+  }
+  if (esRutaPortal(rutaPedida)) {
+    if (host === HOST_ERP) {
+      return NextResponse.redirect(new URL(`https://${HOST_PORTAL}/`));
+    }
+    // Dirección de pruebas: el portal se abre sin pasar por la sesión del ERP
+    return NextResponse.next();
+  }
+
   let respuesta = NextResponse.next({ request });
 
   const supabase = createServerClient(

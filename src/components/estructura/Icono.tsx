@@ -16,6 +16,16 @@
  */
 
 const TRAZOS: Record<string, React.ReactNode> = {
+  /* ─────────── CALIDAD Y RECLAMOS (portal de clientes) ─────────── */
+  // Reclamo: globo de diálogo con signo de exclamación
+  reclamo: <><path d="M4 4.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-9l-4.5 3.8V16.5H4a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z" /><path d="M12 7.5v4.5" /><path d="M12 14.6v.1" /></>,
+  // Indicadores: barras con línea de tendencia
+  indicadores: <><path d="M3.5 20.5h17" /><rect x="5" y="12" width="3" height="6" rx=".6" /><rect x="10.5" y="8.5" width="3" height="9.5" rx=".6" /><rect x="16" y="5" width="3" height="13" rx=".6" /></>,
+  // Portal: ventana de navegador con candado
+  portal: <><rect x="2.5" y="4" width="19" height="15.5" rx="1.4" /><path d="M2.5 8h19" /><rect x="9.5" y="12.5" width="5" height="4" rx=".6" /><path d="M10.5 12.5v-1a1.5 1.5 0 0 1 3 0v1" /></>,
+  // Correo: sobre
+  correo: <><rect x="3" y="5" width="18" height="14" rx="1.4" /><path d="m3.5 6 8.5 7 8.5-7" /></>,
+
   /* ─────────── PANEL ─────────── */
   // Tablero: cuatro paneles de distinto tamaño
   panel: <><rect x="3" y="3" width="7.5" height="8" rx="1.2" /><rect x="13.5" y="3" width="7.5" height="5" rx="1.2" /><rect x="13.5" y="10.5" width="7.5" height="10.5" rx="1.2" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.2" /></>,

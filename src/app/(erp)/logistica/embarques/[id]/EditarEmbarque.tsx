@@ -76,6 +76,7 @@ export function EditarEmbarque({
        vehiculo.revision && vehiculo.revision < d.fecha_programada ? 'la revisión técnica' : null].filter(Boolean)
     : [];
   const zarpeAntes = !!d.fecha_zarpe && d.fecha_zarpe < d.fecha_programada;
+  const entregaAntes = !!d.fecha_entrega && d.fecha_entrega < (d.fecha_zarpe || d.fecha_programada);
   const problemaPl = (d.numero_packing ?? '').trim() ? problemaNumeroPacking(d.numero_packing) : null;
 
   function guardar() {
@@ -144,7 +145,15 @@ export function EditarEmbarque({
           <input type="date" className="campo" name="fecha_zarpe" value={d.fecha_zarpe ?? ''} data-error={error('fecha_zarpe') ?? (zarpeAntes ? 'si' : undefined)}
                  min={d.fecha_programada || undefined}
                  onChange={(e) => poner('fecha_zarpe', e.target.value || null)} />
-          <small>{zarpeAntes ? 'No puede ser antes del despacho.' : 'Cuándo zarpa la nave (no es la de despacho).'}</small>
+          <small>{zarpeAntes ? 'No puede ser antes del despacho.' : 'Cuándo zarpa la nave (no es la de despacho). En el portal del cliente marca «En tránsito».'}</small>
+        </label>
+        <label className="form-campo">
+          <span>Fecha de entrega</span>
+          <input type="date" className="campo" name="fecha_entrega" value={d.fecha_entrega ?? ''}
+                 data-error={error('fecha_entrega') ?? (entregaAntes ? 'si' : undefined)}
+                 min={d.fecha_zarpe || d.fecha_programada || undefined}
+                 onChange={(e) => poner('fecha_entrega', e.target.value || null)} />
+          <small>{entregaAntes ? 'No puede ser antes del zarpe ni del despacho.' : 'Cuándo llegó al cliente. En el portal del cliente marca «Entregado».'}</small>
         </label>
         <label className="form-campo">
           <span>N.º de packing</span>
@@ -221,7 +230,7 @@ export function EditarEmbarque({
       )}
 
       <div style={{ padding: '.6rem 1rem 1rem', display: 'flex', gap: '.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <button type="button" className="btn btn-primario" disabled={pendiente || !!problemaPl || zarpeAntes} data-accion="guardar-embarque"
+        <button type="button" className="btn btn-primario" disabled={pendiente || !!problemaPl || zarpeAntes || entregaAntes} data-accion="guardar-embarque"
                 title={problemaPl ?? (zarpeAntes ? 'La fecha de zarpe no puede ser antes del despacho.' : undefined)}
                 onClick={guardar}>
           {pendiente ? 'Guardando…' : 'Guardar cambios'}

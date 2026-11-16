@@ -23,10 +23,8 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servidor';
-import { cargarDocumento, nombreArchivo, type TipoDocumento } from '@/lib/documentos';
-import { generarPdf } from '@/lib/pdf';
-import { generarProformaExportacion } from '@/lib/pdfProforma';
-import { generarDocumentoExcel } from '@/lib/excelDocumento';
+import { type TipoDocumento } from '@/lib/documentos';
+import { generarArchivoDocumento } from '@/lib/documentoArchivo';
 import { PUEDEN_DESCARGAR_DOCUMENTOS } from '@/lib/permisosFinanzas';
 import { nombreRol, listaDeRoles } from '@/lib/permisosVentas';
 
@@ -78,64 +76,17 @@ export async function GET(
     return NextResponse.json({ error: 'Identificador inválido.' }, { status: 400 });
   }
 
-  /* ---- 3. Armar y verificar ---- */
-  let documento;
-  try {
-    documento = await cargarDocumento(tipo as TipoDocumento, numeroId);
-  } catch (e) {
+  /* ---- 3 y 4. Armar, verificar y generar (lib/documentoArchivo, compartido con el envío por correo) ---- */
+  const resultado = await generarArchivoDocumento(tipo as TipoDocumento, numeroId, formato);
+  if (!resultado.ok) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : 'No se encontró el documento.' },
-      { status: 404 }
+      resultado.detalles
+        ? { error: resultado.error, detalles: resultado.detalles, numero: resultado.numero }
+        : { error: resultado.error },
+      { status: resultado.estado }
     );
   }
-
-  if (documento.errores.length) {
-    /*
-     * 422: la petición es correcta pero el contenido no se puede procesar.
-     * Se devuelve la lista entera para que la pantalla diga QUÉ está mal y no
-     * un «error al generar» que no ayuda a nadie.
-     */
-    return NextResponse.json(
-      {
-        error: 'El documento no se puede emitir porque sus datos no cuadran.',
-        detalles: documento.errores,
-        numero: documento.numero,
-      },
-      { status: 422 }
-    );
-  }
-
-  /* ---- 4. Generar ---- */
-  let archivo: Buffer;
-  let tipoMime: string;
-  let extension: string;
-
-  try {
-    if (formato === 'excel') {
-      archivo = await generarDocumentoExcel(documento);
-      tipoMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-      extension = 'xlsx';
-    } else {
-      /*
-       * La proforma de exportación se dibuja con su propio diseño porque no es
-       * el mismo documento: es un CONTRATO DE VENTA internacional, bilingüe, en
-       * kilos, con las condiciones del embarque y dos firmas. Se decide por el
-       * dato y no por el tipo —una proforma a un cliente peruano sigue saliendo
-       * con el formato local— porque lo que cambia la estructura es que la
-       * mercadería salga del país, no cómo se llame el documento.
-       */
-      archivo = documento.exportacion
-        ? await generarProformaExportacion(documento)
-        : await generarPdf(documento);
-      tipoMime = 'application/pdf';
-      extension = 'pdf';
-    }
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : 'No se pudo generar el archivo.' },
-      { status: 500 }
-    );
-  }
+  const { documento, archivo, tipoMime } = resultado;
 
   /* ---- 5. Dejar constancia ---- */
   try {
@@ -156,7 +107,7 @@ export async function GET(
      */
   }
 
-  const nombre = `${nombreArchivo(documento)}.${extension}`;
+  const nombre = resultado.nombre;
 
   return new NextResponse(new Uint8Array(archivo), {
     headers: {

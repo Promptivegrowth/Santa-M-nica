@@ -48,6 +48,8 @@ import { BloqueCondiciones } from '@/components/ventas/BloqueCondiciones';
 import { PanelDatosCliente } from '@/components/ventas/PanelDatosCliente';
 import { totalConImpuesto, diasDePlazos } from '@/lib/condicionesVenta';
 import { hoyEnLima } from '@/lib/fechas';
+import { EnviarPorCorreo } from '@/components/ventas/EnviarPorCorreo';
+import { PestanaPortal } from './PestanaPortal';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,6 +72,8 @@ const PESTANAS = [
   { clave: 'facturas',       titulo: 'Facturas' },
   { clave: 'cobranza',       titulo: 'Cobranza' },
   { clave: 'rentabilidad',   titulo: 'Rentabilidad' },
+  /* Portal de clientes (COT-2026-11-253): llave de seguimiento, accesos y envíos por correo. */
+  { clave: 'portal',         titulo: 'Portal del cliente' },
   { clave: 'historial',      titulo: 'Historial' },
 ];
 
@@ -145,6 +149,8 @@ export default async function DetallePedido(props: PageProps<'/ventas/pedidos/[i
               id={pedidoId}
               numero={String(pedido.numero_proforma)}
             />
+            {/* M7 del portal: el mismo PDF, por correo desde comex@. */}
+            <EnviarPorCorreo tipo="proforma" id={pedidoId} numero={String(pedido.numero_proforma)} />
             {/* El contrato de venta con el modelo de Santa Mónica (octubre, punto 8). */}
             <Link href={`/ventas/pedidos/${pedidoId}/contrato`} className="btn btn-secundario" data-enlace="contrato">
               Contrato
@@ -177,7 +183,7 @@ function CargandoCuerpo() {
   return (
     <>
       <EsqueletoKpi cantidad={5} />
-      <EsqueletoPestanas cantidad={11} />
+      <EsqueletoPestanas cantidad={12} />
       <div className="rejilla-2">
         <EsqueletoFicha lineas={7} />
         <EsqueletoFicha lineas={6} />
@@ -1206,6 +1212,11 @@ async function CuerpoPedido({
             />
           </Panel>
         )
+      )}
+
+      {/* ══════ PORTAL DEL CLIENTE ══════ */}
+      {pestana === 'portal' && (
+        <PestanaPortal pedidoId={pedidoId} numero={String(pedido.numero_proforma)} rol={(usuario?.rol ?? 'consulta') as Rol} />
       )}
 
       {/* ══════ HISTORIAL ══════ */}

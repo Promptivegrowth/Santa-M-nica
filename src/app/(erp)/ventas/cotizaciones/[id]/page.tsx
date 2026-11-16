@@ -22,6 +22,8 @@ import { EsqueletoTabla, EsqueletoFicha } from '@/components/ui/Esqueleto';
 import { AccionesFicha } from './AccionesFicha';
 import { aprobacionObligatoria } from '../acciones';
 import { BotonesDocumento } from '@/components/ui/BotonesDocumento';
+import { EnviarPorCorreo } from '@/components/ventas/EnviarPorCorreo';
+import { EnviosDocumento } from '@/components/ventas/EnviosDocumento';
 import { Icono } from '@/components/estructura/Icono';
 import { fecha, fechaHora, num, dinero, pct, etiquetaEstado, diasDesdeHoy } from '@/lib/formato';
 import { veCostos, puedeVender, type Rol } from '@/lib/navegacion';
@@ -168,7 +170,13 @@ export default async function FichaCotizacion(props: PageProps<'/ventas/cotizaci
       >
         <Etiqueta texto={etiquetaEstado(estado)} tono={TONO[estado] ?? 'neutro'} />
         {puedeDescargarDocumentos(usuario?.rol)
-          ? <BotonesDocumento tipo="cotizacion" id={cotId} numero={cot.numero as string} />
+          ? (
+            <>
+              <BotonesDocumento tipo="cotizacion" id={cotId} numero={cot.numero as string} />
+              {/* M7 del portal: la cotización en PDF, por correo desde comex@. */}
+              <EnviarPorCorreo tipo="cotizacion" id={cotId} numero={cot.numero as string} />
+            </>
+          )
           : <DocumentosApagados rol={usuario?.rol} />}
         {puedeOperar && (
           <AccionesFicha
@@ -625,6 +633,9 @@ async function CuerpoCotizacion({
           <Historial entidad="cotizaciones" entidadId={cotId} />
         </Panel>
       </div>
+
+      {/* M7 del portal: cada envío por correo desde comex@ (fecha, destinatarios, usuario). */}
+      <EnviosDocumento entidad="cotizaciones" entidadId={cotId} tipos={['cotizacion']} />
     </>
   );
 }
