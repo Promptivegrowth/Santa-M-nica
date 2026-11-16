@@ -19,6 +19,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import './db.mjs';
+import http from 'node:http';
 
 const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
 const URL_SB = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -71,11 +72,18 @@ r = await comercial.rpc('portal_vista_empleado', { p_pedido_id: ped?.[0]?.id ?? 
 comprobar('Comercial ve «como cliente» sin importes', !r.error && !/precio|importe|total_usd|monto/i.test(JSON.stringify(r.data)), r.error?.message);
 
 console.log('\n== 3. Direcciones (servidor en ' + BASE + ')');
-async function pedir(host, ruta, cookie = '') {
-  try {
-    const res = await fetch(BASE + ruta, { headers: { host, 'x-forwarded-host': host, cookie }, redirect: 'manual' });
-    return { status: res.status, destino: res.headers.get('location') ?? '', html: res.status === 200 ? await res.text() : '' };
-  } catch (e) { return { status: 0, destino: '', html: '', error: e.message }; }
+/** node:http y no fetch: fetch no deja cambiar la cabecera Host, que es lo que distingue clientes. de erp. */
+function pedir(host, ruta, cookie = '') {
+  const u = new URL(BASE);
+  return new Promise((ok) => {
+    const req = http.request({ hostname: u.hostname, port: u.port, path: ruta, method: 'GET', headers: { host, cookie } }, (res) => {
+      let html = '';
+      res.on('data', (c) => { html += c; });
+      res.on('end', () => ok({ status: res.statusCode, destino: res.headers.location ?? '', html: res.statusCode === 200 ? html : '' }));
+    });
+    req.on('error', (e) => ok({ status: 0, destino: '', html: '', error: e.message }));
+    req.end();
+  });
 }
 const PORTAL = process.env.PORTAL_HOST ?? 'clientes.santamonicafishing.com';
 const ERP = process.env.ERP_HOST ?? 'erp.santamonicafishing.com';
