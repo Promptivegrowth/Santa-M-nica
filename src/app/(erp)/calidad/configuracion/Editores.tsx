@@ -53,7 +53,7 @@ function FilaMotivo({ inicial, puede }: { inicial: Motivo; puede: boolean }) {
                  onChange={(e) => setM({ ...m, nombre_es: e.target.value })} /></td>
       <td><input className="campo" value={m.nombre_en} disabled={apagado} placeholder={nuevo ? 'In English' : ''}
                  onChange={(e) => setM({ ...m, nombre_en: e.target.value })} /></td>
-      <td style={{ width: '5rem' }}><input className="campo mono" type="number" value={m.orden} disabled={apagado}
+      <td style={{ width: '6.5rem', minWidth: '6.5rem' }}><input className="campo mono" type="number" min={1} style={{ width: '5.5rem' }} value={m.orden} disabled={apagado}
                  onChange={(e) => setM({ ...m, orden: Number(e.target.value) })} /></td>
       <td style={{ textAlign: 'center' }}><input type="checkbox" checked={m.activo} disabled={apagado}
                  onChange={(e) => setM({ ...m, activo: e.target.checked })} aria-label="Activo" /></td>
@@ -94,7 +94,7 @@ function FilaClasificacion({ inicial, puede }: { inicial: Clasificacion; puede: 
                  onChange={(e) => setC({ ...c, nombre: e.target.value })} /></td>
       <td style={{ width: '7rem' }}><input className="campo mono" type="number" min={1} max={365} value={c.plazo_dias} disabled={apagado}
                  onChange={(e) => setC({ ...c, plazo_dias: Number(e.target.value) })} /></td>
-      <td style={{ width: '5rem' }}><input className="campo mono" type="number" value={c.orden} disabled={apagado}
+      <td style={{ width: '6.5rem', minWidth: '6.5rem' }}><input className="campo mono" type="number" min={1} style={{ width: '5.5rem' }} value={c.orden} disabled={apagado}
                  onChange={(e) => setC({ ...c, orden: Number(e.target.value) })} /></td>
       <td style={{ textAlign: 'center' }}><input type="checkbox" checked={c.activo} disabled={apagado}
                  onChange={(e) => setC({ ...c, activo: e.target.checked })} aria-label="Activa" /></td>
@@ -179,7 +179,7 @@ function FilaHito({ inicial, puede }: { inicial: Hito; puede: boolean }) {
       <td><input className="campo" value={h.etiqueta_es} disabled={apagado} onChange={(e) => setH({ ...h, etiqueta_es: e.target.value })} /></td>
       <td><input className="campo" value={h.etiqueta_en} disabled={apagado} onChange={(e) => setH({ ...h, etiqueta_en: e.target.value })} /></td>
       <td style={{ fontSize: '.76rem', color: 'var(--tinta-2)', maxWidth: '16rem' }}>{h.origen}</td>
-      <td style={{ width: '5rem' }}><input className="campo mono" type="number" value={h.orden} disabled={apagado}
+      <td style={{ width: '6.5rem', minWidth: '6.5rem' }}><input className="campo mono" type="number" min={1} style={{ width: '5.5rem' }} value={h.orden} disabled={apagado}
                  onChange={(e) => setH({ ...h, orden: Number(e.target.value) })} /></td>
       <td style={{ textAlign: 'center' }}><input type="checkbox" checked={h.visible} disabled={apagado}
                  onChange={(e) => setH({ ...h, visible: e.target.checked })} aria-label="Visible" /></td>

@@ -42,7 +42,7 @@ function agrupar(filas: FilaReclamo[], clave: (r: FilaReclamo) => string): Grupo
 
 function TablaGrupo({ titulo, grupos, total }: { titulo: string; grupos: Grupo[]; total: number }) {
   return (
-    <Panel titulo={titulo}>
+    <Panel titulo={titulo} className="mb-espacio">
       {grupos.length === 0 ? <Vacio titulo="Sin datos" /> : (
         <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
           <table className="datos">
@@ -117,7 +117,7 @@ export default async function IndicadoresReclamos(props: PageProps<'/calidad/ind
             <Kpi etiqueta="Vencidos abiertos" valor={num(vencidos)} tono={vencidos ? 'critico' : 'ok'} href="/calidad/reclamos?estado=abiertos" />
           </RejillaKpi>
 
-          <div className="rejilla-2">
+          <div>
             <TablaGrupo titulo="Por motivo" grupos={agrupar(filas, (r) => r.motivo)} total={total} />
             <TablaGrupo titulo="Por cliente" grupos={agrupar(filas, (r) => r.cliente)} total={total} />
             <TablaGrupo titulo="Por estado" grupos={agrupar(filas, (r) => ESTADOS_RECLAMO[r.estado] ?? r.estado)} total={total} />

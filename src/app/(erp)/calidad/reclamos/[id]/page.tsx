@@ -94,7 +94,7 @@ export default async function DetalleReclamo(props: PageProps<'/calidad/reclamos
         volver={{ href: '/calidad/reclamos', texto: 'Volver a la bandeja' }}
       >
         <Etiqueta texto={ESTADOS_RECLAMO[r.estado] ?? r.estado} tono={cerrado ? 'ok' : 'info'} />
-        <Etiqueta texto={SEMAFORO[sem].texto} tono={SEMAFORO[sem].tono} />
+        {!cerrado && <Etiqueta texto={SEMAFORO[sem].texto} tono={SEMAFORO[sem].tono} />}
       </CabeceraPagina>
 
       <div className="rejilla-2">
@@ -108,13 +108,13 @@ export default async function DetalleReclamo(props: PageProps<'/calidad/reclamos
             <div><dt>Contacto</dt><dd>{r.contacto_nombre} · <a href={`mailto:${r.contacto_correo}`}>{r.contacto_correo}</a> <small>(verificado)</small></dd></div>
             <div><dt>Idioma</dt><dd>{r.idioma === 'en' ? 'Inglés' : 'Español'}</dd></div>
           </dl>
-          <div style={{ padding: '0 1rem 1rem' }}>
-            <strong style={{ fontSize: '.8rem' }}>Descripción</strong>
-            <p style={{ whiteSpace: 'pre-line', margin: '.3rem 0 .8rem' }}>{r.descripcion}</p>
+          <div className="texto-reclamo">
+            <strong>Descripción</strong>
+            <p>{r.descripcion}</p>
             {r.observaciones && (
               <>
-                <strong style={{ fontSize: '.8rem' }}>Observaciones</strong>
-                <p style={{ whiteSpace: 'pre-line', margin: '.3rem 0 0' }}>{r.observaciones}</p>
+                <strong>Observaciones</strong>
+                <p>{r.observaciones}</p>
               </>
             )}
           </div>
@@ -128,13 +128,13 @@ export default async function DetalleReclamo(props: PageProps<'/calidad/reclamos
             {cerrado && <div><dt>Cerrado</dt><dd>{fechaHora(r.cerrado_en)}</dd></div>}
           </dl>
           {cerrado && (
-            <div style={{ padding: '0 1rem 1rem' }}>
-              <strong style={{ fontSize: '.8rem' }}>Causa</strong>
-              <p style={{ whiteSpace: 'pre-line', margin: '.3rem 0 .6rem' }}>{r.causa ?? '—'}</p>
-              <strong style={{ fontSize: '.8rem' }}>Acciones correctivas</strong>
-              <p style={{ whiteSpace: 'pre-line', margin: '.3rem 0 .6rem' }}>{r.acciones_correctivas ?? '—'}</p>
-              <strong style={{ fontSize: '.8rem' }}>Conclusión enviada al cliente</strong>
-              <p style={{ whiteSpace: 'pre-line', margin: '.3rem 0 .6rem' }}>{r.conclusion}</p>
+            <div className="texto-reclamo">
+              <strong>Causa</strong>
+              <p>{r.causa ?? '—'}</p>
+              <strong>Acciones correctivas</strong>
+              <p>{r.acciones_correctivas ?? '—'}</p>
+              <strong>Conclusión enviada al cliente</strong>
+              <p>{r.conclusion}</p>
               <p style={{ margin: 0 }}>
                 PDF de respuesta ({r.respuesta_alcance === 'contenedor' ? `contenedor ${contRespuesta?.referencia ?? ''}` : 'toda la proforma'}):{' '}
                 {respuesta?.signedUrl
@@ -230,13 +230,15 @@ export default async function DetalleReclamo(props: PageProps<'/calidad/reclamos
           {(correos ?? []).length === 0 ? <Vacio titulo="Sin correos" mensaje="Los avisos al cliente y a Calidad aparecen aquí." /> : (
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
               <table className="datos" data-cuadro="correos-reclamo">
-                <thead><tr><th>Fecha</th><th>Asunto</th><th>Para</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Fecha</th><th>Correo</th><th>Estado</th></tr></thead>
                 <tbody>
                   {(correos ?? []).map((c) => (
                     <tr key={c.id}>
-                      <td style={{ whiteSpace: 'nowrap' }}>{fechaHora(c.creado_en)}</td>
-                      <td>{c.asunto}</td>
-                      <td style={{ fontSize: '.78rem' }}>{(c.para as string[]).join(', ')}</td>
+                      <td className="mono" style={{ whiteSpace: 'nowrap', fontSize: '.8rem' }}>{fechaHora(c.creado_en)}</td>
+                      <td style={{ minWidth: '16rem' }}>
+                        {c.asunto}
+                        <br /><small style={{ color: 'var(--tinta-3)', overflowWrap: 'anywhere' }}>Para: {(c.para as string[]).join(', ')}</small>
+                      </td>
                       <td>
                         <Etiqueta texto={c.estado === 'enviado' ? 'Enviado' : c.estado === 'simulado' ? 'Simulado' : 'Error'}
                                   tono={c.estado === 'enviado' ? 'ok' : c.estado === 'simulado' ? 'atencion' : 'critico'} />

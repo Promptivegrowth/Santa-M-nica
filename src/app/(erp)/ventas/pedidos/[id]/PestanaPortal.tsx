@@ -84,7 +84,7 @@ export async function PestanaPortal({ pedidoId, numero, rol }: { pedidoId: numbe
         </Panel>
 
         <Panel titulo="Cómo lo verá el cliente">
-          <ol style={{ margin: '0 1rem 1rem 2.2rem', fontSize: '.88rem', lineHeight: 1.6 }}>
+          <ol style={{ margin: '.75rem 1rem 1rem 2.2rem', padding: 0, listStyle: 'decimal', fontSize: '.84rem', lineHeight: 1.55, color: 'var(--tinta-2)' }}>
             <li>Recibe desde comex@ el correo con su Código Cliente, el N.° de proforma, la Llave, la cuenta de seguimiento, la contraseña y el enlace.</li>
             <li>Entra al portal con la cuenta de seguimiento: solo ve un cuadro de búsqueda.</li>
             <li>Escribe los 3 datos (5 fallos = bloqueo de 1 minuto).</li>

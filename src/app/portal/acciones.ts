@@ -152,6 +152,7 @@ export async function pedirCodigo(nombre: string, correo: string): Promise<Resul
   const envio = await enviarCorreo({
     tipo: 'reclamo_codigo', remitente: 'reclamos', para: [r.correo!],
     asunto: rellenar(plantilla.asunto, valores),
+    asuntoRegistro: rellenar(plantilla.asunto, { ...valores, codigo: '••••••' }),
     texto: rellenar(plantilla.cuerpo, valores),
     // El código es de un solo uso, pero tampoco se guarda en el registro
     textoRegistro: rellenar(plantilla.cuerpo, { ...valores, codigo: '••••••' }),

@@ -40,7 +40,7 @@ export async function EnviosDocumento({
         <Vacio titulo="Todavía no se ha enviado por correo" mensaje="Cada envío queda aquí: fecha, destinatarios, quién lo envió y si salió." />
       ) : (
         <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-          <table data-tabla="envios">
+          <table className="datos" data-tabla="envios">
             <thead>
               <tr><th>Fecha</th><th>Correo</th><th>Destinatarios</th><th>Enviado por</th><th>Estado</th></tr>
             </thead>
@@ -49,7 +49,7 @@ export async function EnviosDocumento({
                 <tr key={e.id}>
                   <td className="mono">{fechaHora(e.creado_en as string)}</td>
                   <td>{TIPO[e.tipo as string] ?? e.tipo}<br /><small style={{ color: 'var(--tinta-3)' }}>{e.asunto as string}</small></td>
-                  <td>
+                  <td style={{ wordBreak: 'break-word' }}>
                     {(e.para as string[]).join(', ')}
                     {(e.cc as string[])?.length > 0 && <><br /><small style={{ color: 'var(--tinta-3)' }}>cc: {(e.cc as string[]).join(', ')}</small></>}
                   </td>

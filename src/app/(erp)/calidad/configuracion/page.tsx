@@ -75,22 +75,22 @@ export default async function ConfiguracionPortal() {
         <Vacio titulo="Todavía no está activado" mensaje="El portal de clientes necesita la migración 090 en la base. Avise a sistemas." />
       ) : (
         <>
-          <div className="rejilla-2">
-            <Panel titulo="Motivos de reclamo">
+          <>
+            <Panel titulo="Motivos de reclamo" className="mb-espacio">
               <p style={{ padding: '0 1rem', fontSize: '.82rem', color: 'var(--tinta-2)' }}>
                 La lista que elige el cliente en el portal. Un motivo desactivado deja de ofrecerse, pero los reclamos que ya lo usan lo conservan.
               </p>
               <EditorMotivos puede={configuraReclamos}
                 motivos={(motivos ?? []).map((m) => ({ id: Number(m.id), nombre_es: String(m.nombre_es), nombre_en: String(m.nombre_en), activo: !!m.activo, orden: Number(m.orden) }))} />
             </Panel>
-            <Panel titulo="Clasificaciones y plazos">
+            <Panel titulo="Clasificaciones y plazos" className="mb-espacio">
               <p style={{ padding: '0 1rem', fontSize: '.82rem', color: 'var(--tinta-2)' }}>
                 Al clasificar un reclamo, su fecha límite es el día en que se registró más este plazo. Alimenta el semáforo de la bandeja.
               </p>
               <EditorClasificaciones puede={configuraReclamos}
                 clasificaciones={(clasificaciones ?? []).map((c) => ({ id: Number(c.id), nombre: String(c.nombre), plazo_dias: Number(c.plazo_dias), activo: !!c.activo, orden: Number(c.orden) }))} />
             </Panel>
-          </div>
+          </>
 
           <Panel titulo="Plantillas de correo" className="mb-espacio">
             <p style={{ padding: '0 1rem', fontSize: '.82rem', color: 'var(--tinta-2)' }}>

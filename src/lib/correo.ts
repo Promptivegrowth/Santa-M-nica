@@ -50,6 +50,8 @@ export type Correo = {
   texto: string;
   /** Lo que se guarda en el registro, si difiere (enmascarado). */
   textoRegistro?: string;
+  /** El asunto que se guarda, si lleva algo que no debe quedar (el código de verificación). */
+  asuntoRegistro?: string;
   adjuntos?: Adjunto[];
   entidad?: string;
   entidadId?: number;
@@ -174,7 +176,7 @@ export async function enviarCorreo(
       tipo: correo.tipo,
       remitente: direccionRemitente(correo.remitente),
       para, cc,
-      asunto: correo.asunto,
+      asunto: correo.asuntoRegistro ?? correo.asunto,
       cuerpo: correo.textoRegistro ?? correo.texto,
       adjuntos: (correo.adjuntos ?? []).map((a) => ({ nombre: a.nombre, tamano: a.contenido.length })),
       estado, error, proveedor_id: proveedorId,
