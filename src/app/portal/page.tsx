@@ -15,7 +15,7 @@ export default async function BusquedaPortal() {
   const captcha = await pedirCaptcha();
 
   return (
-    <div className="pt-caja-central">
+    <div className="pt-caja-central pt-caja-busqueda">
       <section className="pt-tarjeta">
         <h1>{t.buscarTitulo}</h1>
         <p className="pt-ayuda">{t.buscarAyuda}</p>

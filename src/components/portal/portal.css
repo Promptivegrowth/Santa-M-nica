@@ -86,6 +86,38 @@
 .pt-clave-ojo:hover { color: var(--tinta); background: var(--superficie-2); }
 .pt-clave-ojo:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
 .pt-btn-grande { padding: .78rem 1rem; font-size: .98rem; margin-top: .35rem; }
+
+/* Búsqueda de la proforma: tarjeta compacta, Código y N.° en una fila, CAPTCHA en una línea. */
+.pt-caja-busqueda { max-width: 500px; margin-top: 2.2rem; }
+.pt-caja-busqueda .pt-tarjeta { padding: 1.6rem 1.6rem 1.4rem; border-radius: 10px; }
+.pt-caja-busqueda h1 { font-size: 1.3rem; }
+.pt-caja-busqueda .pt-ayuda { font-size: .86rem; margin-bottom: 1.2rem; }
+.pt-busqueda .pt-campo { margin-bottom: .9rem; }
+.pt-busqueda .pt-campo label { font-size: .78rem; letter-spacing: 0; text-transform: none; color: var(--tinta); font-weight: 600; }
+.pt-busqueda .pt-campo input { font-size: .92rem; padding: .6rem .7rem; border-radius: 7px; }
+.pt-busqueda .pt-campo input:focus { outline: none; border-color: #304f8c; box-shadow: 0 0 0 3px rgba(48, 79, 140, .18); }
+.pt-busqueda .pt-campo input::placeholder { color: var(--tinta-3); opacity: .55; }
+.pt-busqueda-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 0 .8rem; }
+.pt-oculto { -webkit-text-security: disc; }
+.pt-busqueda .pt-captcha { flex-wrap: nowrap; gap: .5rem; }
+.pt-busqueda .pt-captcha img { height: 46px; width: 150px; flex: none; border-radius: 7px; }
+.pt-busqueda .pt-captcha input { flex: 1; min-width: 0; letter-spacing: .25em; text-align: center; }
+.pt-captcha-otra { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.4rem;
+  border: 1px solid var(--linea-2); border-radius: 7px; background: var(--superficie); color: var(--tinta-2); cursor: pointer; }
+.pt-captcha-otra:hover { color: var(--tinta); background: var(--superficie-2); }
+.pt-busqueda .pt-btn-grande { border-radius: 8px; margin-top: .4rem; }
+@media (max-width: 560px) {
+  /* Barra del portal en una sola línea: el logo ya dice la marca. */
+  .pt-barra-dentro { flex-wrap: nowrap; gap: .5rem; padding: .6rem .8rem; }
+  .pt-barra img { height: 30px; }
+  .pt-barra-titulo strong { display: none; }
+  .pt-barra-titulo small { font-size: .74rem; opacity: .9; }
+  .pt-barra a, .pt-barra button { padding: .28rem .5rem; font-size: .75rem; white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  .pt-busqueda-fila { grid-template-columns: 1fr; }
+  .pt-busqueda .pt-captcha img { width: 120px; height: 38px; }
+}
 .pt-campo input::placeholder { color: var(--tinta-3); opacity: .7; }
 .pt-tarjeta { background: var(--superficie); border: 1px solid var(--linea); border-radius: 6px; padding: 1.2rem 1.3rem; box-shadow: var(--sombra); margin-bottom: 1rem; }
 .pt-tarjeta h1 { font-family: var(--font-titulo); font-size: 1.35rem; margin: 0 0 .35rem; }
