@@ -34,7 +34,7 @@ export function FormularioIngreso({ idioma }: { idioma: Idioma }) {
       <div className="pt-campo">
         <label htmlFor="email">{t.correoAcceso}</label>
         <input id="email" name="email" type="email" autoComplete="username" inputMode="email"
-               placeholder="nombre@empresa.com" required />
+               autoCapitalize="none" spellCheck={false} required />
       </div>
       <div className="pt-campo">
         <label htmlFor="clave">{t.contrasena}</label>
