@@ -52,13 +52,14 @@ export default async function DetalleReclamo(props: PageProps<'/calidad/reclamos
   ]);
   if (!r) notFound();
 
-  const [{ data: evidencias }, { data: historial }, { data: clasificaciones }, { data: contenedores }, { data: correos }] = await Promise.all([
+  const [{ data: evidencias }, { data: historial }, { data: clasificaciones }, { data: contenedores }, { data: correos }, { data: atienden }] = await Promise.all([
     supabase.from('reclamo_evidencias').select('id, ruta, nombre, tipo_mime, tamano_bytes').eq('reclamo_id', reclamoId).order('id'),
     supabase.from('reclamo_historial').select('id, estado_anterior, estado_nuevo, nota, usuario_nombre, creado_en').eq('reclamo_id', reclamoId).order('creado_en'),
     supabase.from('reclamo_clasificaciones').select('id, nombre, plazo_dias, activo').order('orden'),
     supabase.from('v_pedido_contenedores').select('packing_list_id, referencia, contenedor').eq('pedido_id', r.pedido_id).order('secuencia'),
     supabase.from('correos_salida').select('id, tipo, para, asunto, estado, error, creado_en, enviado_por_nombre')
       .eq('entidad', 'reclamos').eq('entidad_id', reclamoId).order('creado_en', { ascending: false }),
+    supabase.from('usuarios').select('id, nombre, rol').in('rol', ROLES_ATIENDEN_RECLAMOS).eq('activo', true).order('nombre'),
   ]);
 
   /* Enlaces firmados de 1 hora para ver la evidencia y la respuesta. */
@@ -189,7 +190,9 @@ export default async function DetalleReclamo(props: PageProps<'/calidad/reclamos
               bloqueo={bloqueo}
               clasificaciones={(clasificaciones ?? []).filter((c) => c.activo || c.id === r.clasificacion_id)
                 .map((c) => ({ id: Number(c.id), nombre: String(c.nombre), plazo_dias: Number(c.plazo_dias) }))}
+              responsables={(atienden ?? []).map((u) => ({ id: String(u.id), nombre: String(u.nombre), rol: String(u.rol) }))}
               inicial={{
+                responsable_id: r.responsable_id ? String(r.responsable_id) : null,
                 estado: r.estado as 'pendiente' | 'en_revision' | 'en_investigacion',
                 clasificacion_id: r.clasificacion_id == null ? null : Number(r.clasificacion_id),
                 causa: r.causa ?? '', acciones: r.acciones_correctivas ?? '', nota: '',

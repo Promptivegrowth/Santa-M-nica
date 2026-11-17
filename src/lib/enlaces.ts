@@ -90,6 +90,11 @@ export function enlaceEntidad(entidad: Entidad, id: number | string | null): str
     case 'dictamenes_calidad':
       return `/almacenes/calidad`;
 
+    //  090 · Un reclamo del portal de clientes: la alerta «Nuevo reclamo» lleva a su ficha.
+    case 'reclamo':
+    case 'reclamos':
+      return `/calidad/reclamos/${id}`;
+
     //  074 · Una importación de ingresos desde Excel que espera validación.
     case 'importacion':
       return `/almacenes/ingresos/importar/${id}`;
@@ -115,6 +120,7 @@ export function nombreEntidad(entidad: Entidad): string {
     vehiculo: 'Vehículo', vehiculos: 'Vehículo',
     dictamenes_calidad: 'Dictamen de calidad',
     importacion: 'Importación de Excel',
+    reclamo: 'Reclamo', reclamos: 'Reclamo',
     /* Avisos de resumen que no hablan de un registro sino de una tarea o del
        stock entero. Sin estos nombres, la etiqueta salía con la clave cruda
        («COSTOS_MENSUALES», «INVENTARIO»). */

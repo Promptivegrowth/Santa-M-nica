@@ -28,14 +28,19 @@ export default async function LayoutPortal({ children }: { children: React.React
   const t = textos(idioma);
 
   return (
-    <div className="pt-cuerpo" lang={idioma}>
+    <div className="pt-cuerpo" lang={idioma} data-sesion={sesion.ok ? 'si' : 'no'}>
+      {/* Sin sesión (pantalla de ingreso) la marca va centrada en la tarjeta: la barra solo lleva el idioma. */}
       <header className="pt-barra">
         <div className="pt-barra-dentro">
-          <Image src="/logo.png" alt="Santa Mónica" width={68} height={34} priority />
-          <div className="pt-barra-titulo">
-            <strong>{t.marca.toUpperCase()}</strong>
-            <small>{t.portal}</small>
-          </div>
+          {sesion.ok ? (
+            <>
+              <Image src="/logo.png" alt="Santa Mónica" width={113} height={34} priority />
+              <div className="pt-barra-titulo">
+                <strong>{t.marca.toUpperCase()}</strong>
+                <small>{t.portal}</small>
+              </div>
+            </>
+          ) : <span className="pt-barra-titulo" />}
           <BarraIdioma idioma={idioma} texto={t.idiomaOtro} />
           {sesion.ok && (
             <form action={cerrarSesion}>

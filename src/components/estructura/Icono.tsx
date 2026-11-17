@@ -135,6 +135,11 @@ const TRAZOS: Record<string, React.ReactNode> = {
   // «ingresos», que parecía un botón de descarga.
   liberar: <><rect x="3" y="10.5" width="18" height="10.5" rx="1.4" /><path d="M7.5 10.5V7.5a4.5 4.5 0 0 1 8.7-1.6" /><circle cx="12" cy="15.5" r="1.3" /><path d="M12 16.8v1.7" /></>,
   papelera: <><path d="M3.5 6h17M8 6V4.5A1.5 1.5 0 0 1 9.5 3h5A1.5 1.5 0 0 1 16 4.5V6" /><path d="M18.5 6v13.5a1.5 1.5 0 0 1-1.5 1.5H7a1.5 1.5 0 0 1-1.5-1.5V6" /></>,
+  // Accesos por WhatsApp y el ojo tachado de «ocultar contraseña» (portal).
+  copiar: <><rect x="8.5" y="8.5" width="12" height="12" rx="1.6" /><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h3.5" /></>,
+  mensaje: <><path d="M20.5 11.6a8.4 8.4 0 0 1-12.3 7.4L3.5 20.5l1.5-4.6a8.4 8.4 0 1 1 15.5-4.3z" /></>,
+  ocultar: <><path d="M10.6 5.6A9.6 9.6 0 0 1 12 5.5c6.4 0 10 6.5 10 6.5a17 17 0 0 1-2.6 3.4M6.6 6.6C3.7 8.4 2 12 2 12s3.6 6.5 10 6.5c1.9 0 3.5-.5 4.9-1.3" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /><path d="m3 3 18 18" /></>,
+  listo: <><path d="m5 12.5 4.5 4.5L19 7.5" /></>,
 };
 
 export function Icono({

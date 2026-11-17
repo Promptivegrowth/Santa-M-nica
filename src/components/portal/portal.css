@@ -16,6 +16,30 @@
 .pt-pie { text-align: center; font-size: .75rem; color: var(--tinta-3); padding: 1rem; border-top: 1px solid var(--linea); }
 
 .pt-caja-central { max-width: 440px; margin: 2rem auto; }
+
+/* Ingreso: banda azul de la marca que sigue a la barra, tarjeta centrada encima con el logo. */
+.pt-cuerpo[data-sesion="no"] { background: linear-gradient(180deg, #1b2c52 0, #22386a 230px, var(--fondo) 230px); }
+.pt-cuerpo[data-sesion="no"] .pt-barra { background: transparent; }
+.pt-ingreso { max-width: 420px; margin: 1.5rem auto 0; }
+.pt-ingreso-tarjeta { padding: 2rem 1.8rem 1.4rem; border-radius: 10px; border-color: transparent; box-shadow: 0 12px 32px rgba(16, 26, 44, .18), 0 2px 6px rgba(16, 26, 44, .08); }
+.pt-ingreso-marca { display: flex; flex-direction: column; align-items: center; gap: .55rem; padding-bottom: 1.2rem; margin-bottom: 1.3rem; border-bottom: 1px solid var(--linea); }
+.pt-ingreso-marca img { width: 200px; height: auto; background: #fff; border-radius: 6px; padding: 4px 8px; }
+.pt-ingreso-marca span { font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--tinta-3); }
+.pt-ingreso-tarjeta h1 { text-align: center; font-size: 1.45rem; }
+.pt-ingreso-tarjeta .pt-ayuda { text-align: center; margin-bottom: 1.3rem; }
+.pt-ingreso-ayuda { text-align: center; font-size: .8rem; color: var(--tinta-3); margin: 1.1rem 0 0; line-height: 1.5; }
+.pt-ingreso-ayuda a { color: var(--acento); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.pt-ingreso-ayuda a:hover { text-decoration: underline; }
+
+/* Contraseña con el ojo para verla. */
+.pt-clave { position: relative; }
+.pt-campo .pt-clave input { padding-right: 2.9rem; }
+.pt-clave-ojo { position: absolute; top: 50%; right: .35rem; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center;
+  width: 2.2rem; height: 2.2rem; border: 0; border-radius: 5px; background: transparent; color: var(--tinta-3); cursor: pointer; }
+.pt-clave-ojo:hover { color: var(--tinta); background: var(--superficie-2); }
+.pt-clave-ojo:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+.pt-btn-grande { padding: .78rem 1rem; font-size: .98rem; margin-top: .35rem; }
+.pt-campo input::placeholder { color: var(--tinta-3); opacity: .7; }
 .pt-tarjeta { background: var(--superficie); border: 1px solid var(--linea); border-radius: 6px; padding: 1.2rem 1.3rem; box-shadow: var(--sombra); margin-bottom: 1rem; }
 .pt-tarjeta h1 { font-family: var(--font-titulo); font-size: 1.35rem; margin: 0 0 .35rem; }
 .pt-ayuda { color: var(--tinta-2); font-size: .88rem; margin: 0 0 1rem; line-height: 1.45; }

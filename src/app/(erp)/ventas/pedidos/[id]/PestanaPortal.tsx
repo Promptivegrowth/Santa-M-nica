@@ -23,10 +23,15 @@ const VEN_COMO_CLIENTE: Rol[] = ['gerencia', 'operaciones', 'comercial', 'comex'
 
 export async function PestanaPortal({ pedidoId, numero, rol }: { pedidoId: number; numero: string; rol: Rol }) {
   const supabase = await crearClienteServidor();
-  const [{ data: info, error }, { data: pedido }] = await Promise.all([
+  const [{ data: info, error }, { data: pedido }, { data: copias }] = await Promise.all([
     supabase.rpc('pedido_llave_info', { p_pedido_id: pedidoId }),
     supabase.from('pedidos').select('cliente_id, contacto_email, clientes(codigo, pais, email)').eq('id', pedidoId).single(),
+    // Accesos compartidos por WhatsApp: no pasan por correos_salida, quedan en el historial.
+    supabase.from('eventos').select('ocurrido_en')
+      .eq('entidad', 'pedidos').eq('entidad_id', pedidoId).eq('tipo', 'accesos_copiados')
+      .order('ocurrido_en', { ascending: false }),
   ]);
+  const whatsapp = copias ?? [];
   const cliente = uno<Record<string, string | null>>(pedido?.clientes);
   const { data: contactos } = pedido
     ? await supabase.from('contactos').select('email, principal').eq('cliente_id', pedido.cliente_id).eq('activo', true)
@@ -57,12 +62,14 @@ export async function PestanaPortal({ pedidoId, numero, rol }: { pedidoId: numbe
               <div><dt>N.° de proforma</dt><dd className="mono">{numero}</dd></div>
               <div><dt>Llave</dt><dd className="mono" data-llave-mascara>{llave.mascara}</dd></div>
               <div><dt>Generada</dt><dd>{fechaHora(llave.generada_en)}{llave.regenerada_veces > 0 && ` · regenerada ${llave.regenerada_veces} ${llave.regenerada_veces === 1 ? 'vez' : 'veces'}`}</dd></div>
-              <div><dt>Accesos enviados</dt><dd>{llave.envios ? `${llave.envios} · último ${fechaHora(llave.ultimo_envio)}` : 'Todavía no'}</dd></div>
+              <div><dt>Accesos por correo</dt><dd>{llave.envios ? `${llave.envios} · último ${fechaHora(llave.ultimo_envio)}` : 'Todavía no'}</dd></div>
+              <div><dt>Copiados para WhatsApp</dt><dd>{whatsapp.length ? `${whatsapp.length} · último ${fechaHora(whatsapp[0].ocurrido_en)}` : 'Todavía no'}</dd></div>
             </dl>
           )}
           <p style={{ fontSize: '.8rem', color: 'var(--tinta-3)', margin: '.75rem 1rem' }}>
-            La llave es única, no caduca y no se imprime en la proforma: solo viaja en el correo de accesos.
-            {!CORREO_CONFIGURADO() && ' El envío de correos aún no está configurado: los correos quedan registrados como «simulado» y no salen.'}
+            La llave es única, no caduca y no se imprime en la proforma: solo viaja en el correo de accesos o en el
+            mensaje que se copia para WhatsApp (desde «Enviar accesos»).
+            {!CORREO_CONFIGURADO() && ' El envío de correos aún no está configurado: los correos quedan como «simulado» y no salen. Mientras tanto, use «Copiar para WhatsApp».'}
           </p>
           <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', padding: '0 1rem 1rem' }}>
             {puedeEnviar && (
@@ -71,7 +78,7 @@ export async function PestanaPortal({ pedidoId, numero, rol }: { pedidoId: numbe
                 numero={numero}
                 destinatarios={destinatarios}
                 idiomaSugerido={idioma}
-                yaEnviado={(llave?.envios ?? 0) > 0}
+                yaEnviado={(llave?.envios ?? 0) > 0 || whatsapp.length > 0}
               />
             )}
             {VEN_COMO_CLIENTE.includes(rol) && (
@@ -85,7 +92,7 @@ export async function PestanaPortal({ pedidoId, numero, rol }: { pedidoId: numbe
 
         <Panel titulo="Cómo lo verá el cliente">
           <ol style={{ margin: '.75rem 1rem 1rem 2.2rem', padding: 0, listStyle: 'decimal', fontSize: '.84rem', lineHeight: 1.55, color: 'var(--tinta-2)' }}>
-            <li>Recibe desde comex@ el correo con su Código Cliente, el N.° de proforma, la Llave, la cuenta de seguimiento, la contraseña y el enlace.</li>
+            <li>Recibe por correo (desde comex@) o por WhatsApp su Código Cliente, el N.° de proforma, la Llave, la cuenta de seguimiento, la contraseña y el enlace.</li>
             <li>Entra al portal con la cuenta de seguimiento: solo ve un cuadro de búsqueda.</li>
             <li>Escribe los 3 datos (5 fallos = bloqueo de 1 minuto).</li>
             <li>Ve el avance de la proforma o la línea de tiempo de cada contenedor, sin montos.</li>

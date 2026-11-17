@@ -140,6 +140,51 @@ export async function enviarAccesos(pedidoId: number, para: string[], idioma: st
   }
 }
 
+/**
+ * El mismo mensaje de accesos, con la Llave y la contraseña REALES, para
+ * copiarlo y mandarlo por WhatsApp. Pide los mismos permisos que el correo
+ * y deja constancia en el historial del pedido (sin la llave).
+ */
+export async function textoAccesosWhatsapp(
+  pedidoId: number, idioma: string
+): Promise<{ ok: true; texto: string } | { ok: false; mensaje: string }> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario || !ENVIAN_ACCESOS.includes(usuario.rol as Rol)) {
+    return { ok: false, mensaje: `Los accesos al portal los comparten ${listaDeRoles(ENVIAN_ACCESOS)}.` };
+  }
+  const lengua = idiomaValido(idioma);
+  try {
+    const d = await datosAccesos(pedidoId);
+    const [{ data: llave, error: errLlave }, { data: cuenta, error: errCuenta }, plantilla] = await Promise.all([
+      d.supabase.rpc('pedido_llave_revelar', { p_pedido_id: pedidoId }),
+      d.supabase.rpc('portal_cuenta_acceso'),
+      leerPlantilla(d.supabase, 'accesos', lengua),
+    ]);
+    if (errLlave || !llave) return { ok: false, mensaje: errLlave?.message ?? 'No se pudo leer la llave de seguimiento.' };
+    if (errCuenta || !cuenta) return { ok: false, mensaje: errCuenta?.message ?? 'No hay una cuenta de seguimiento activa.' };
+    const c = cuenta as { email: string; clave: string };
+    const real = {
+      contacto: d.contacto, codigo_cliente: d.codigoCliente, numero_proforma: d.numero,
+      llave: String(llave), correo_acceso: c.email, clave_acceso: c.clave, portal_url: d.portalUrl,
+    };
+    // WhatsApp: el asunto en negrita como título y el cuerpo tal cual, salvo
+    // la frase «Guarde este correo: … ningún otro medio», que aquí no es cierta.
+    const cuerpo = rellenar(plantilla.cuerpo, real)
+      .replace(/^Guarde este correo.*$/m, 'Guarde este mensaje y no lo comparta: contiene su llave de seguimiento.')
+      .replace(/^Please keep this e-?mail.*$/im, 'Please keep this message and do not share it: it contains your tracking key.');
+    const texto = `*${rellenar(plantilla.asunto, real)}*\n\n${cuerpo}`;
+
+    await d.supabase.rpc('registrar_evento', {
+      p_entidad: 'pedidos', p_entidad_id: pedidoId, p_tipo: 'accesos_copiados',
+      p_descripcion: `Accesos al portal de ${d.numero} copiados para WhatsApp por ${usuario.nombre}`,
+      p_severidad: 'info', p_metadatos: { idioma: lengua, medio: 'whatsapp' },
+    });
+    return { ok: true, texto };
+  } catch (e) {
+    return { ok: false, mensaje: e instanceof Error ? e.message : 'No se pudo preparar el mensaje.' };
+  }
+}
+
 export async function regenerarLlave(pedidoId: number, motivo: string): Promise<Resultado> {
   const usuario = await obtenerUsuarioActual();
   if (usuario?.rol !== 'gerencia') return { ok: false, mensaje: 'Solo Gerencia puede regenerar la llave de seguimiento.' };

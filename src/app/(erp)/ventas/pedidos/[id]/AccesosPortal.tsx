@@ -13,7 +13,7 @@ import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import { accionSegura } from '@/lib/accionSegura';
-import { vistaPreviaAccesos, enviarAccesos, regenerarLlave } from '../../accionesCorreo';
+import { vistaPreviaAccesos, enviarAccesos, regenerarLlave, textoAccesosWhatsapp } from '../../accionesCorreo';
 import { VentanaCorreo, AvisoEnvio } from '@/components/ventas/VentanaCorreo';
 
 type Aviso = { ok: boolean; texto: string; estado?: string } | null;
@@ -37,8 +37,9 @@ export function EnviarAccesos({
   const [idioma, setIdioma] = useState<'es' | 'en'>(idiomaSugerido);
   const [vista, setVista] = useState<{ asunto: string; texto: string } | null>(null);
   const [aviso, setAviso] = useState<Aviso>(null);
+  const [copiado, setCopiado] = useState<{ texto: string; enPortapapeles: boolean } | null>(null);
   const [ocupado, iniciar] = useTransition();
-  const cerrar = useCallback(() => setAbierto(false), []);
+  const cerrar = useCallback(() => { setAbierto(false); setCopiado(null); }, []);
 
   function previa(i: 'es' | 'en') {
     setIdioma(i);
@@ -46,6 +47,27 @@ export function EnviarAccesos({
       const r = await accionSegura(() => vistaPreviaAccesos(pedidoId, i));
       if (r.ok && 'asunto' in r) setVista({ asunto: r.asunto, texto: r.texto });
       else setAviso({ ok: false, texto: 'mensaje' in r ? r.mensaje : 'No se pudo preparar el correo.' });
+    });
+  }
+
+  /** El mensaje con la llave y la contraseña reales, al portapapeles, para WhatsApp. */
+  function copiarWhatsapp() {
+    setAviso(null);
+    setCopiado(null);
+    iniciar(async () => {
+      const r = await accionSegura(() => textoAccesosWhatsapp(pedidoId, idioma));
+      if (!r.ok || !('texto' in r)) {
+        setAviso({ ok: false, texto: 'mensaje' in r ? r.mensaje : 'No se pudo preparar el mensaje.' });
+        return;
+      }
+      let enPortapapeles = false;
+      try {
+        await navigator.clipboard.writeText(r.texto);
+        enPortapapeles = true;
+      } catch {
+        // Sin permiso de portapapeles (o página sin HTTPS): se muestra el texto para copiarlo a mano.
+      }
+      setCopiado({ texto: r.texto, enPortapapeles });
     });
   }
 
@@ -98,15 +120,40 @@ export function EnviarAccesos({
                 <small className="form-nota-cab">{ocupado ? 'Preparando la vista previa…' : ''}</small>
               )}
               <small className="form-nota-cab">
-                La llave de seguimiento y la contraseña se ven ocultas aquí y en el registro: completas, solo viajan en el correo al cliente.
+                La llave de seguimiento y la contraseña se ven ocultas aquí y en el registro: completas, solo viajan en el
+                correo al cliente o en el mensaje que copie para WhatsApp.
               </small>
             </div>
+            {copiado && (
+              <div className="form-campo form-ancho" data-bloque="accesos-copiados">
+                <span>
+                  {copiado.enPortapapeles
+                    ? 'Mensaje copiado con la llave y la contraseña completas. Péguelo en el chat del cliente.'
+                    : 'El navegador no dejó copiar solo: seleccione el texto (Ctrl+A) y cópielo (Ctrl+C).'}
+                </span>
+                {!copiado.enPortapapeles && (
+                  <textarea className="campo" readOnly rows={8} value={copiado.texto}
+                            onFocus={(e) => e.currentTarget.select()} style={{ fontFamily: 'inherit', fontSize: '.85rem' }} />
+                )}
+                <span style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', marginTop: '.3rem' }}>
+                  <a className="btn btn-sutil" target="_blank" rel="noopener noreferrer"
+                     href={`https://wa.me/?text=${encodeURIComponent(copiado.texto)}`} data-accion="abrir-whatsapp">
+                    <Icono nombre="mensaje" tamano={15} /> Abrir WhatsApp con el mensaje
+                  </a>
+                </span>
+              </div>
+            )}
             <div className="form-ancho">
               <AvisoEnvio aviso={aviso} />
-              <div style={{ display: 'flex', gap: '.5rem', marginTop: '.6rem' }}>
+              <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', marginTop: '.6rem' }}>
                 <button type="button" className="btn btn-primario" onClick={enviar} disabled={ocupado || !vista}
                         data-accion="confirmar-accesos">
                   {ocupado ? 'Un momento…' : 'Enviar desde comex@'}
+                </button>
+                <button type="button" className="btn btn-secundario" onClick={copiarWhatsapp} disabled={ocupado || !vista}
+                        data-accion="copiar-accesos">
+                  <Icono nombre={copiado?.enPortapapeles ? 'listo' : 'copiar'} tamano={15} />
+                  {copiado?.enPortapapeles ? 'Copiado' : 'Copiar para WhatsApp'}
                 </button>
                 <button type="button" className="btn btn-sutil" onClick={cerrar} disabled={ocupado}>
                   {aviso?.ok ? 'Cerrar' : 'Cancelar'}

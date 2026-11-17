@@ -10,7 +10,7 @@
  *
  *  AL CERRAR
  *   1. El PDF ya lo subió el navegador a «respuestas/<id>/…» (bucket reclamos).
- *   2. Se crea un enlace firmado de 90 días: es el que el portal entrega al
+ *   2. Se crea un enlace firmado de 100 días: es el que el portal entrega al
  *      cliente que validó sus 3 datos, durante los 3 meses de la propuesta.
  *   3. reclamo_cerrar deja el estado, la conclusión y el historial.
  *   4. Correo de cierre desde reclamos@: con el PDF adjunto si pesa hasta el
@@ -26,7 +26,9 @@ import { enviarCorreo, leerPlantilla, rellenar, type Adjunto } from '@/lib/corre
 
 export type Resultado = { ok: boolean; mensaje: string; correo?: { ok: boolean; estado: string; mensaje: string } };
 
-const NOVENTA_DIAS = 90 * 24 * 3600;
+// Algo más que los «3 meses» que el portal ofrece la descarga (portal_descarga
+// cuenta 3 meses de calendario, hasta 92 días): el enlace no debe vencer antes.
+const VIGENCIA_ENLACE = 100 * 24 * 3600;
 
 export type DatosAtencion = {
   estado: 'pendiente' | 'en_revision' | 'en_investigacion';
@@ -34,6 +36,8 @@ export type DatosAtencion = {
   causa: string;
   acciones: string;
   nota: string;
+  /** Quién lo atiende (Calidad o Gerencia). Sin elegir, la base deja al actual o a quien guarda. */
+  responsable_id: string | null;
 };
 
 export async function actualizarReclamo(id: number, d: DatosAtencion): Promise<Resultado> {
@@ -45,7 +49,7 @@ export async function actualizarReclamo(id: number, d: DatosAtencion): Promise<R
   const supabase = await crearClienteServidor();
   const { error } = await supabase.rpc('reclamo_actualizar', {
     p_id: id, p_estado: d.estado, p_clasificacion_id: d.clasificacion_id,
-    p_causa: d.causa, p_acciones: d.acciones, p_nota: d.nota, p_responsable_id: null,
+    p_causa: d.causa, p_acciones: d.acciones, p_nota: d.nota, p_responsable_id: d.responsable_id || null,
   });
   if (error) return { ok: false, mensaje: traducirErrorBase(error, { que: 'guardar la atención del reclamo', quien: ROLES_ATIENDEN_RECLAMOS }) };
   revalidatePath(`/calidad/reclamos/${id}`);
@@ -73,7 +77,7 @@ export async function cerrarReclamo(id: number, d: DatosCierre): Promise<Resulta
   const supabase = await crearClienteServidor();
   const almacen = supabase.storage.from('reclamos');
 
-  const { data: firmado, error: errFirma } = await almacen.createSignedUrl(d.ruta, NOVENTA_DIAS, { download: d.nombre });
+  const { data: firmado, error: errFirma } = await almacen.createSignedUrl(d.ruta, VIGENCIA_ENLACE, { download: d.nombre });
   if (errFirma || !firmado?.signedUrl) {
     return { ok: false, mensaje: 'No se encontró el PDF subido. Vuelva a subirlo e inténtelo de nuevo.' };
   }

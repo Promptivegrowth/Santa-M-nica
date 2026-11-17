@@ -18,11 +18,14 @@ export function AtenderReclamo({
   id,
   inicial,
   clasificaciones,
+  responsables,
   bloqueo,
 }: {
   id: number;
   inicial: DatosAtencion;
   clasificaciones: { id: number; nombre: string; plazo_dias: number }[];
+  /** Usuarios activos de Calidad y Gerencia: los que pueden atender el reclamo. */
+  responsables: { id: string; nombre: string; rol: string }[];
   /** Por qué no puede editar, o null. */
   bloqueo: string | null;
 }) {
@@ -66,6 +69,17 @@ export function AtenderReclamo({
             ))}
           </select>
           <small>La fecha límite se cuenta desde el día en que se registró el reclamo.</small>
+        </label>
+        <label className="form-campo">
+          <span>Responsable</span>
+          <select className="campo" value={d.responsable_id ?? ''} disabled={apagado} data-campo="responsable"
+                  onChange={(e) => cambiar('responsable_id', e.target.value || null)}>
+            <option value="">Sin asignar (queda quien guarde)</option>
+            {responsables.map((u) => (
+              <option key={u.id} value={u.id}>{u.nombre} · {u.rol === 'gerencia' ? 'Gerencia' : 'Calidad'}</option>
+            ))}
+          </select>
+          <small>Quién investiga y responde al cliente.</small>
         </label>
         <label className="form-campo form-ancho">
           <span>Causa</span>
