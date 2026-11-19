@@ -12,6 +12,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Etiqueta } from '@/components/ui/Pagina';
 import { Listado } from '@/components/ui/Listado';
 import { Icono } from '@/components/estructura/Icono';
+import { BotonesReporte } from '@/components/ui/BotonesReporte';
 import { tm, num, fecha, fechaHora } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { PUEDEN_INGRESAR, PUEDEN_VALIDAR_IMPORTACION } from './tipos';
@@ -46,6 +47,8 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
         titulo="Ingresos a cámara"
         descripcion="Cada ingreso da de alta un lote y abre su Kardex. Es el punto de partida de toda la trazabilidad."
       >
+        {/* Dany (19-11): bajar a Excel lo mismo que se ve, con los filtros puestos. */}
+        <BotonesReporte tipo="ingresos" />
         {puedeRegistrar && (
           <Link href="/almacenes/ingresos/programados" className="btn btn-secundario" data-accion="ingresos-programados">
             <Icono nombre="reloj" tamano={15} />

@@ -276,6 +276,55 @@ const REPORTES: Record<string, DefinicionReporte> = {
     },
   },
 
+  /**
+   * INGRESOS A CÁMARA · lo mismo que la pantalla Ingresos (pedido de Dany,
+   * 19-11): por fecha de producción y con los mismos filtros (pallet o
+   * documento, origen, producción desde/hasta).
+   */
+  ingresos: {
+    titulo: 'Ingresos a cámara',
+    subtitulo: 'Pallets ingresados, por fecha de producción, con su almacén y quién los registró',
+    vista: 'v_kardex',
+    ruta: '/almacenes/ingresos',
+    orden: 'fecha_produccion',
+    desempate: ['fecha', 'id'],
+    fijo: { columna: 'tipo', valor: 'ingreso' },
+    columnas: [
+      { titulo: 'F. producción', clave: 'fecha_produccion', ancho: 13, formato: FORMATO.fecha },
+      { titulo: 'Pallet', clave: 'codigo_pallet', ancho: 18 },
+      { titulo: 'Código', clave: 'sku_codigo', ancho: 8 },
+      { titulo: 'Especie', clave: 'especie', ancho: 12 },
+      { titulo: 'Producto', clave: 'formato', ancho: 16 },
+      { titulo: 'Corte', clave: 'corte', ancho: 22 },
+      { titulo: 'Presentación', clave: 'presentacion', ancho: 14, tituloPdf: 'Present.' },
+      { titulo: 'Origen', clave: 'origen_registro', ancho: 15,
+        mapa: { produccion: 'Producción', compras: 'Compras', inventario_inicial: 'Inventario inicial' } },
+      { titulo: 'Almacén', clave: 'almacen', ancho: 26 },
+      { titulo: 'Bultos', clave: 'entrada_bultos', ancho: 10, formato: FORMATO.entero },
+      { titulo: 'Peso (kg)', clave: 'entrada_kg', ancho: 12, formato: FORMATO.kilos },
+      { titulo: 'Documento', clave: 'documento_ref', ancho: 14 },
+      { titulo: 'Motivo', clave: 'motivo', ancho: 15 },
+      { titulo: 'Registró', clave: 'usuario', ancho: 18 },
+      { titulo: 'Registrado el', clave: 'fecha', ancho: 16, formato: 'dd/mm/yyyy hh:mm', tipoPdf: 'fechaHora' },
+    ],
+    totalizar: ['entrada_bultos', 'entrada_kg'],
+    ascendente: false,
+    filtrable: {
+      fecha: 'fecha_produccion',
+      texto: ['codigo_pallet', 'documento_ref', 'sku_codigo'],
+      exactos: {
+        origen: {
+          columna: 'origen_registro', etiqueta: 'Origen',
+          grupos: {
+            produccion: { valores: ['produccion'], texto: 'Producción' },
+            compras: { valores: ['compras'], texto: 'Compras' },
+            inventario_inicial: { valores: ['inventario_inicial'], texto: 'Inventario inicial' },
+          },
+        },
+      },
+    },
+  },
+
   kardex: {
     titulo: 'Kardex valorizado',
     tituloSinPrecios: 'Kardex',
@@ -714,12 +763,31 @@ export async function GET(
     });
   }
 
+  /* En Excel las fechas van como FECHAS (para filtrar y ordenar), no como
+     texto: «2026-11-17» con formato de fecha pasa a fecha, y una fecha con
+     hora (formato con «hh:mm») se pasa a la hora de Lima. El PDF las sigue
+     recibiendo tal cual. */
+  const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+  const deFecha = columnas.filter((c) => c.formato === FORMATO.fecha || c.formato?.includes('hh:mm'));
+  const filasExcel = deFecha.length === 0 ? filas : filas.map((fila) => {
+    const copia = { ...fila };
+    for (const c of deFecha) {
+      const v = copia[c.clave];
+      if (typeof v !== 'string' || !v) continue;
+      if (SOLO_FECHA.test(v)) copia[c.clave] = new Date(`${v}T00:00:00Z`);
+      else if (c.formato?.includes('hh:mm') && !Number.isNaN(Date.parse(v))) {
+        copia[c.clave] = new Date(Date.parse(v) - 5 * 3600 * 1000); // Lima, UTC−5 todo el año
+      }
+    }
+    return copia;
+  });
+
   const buffer = await generarReporte({
     titulo,
     subtitulo: def.subtitulo,
     hoja: titulo.slice(0, 30),
     columnas,
-    filas,
+    filas: filasExcel,
     filtros: filtrosUsados,
     usuario: usuario.nombre,
     totalizar,
