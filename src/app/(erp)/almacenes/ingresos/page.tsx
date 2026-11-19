@@ -12,7 +12,7 @@ import { crearClienteServidor, obtenerUsuarioActual } from '@/lib/supabase/servi
 import { CabeceraPagina, Etiqueta } from '@/components/ui/Pagina';
 import { Listado } from '@/components/ui/Listado';
 import { Icono } from '@/components/estructura/Icono';
-import { tm, num, fechaHora } from '@/lib/formato';
+import { tm, num, fecha, fechaHora } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { PUEDEN_INGRESAR, PUEDEN_VALIDAR_IMPORTACION } from './tipos';
 
@@ -70,7 +70,11 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
         vista="v_kardex"
         ficha={{ base: '/almacenes/lotes', clave: 'lote_id', titulo: 'Ver el lote que ingresó' }}
         parametros={q as Record<string, string | undefined>}
-        orden="fecha"
+        // Dany (19-11): la lista va por FECHA DE PRODUCCIÓN, como su Excel. La
+        // fecha de registro queda aparte: una carga de muchos pallets (p. ej.
+        // la conciliación con DATA 2025) los registra todos a la misma hora.
+        orden="fecha_produccion"
+        desempate="fecha"
         titulo="Ingresos registrados"
         fijos={[{ columna: 'tipo', valor: 'ingreso' }]}
         filtros={[
@@ -81,16 +85,18 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
           { tipo: 'select', clave: 'origen', etiqueta: 'Origen',
             opciones: [{ valor: 'produccion', texto: 'Producción' }, { valor: 'compras', texto: 'Compras' },
               { valor: 'inventario_inicial', texto: 'Inventario inicial' }] },
-          { tipo: 'fecha', clave: 'desde', etiqueta: 'Desde' },
+          { tipo: 'fecha', clave: 'desde', etiqueta: 'Producción desde' },
+          { tipo: 'fecha', clave: 'hasta', etiqueta: 'Producción hasta' },
         ]}
         filtrosAplicados={[
           { clave: 'buscar', columna: 'codigo_pallet', operador: 'contiene',
             columnas: ['codigo_pallet', 'documento_ref', 'sku_codigo'] },
           { clave: 'origen', columna: 'origen_registro', operador: 'igual' },
-          { clave: 'desde', columna: 'fecha', operador: 'desde' },
+          { clave: 'desde', columna: 'fecha_produccion', operador: 'desde' },
+          { clave: 'hasta', columna: 'fecha_produccion', operador: 'hasta' },
         ]}
         columnas={[
-          { clave: 'fecha', titulo: 'Fecha', numerica: true, render: (f) => fechaHora(f.fecha as string) },
+          { clave: 'fecha_produccion', titulo: 'F. producción', numerica: true, render: (f) => fecha(f.fecha_produccion as string) },
           { clave: 'codigo_pallet', titulo: 'Pallet',
             render: (f) => (
               <Link href={`/trazabilidad?q=${encodeURIComponent(String(f.codigo_pallet))}`} className="enlace-dato">
@@ -124,7 +130,14 @@ export default async function PaginaIngresos(props: PageProps<'/almacenes/ingres
           }] : []),
           { clave: 'motivo', titulo: 'Motivo',
             render: (f) => f.motivo ? <Etiqueta texto={String(f.motivo)} tono="ok" /> : '—' },
-          { clave: 'usuario', titulo: 'Registró' },
+          { clave: 'usuario', titulo: 'Registró',
+            render: (f) => (
+              <>
+                {String(f.usuario ?? '—')}
+                <br />
+                <span style={{ color: 'var(--tinta-3)', fontSize: '.74rem' }}>{fechaHora(f.fecha as string)}</span>
+              </>
+            ) },
         ]}
         vacio={{ titulo: 'Sin ingresos', mensaje: 'No hay ingresos con estos filtros.' }}
       />

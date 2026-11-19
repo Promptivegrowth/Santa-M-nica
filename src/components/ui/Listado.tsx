@@ -45,6 +45,7 @@ export async function Listado({
   parametros,
   orden,
   ascendente = false,
+  desempate,
   porPagina = 40,
   titulo,
   vacio,
@@ -59,6 +60,8 @@ export async function Listado({
   parametros: Record<string, string | string[] | undefined>;
   orden: string;
   ascendente?: boolean;
+  /** Segunda columna de orden, para las filas que empatan en la primera (mismo sentido). */
+  desempate?: string;
   porPagina?: number;
   titulo?: string;
   vacio?: { titulo: string; mensaje: string };
@@ -112,8 +115,9 @@ export async function Listado({
     }
   }
 
+  consulta = consulta.order(orden, { ascending: ascendente });
+  if (desempate) consulta = consulta.order(desempate, { ascending: ascendente });
   const { data: filas, count, error } = await consulta
-    .order(orden, { ascending: ascendente })
     .range((pagina - 1) * porPagina, pagina * porPagina - 1);
 
   if (error) {
