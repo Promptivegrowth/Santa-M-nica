@@ -57,7 +57,7 @@ function Cifras({ s }: { s: Suma }) {
     <>
       <td className="num">{tm(s.fisico)}</td>
       <td className="num">{s.comprometido > 0 ? tm(s.comprometido) : ''}</td>
-      <td className="num" style={{ background: s.disponible > 0 ? 'var(--ok-suave)' : undefined }}>
+      <td className={`num${s.disponible > 0 ? ' disp' : ''}`}>
         <strong>{s.disponible > 0 ? tm(s.disponible) : ''}</strong>
       </td>
     </>
@@ -240,7 +240,7 @@ export default async function PaginaExistenciasPorAlmacen(props: PageProps<'/alm
           <Vacio titulo="Sin stock" mensaje="No hay existencias que coincidan con estos filtros." />
         ) : (
           <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-            <table className="datos" data-tabla="por-almacen">
+            <table className="datos compacta" data-tabla="por-almacen">
               <Cabecera primera="Almacén" />
               <tbody>
                 {porAlmacen.map(([nombre, s]) => {
@@ -266,7 +266,7 @@ export default async function PaginaExistenciasPorAlmacen(props: PageProps<'/alm
           <div className="rejilla-2 mb-espacio" style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 22rem), 1fr))' }}>
             <Panel titulo="Por especie">
               <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-                <table className="datos" data-tabla="por-especie">
+                <table className="datos compacta" data-tabla="por-especie">
                   <Cabecera primera="Especie" />
                   <tbody>
                     {porEspecie.map(([nombre, s]) => (
@@ -283,7 +283,7 @@ export default async function PaginaExistenciasPorAlmacen(props: PageProps<'/alm
 
             <Panel titulo="Detalle por producto">
               <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-                <table className="datos" data-tabla="por-producto">
+                <table className="datos compacta" data-tabla="por-producto">
                   <Cabecera primera="Producto" />
                   <tbody>
                     {porProducto.map(([nombre, s]) => (
@@ -301,20 +301,20 @@ export default async function PaginaExistenciasPorAlmacen(props: PageProps<'/alm
 
           <Panel titulo="Reporte por producto terminado">
             <div className="tabla-envoltorio" style={{ border: 'none', borderRadius: 0 }}>
-              <table className="datos" data-tabla="detalle">
+              <table className="datos compacta" data-tabla="detalle">
                 <thead>
                   <tr>
                     <th>Proceso</th>
                     <th>Especie</th>
                     <th>Producto</th>
                     <th>Corte</th>
-                    <th>Tipo de cong.</th>
+                    <th>Tipo cong.</th>
                     <th>Pres.</th>
-                    <th className="num">Tn en almacén</th>
-                    <th className="num">Comprometido (Tn)</th>
-                    <th className="num">Disponible (Tn)</th>
-                    <th className="num">Observado (Tn)</th>
-                    <th className="num">Tiempo prom. (meses)</th>
+                    <th className="num">Tn almacén</th>
+                    <th className="num" title="Reservado para pedidos + en preparación de despacho">Comprom. (Tn)</th>
+                    <th className="num">Disp. (Tn)</th>
+                    <th className="num" title="Bloqueado por Calidad">Observ. (Tn)</th>
+                    <th className="num" title="Meses en cámara, promediados por peso">Tiempo prom. (meses)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -327,11 +327,13 @@ export default async function PaginaExistenciasPorAlmacen(props: PageProps<'/alm
                       return cambio ? v : '';
                     });
                     return (
-                      <tr key={d.niveles.join('|')}>
-                        {celdas.map((v, n) => <td key={n} style={n < 3 ? { fontWeight: 600 } : undefined}>{v}</td>)}
+                      <tr key={d.niveles.join('|')} className={i > 0 && celdas[2] ? 'nuevo-grupo' : undefined}>
+                        {celdas.map((v, n) => (
+                          <td key={n} className={n >= 4 ? 'corto' : undefined} style={n < 3 ? { fontWeight: 600 } : undefined}>{v}</td>
+                        ))}
                         <td className="num">{tm(d.fisico)}</td>
                         <td className="num">{d.comprometido > 0 ? tm(d.comprometido) : ''}</td>
-                        <td className="num" style={{ background: d.disponible > 0 ? 'var(--ok-suave)' : undefined }}>
+                        <td className={`num${d.disponible > 0 ? ' disp' : ''}`}>
                           {d.disponible > 0 ? tm(d.disponible) : ''}
                         </td>
                         <td className="num">{d.observado > 0 ? tm(d.observado) : ''}</td>
