@@ -17,6 +17,7 @@ import { CabeceraPagina, Panel, Vacio, Etiqueta, Barra } from '@/components/ui/P
 import { Filtros, Paginacion } from '@/components/ui/Filtros';
 import { GraficoBarras } from '@/components/graficos/Graficos';
 import { AccionesLista } from '@/components/ui/Acciones';
+import { Icono } from '@/components/estructura/Icono';
 import { num, fecha, tm, dinero } from '@/lib/formato';
 import { veCostos, type Rol } from '@/lib/navegacion';
 import { traerTodo } from '@/lib/traerTodo';
@@ -246,7 +247,13 @@ export default async function PaginaExistencias(props: PageProps<'/almacenes/exi
       <CabeceraPagina
         titulo="Existencias por lote"
         descripcion="Cada fila es un lote concreto en una bodega concreta. Es la vista que se usa para ir a buscar el producto físicamente."
-      />
+      >
+        {/* Dany (21/11): «¿se puede revisar por almacén?», como su Power BI. */}
+        <Link href="/almacenes/existencias/por-almacen" className="btn btn-secundario" data-accion="por-almacen">
+          <Icono nombre="existencias" tamano={15} />
+          Ver por almacén
+        </Link>
+      </CabeceraPagina>
 
       <Panel
         titulo="Cómo se reparte el stock"
