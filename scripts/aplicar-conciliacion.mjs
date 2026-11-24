@@ -42,6 +42,8 @@ const [ARCHIVO, SALIDA] = args;
 if (!ARCHIVO || !SALIDA) { console.error('Uso: aplicar-conciliacion.mjs "<excel>.xlsx" salida.sql'); process.exit(1); }
 
 /** El usuario con que se registra (Gerencia: los ajustes los autoriza Gerencia u Operaciones). */
+/** Fecha de la conciliación, para el detalle de cada movimiento. */
+const HOY = new Date().toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', timeZone: 'America/Lima' });
 const USUARIO = process.env.USUARIO_CONCILIACION ?? 'fb294491-1861-46f0-935f-c3268c452262';
 const MOTIVO_ERROR = 187;      // Corrección de error de registro
 const MOTIVO_UBICACION = 186;  // Discrepancia de traslado
@@ -171,7 +173,7 @@ for (const k of claves) {
       ops.push({ t: recibeProduccion.has(a) ? 'ingreso' : 'alta_externa', pallet: e.pallet, sp, almacen: a, camara: camaraDe.get(a) ?? null,
         bultos, kg: +x.kg.toFixed(3), fecha: e.info.fecha, turno: /NOCHE/i.test(e.info.turno) ? 'noche' : 'dia', linea,
         proceso: /MAQUILA/i.test(e.info.motivo) ? 'maquila' : 'propia',
-        detalle: `Conciliación 13/11 con el Excel de Operaciones (${path.basename(ARCHIVO)}): pallet en cámara que no se había registrado en el ERP` +
+        detalle: `Conciliación ${HOY} con el Excel de Operaciones (${path.basename(ARCHIVO)}): pallet en cámara que no se había registrado en el ERP` +
           (e.info.motivo ? ` (MOTIVO INGRESO: ${e.info.motivo})` : '') + '.' });
       tot.nuevos++; tot.kgNuevos += x.kg; tot.n++;
     }
@@ -196,7 +198,7 @@ for (const k of claves) {
       : kgErp === 0 ? 'según el Excel este pallet está en este almacén'
       : `el Excel tiene ${kgObj.toFixed(1)} kg / ${bObj} bultos y el ERP ${kgErp.toFixed(1)} kg / ${bErp} bultos`;
     const motivo = ubicacionDistinta ? MOTIVO_UBICACION : MOTIVO_ERROR;
-    const detalle = `Conciliación 13/11 con el Excel de Operaciones (${path.basename(ARCHIVO)}): ${motivoTexto}.`;
+    const detalle = `Conciliación ${HOY} con el Excel de Operaciones (${path.basename(ARCHIVO)}): ${motivoTexto}.`;
     if (dKg < -0.5 || (Math.abs(dKg) <= 0.5 && bObj < bErp)) {
       //  Se resta de cada lote de ese almacén hasta llegar al objetivo.
       let quitarKg = -dKg, quitarB = bErp - bObj;
@@ -246,12 +248,21 @@ begin
       perform stock_ajustar((o->>'lote')::bigint, (o->>'almacen')::bigint, (o->>'tipo')::tipo_movimiento,
                             (o->>'bultos')::int, (o->>'kg')::numeric, (o->>'motivo')::bigint, o->>'detalle', true);
     else
+      --  Un pallet nuevo repartido en dos almacenes (24/11: AL J23 26 32993) es UN lote: la segunda parte suma a él.
+      select id, costo_unitario into v_lote, v_costo from lotes
+       where codigo_pallet = o->>'pallet' and sku_presentacion_id = (o->>'sp')::bigint and fecha_produccion = (o->>'fecha')::date
+         and campania = extract(year from (o->>'fecha')::date)::int;
+      if found then
+        update lotes set bultos_iniciales = bultos_iniciales + (o->>'bultos')::int,
+                         peso_neto_inicial_kg = peso_neto_inicial_kg + (o->>'kg')::numeric where id = v_lote;
+      else
       insert into lotes (codigo_pallet, campania, sku_presentacion_id, fecha_produccion, turno, proceso, planta_id,
                          linea_procesadora_id, bultos_iniciales, peso_neto_inicial_kg, costo_unitario, observaciones, creado_por)
       values (o->>'pallet', extract(year from (o->>'fecha')::date)::int, (o->>'sp')::bigint, (o->>'fecha')::date,
               (o->>'turno')::turno_operativo, (o->>'proceso')::tipo_proceso, 1, nullif(o->>'linea','')::bigint, (o->>'bultos')::int, (o->>'kg')::numeric, 0,
               o->>'detalle', '${USUARIO}')
       returning id, costo_unitario into v_lote, v_costo;
+      end if;
       if o->>'t' = 'ingreso' then
         insert into movimientos (tipo, lote_id, almacen_id, camara_id, bultos, peso_neto_kg, costo_unitario, documento_tipo,
                                  documento_ref, usuario_id, observaciones, origen_ingreso)
