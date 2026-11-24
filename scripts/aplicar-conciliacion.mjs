@@ -90,6 +90,10 @@ hoja.eachRow((f, n) => {
     const s = mov === 'INGRESO' ? 1 : -1;
     x.kg += s * kg; x.bultos += s * numero(f.getCell(C.total));
     e.almacenes.set(a, x);
+    //  Dany 24/11: las partes de producción con que se arma un pallet (no los traslados).
+    if (mov === 'INGRESO' && !/TRASLADO/.test(sinTildes(texto(f.getCell(C.motivoIngreso))))) {
+      (e.partes ??= []).push({ a, fecha: texto(f.getCell(C.fechaProduccion)), fila: n });
+    }
     if (mov === 'INGRESO' && !e.info) {
       e.info = { fecha: texto(f.getCell(C.fechaProduccion)), turno: texto(f.getCell(C.turno)), linea: texto(f.getCell(C.linea)),
         presentacion: texto(f.getCell(C.presentacion)), congelamiento: texto(f.getCell(C.congelamiento)), idPres: texto(f.getCell(C.idPres)),
@@ -135,6 +139,36 @@ const presentaciones = await ejecutarSQL(`
 const lineas = await ejecutarSQL('select id, nombre from lineas_procesadoras');
 const recibeProduccion = new Set((await ejecutarSQL('select id from almacenes where recibe_produccion and activo')).map((x) => Number(x.id)));
 const camaraDe = new Map((await ejecutarSQL('select id, almacen_id from camaras')).map((x) => [Number(x.almacen_id), Number(x.id)]));
+/* ---------------- Pallets que se arman en más de un día (Dany, 24/11) ----------------
+   «Si el pallet está formado por 48, que sume todo el total, en la última fecha
+   y en la última cámara.» En el Excel cada parte es una fila de INGRESO con su
+   fecha y su cámara; en el ERP el pallet es UNO: el total, en la cámara de la
+   última parte y con la fecha de la última parte (igual que pallet_completar,
+   092). Solo se juntan las partes en cámaras de la planta: una parte en Freeko
+   o Depsa está de verdad en otro sitio. */
+let juntados = 0;
+for (const e of excel.values()) {
+  const partes = (e.partes ?? []).filter((p) => camaraDe.has(p.a));
+  if (!e.info || !(e.partes?.length > 1)) continue;
+  const ultima = [...e.partes].sort((x, y) => x.fecha.localeCompare(y.fecha) || x.fila - y.fila).at(-1);
+  //  Un pallet NUEVO entra con la fecha de la última parte. A los que ya están en
+  //  el ERP no se les cambia la fecha: hay pallets viejos armados con partes de
+  //  meses distintos, y adelantarles la fecha escondería su antigüedad.
+  e.info.fecha = ultima.fecha;
+  const enPlanta = [...e.almacenes.keys()].filter((a) => camaraDe.has(a));
+  const destino = [...partes].sort((x, y) => x.fecha.localeCompare(y.fecha) || x.fila - y.fila).at(-1)?.a;
+  if (!destino || enPlanta.length < 2) continue;
+  const total = e.almacenes.get(destino);
+  for (const a of enPlanta) {
+    if (a === destino) continue;
+    const x = e.almacenes.get(a);
+    total.kg += x.kg; total.bultos += x.bultos;
+    e.almacenes.delete(a);
+  }
+  juntados++;
+}
+if (juntados) console.log(`  pallets armados en partes, juntados en su última cámara: ${juntados}`);
+
 /* Los lotes de los pallets excluidos no entran en el seguro: otra corrección los cambia. */
 const excluidos = [...new Set(existencias.filter((x) => EXCLUIR.has(`${String(x.p).replace(/\s+/g, ' ')}|${x.c}`)).map((x) => Number(x.lote_id)))];
 const FUERA = excluidos.length ? ` and lote_id <> all(array[${excluidos.join(',')}]::bigint[])` : '';

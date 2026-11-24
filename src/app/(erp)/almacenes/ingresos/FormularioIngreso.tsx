@@ -27,7 +27,7 @@ import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icono } from '@/components/estructura/Icono';
 import { accionSegura } from '@/lib/accionSegura';
-import { registrarIngreso, camarasDeAlmacen, costoVigente } from './acciones';
+import { registrarIngreso, completarPallet, camarasDeAlmacen, costoVigente, type PalletPorCompletar } from './acciones';
 import { bodegaAdmite, NOMBRE_ORIGEN, type BodegaIngreso, type DatosIngreso } from './tipos';
 
 export type OpcionProducto = {
@@ -39,6 +39,7 @@ export type OpcionProducto = {
 
 const cifra = (n: number, d = 1) =>
   n.toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d });
+const dma = (iso: string) => iso.split('-').reverse().join('/');
 
 export function FormularioIngreso({
   productos,
@@ -84,7 +85,7 @@ export function FormularioIngreso({
 
   const [camaras, setCamaras] = useState<{ id: number; nombre: string }[]>([]);
   const [camarasDe, setCamarasDe] = useState(0);
-  const [problema, setProblema] = useState<{ mensaje: string; campo?: string } | null>(null);
+  const [problema, setProblema] = useState<{ mensaje: string; campo?: string; completar?: PalletPorCompletar } | null>(null);
   const [hechos, setHechos] = useState<string[]>([]);
   /*
    * El costo que regirá para el pallet, si el producto lo tiene cargado.
@@ -166,12 +167,24 @@ export function FormularioIngreso({
 
   function enviar(evento: React.FormEvent) {
     evento.preventDefault();
+    guardar(() => registrarIngreso(d));
+  }
+
+  /** Dany (24/11): el pallet ya entró como saldo y estos bultos lo completan. */
+  function completar(loteId: number) {
+    guardar(() => completarPallet(d, loteId));
+  }
+
+  function guardar(accion: () => ReturnType<typeof registrarIngreso>) {
     setProblema(null);
 
     iniciar(async () => {
       //  Un corte de red vuelve como un resultado más: lo escrito no se pierde.
-      const r = await accionSegura(() => registrarIngreso(d));
-      if (!r.ok) { setProblema({ mensaje: r.mensaje, campo: 'campo' in r ? r.campo : undefined }); return; }
+      const r = await accionSegura(accion);
+      if (!r.ok) {
+        setProblema({ mensaje: r.mensaje, campo: 'campo' in r ? r.campo : undefined, completar: 'completar' in r ? r.completar : undefined });
+        return;
+      }
 
       /*
        * Se queda en la misma pantalla, con lo que se repite ya puesto. Solo se
@@ -194,12 +207,40 @@ export function FormularioIngreso({
 
   return (
     <form className="form-maestro" onSubmit={enviar}>
-      {problema && (
+      {problema && !problema.completar && (
         <div className="ficha-aviso ficha-aviso-critico" role="alert">
           <Icono nombre="alerta" tamano={17} />
           <span>{problema.mensaje}</span>
         </div>
       )}
+
+      {/* ---- Dany (24/11): el pallet ya entró como saldo; estos bultos lo completan ---- */}
+      {problema?.completar && (() => {
+        const c = problema.completar;
+        const bodega = almacenes.find((a) => a.id === d.almacen_id)?.nombre ?? 'la bodega elegida';
+        const fechaFinal = d.fecha_produccion > c.fecha_produccion ? d.fecha_produccion : c.fecha_produccion;
+        return (
+          <div className="ficha-aviso" role="alert" data-completar="si">
+            <Icono nombre="ingresos" tamano={17} />
+            <div>
+              <strong>El pallet {c.codigo} ya está en cámara como saldo</strong>
+              <p style={{ margin: '.3rem 0' }}>
+                Hoy tiene {c.bultos} bultos · {cifra(c.kg)} kg ({c.donde.join(', ')}), producción del {dma(c.fecha_produccion)}.
+                Si estos {d.bultos || 0} bultos lo completan, el pallet queda con <b>{c.bultos + (d.bultos || 0)} bultos ·{' '}
+                {cifra(c.kg + (d.peso_neto_kg || 0))} kg, todo en {bodega}</b>, con fecha de producción <b>{dma(fechaFinal)}</b> (la última).
+              </p>
+              <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-primario" disabled={guardando} onClick={() => completar(c.lote_id)}>
+                  {guardando ? 'Completando…' : 'Completar pallet'}
+                </button>
+                <button type="button" className="btn" disabled={guardando} onClick={() => setProblema(null)}>
+                  No, corregir el código
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ---------------- Origen (observaciones de octubre, punto 11) ---------------- */}
       <fieldset className="form-bloque" data-bloque="origen-ingreso">
@@ -239,7 +280,7 @@ export function FormularioIngreso({
             <input className="campo mono" value={d.codigo_pallet} data-error={error('codigo_pallet')}
                    onChange={(e) => campo('codigo_pallet', e.target.value)}
                    maxLength={30} required autoFocus />
-            <small>Es su matrícula. No se puede repetir.</small>
+            <small>Es su matrícula. Si el pallet ya entró como saldo, aquí mismo se completa.</small>
           </label>
 
           <label className="form-campo form-campo-ancho">
