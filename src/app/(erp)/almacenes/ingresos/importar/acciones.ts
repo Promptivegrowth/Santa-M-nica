@@ -32,7 +32,7 @@ import { leerPlantilla } from '@/lib/importacionExcel';
 import type { FalloCarga } from '@/lib/falloCarga';
 import { rolNoPuede, traducirErrorBase } from '@/lib/mensajesBase';
 import { PUEDEN_INGRESAR, PUEDEN_VALIDAR_IMPORTACION } from '../tipos';
-import { crearIngreso, crearProgramado, refrescarIngresos, normalizarCodigo } from '../registro';
+import { crearIngreso, crearProgramado, completarIngreso, palletACompletar, refrescarIngresos, normalizarCodigo } from '../registro';
 import { COLUMNAS_INGRESO, HOJA_INGRESOS, type EstadoFila } from './columnas';
 import {
   cargarCatalogoIngresos, contextoDeFilas, interpretarFila, revisarConjunto, revisarFila, revisarImportacion,
@@ -297,7 +297,12 @@ export async function validarYRegistrar(importacionId: number): Promise<Resultad
       if (r.ok) { programadas++; cambio = { estado: 'programada', resultado: r.mensaje, ingreso_programado_id: r.id }; }
       else { fallidas++; cambio = { estado: 'fallida', resultado: r.mensaje }; }
     } else {
-      const r = await crearIngreso(supabase, usuarioId, interp.datos, { documento: `importado de «${imp.archivo}»` });
+      //  092 · Si el pallet ya está en cámara, esta fila lo completa: no nace otro.
+      const completa = palletACompletar(interp.datos, ctx);
+      const documento = `importado de «${imp.archivo}»`;
+      const r = completa
+        ? await completarIngreso(supabase, completa, interp.datos, { documento })
+        : await crearIngreso(supabase, usuarioId, interp.datos, { documento });
       if (r.ok) { registradas++; cambio = { estado: 'registrada', resultado: r.mensaje, lote_id: r.id }; }
       else { fallidas++; cambio = { estado: 'fallida', resultado: r.mensaje }; }
     }

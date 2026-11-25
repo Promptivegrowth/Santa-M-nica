@@ -20,8 +20,10 @@
 import { normalizarTexto, leerNumero, leerFecha } from '@/lib/importacionExcel';
 import { hoyEnLima } from '@/lib/fechas';
 import type { DatosIngreso } from '../tipos';
-import { cargarContexto, revisarIngreso, normalizarCodigo, type ClienteBase, type ContextoIngreso } from '../registro';
-import { COLUMNA_DE_CAMPO, MOTIVOS_INGRESO, type ErrorColumna, type EstadoFila } from './columnas';
+import {
+  cargarContexto, revisarIngreso, normalizarCodigo, palletACompletar, type ClienteBase, type ContextoIngreso, type PalletEnCamara,
+} from '../registro';
+import { AVISO_COMPLETA, COLUMNA_DE_CAMPO, MOTIVOS_INGRESO, type ErrorColumna, type EstadoFila } from './columnas';
 
 /* ==========================================================================
    EL CATÁLOGO: lo que existe, con el texto con que se muestra en la plantilla
@@ -533,11 +535,32 @@ export function interpretarFila(v: Record<string, string>, cat: CatalogoIngresos
 export function revisarFila(f: FilaInterpretada, ctx: ContextoIngreso): ErrorColumna[] {
   const errores = [...f.errores];
   const ya = new Set(errores.map((e) => e.columna));
+  //  Dany (24/11): si el pallet ya está en cámara con el mismo producto, esta
+  //  fila es la parte que lo completa (092), no un pallet repetido.
+  const completa = palletACompletar(f.datos, ctx);
+  if (completa && f.fechaLlegada) {
+    errores.push({
+      columna: 'llega_el',
+      mensaje: `El pallet ${completa.codigo} ya está en cámara: lo que lo completa no se programa. Deje vacía LLEGA EL.`,
+    });
+    ya.add('llega_el');
+  }
   for (const p of revisarIngreso(f.datos, ctx, { fechaLlegada: f.fechaLlegada })) {
+    if (completa && p.campo === 'codigo_pallet' && ctx.existentes.has(normalizarCodigo(f.datos.codigo_pallet))) continue;
     const columna = COLUMNA_DE_CAMPO[p.campo] ?? p.campo;
     if (!ya.has(columna)) { errores.push({ columna, mensaje: p.mensaje }); ya.add(columna); }
   }
   return errores;
+}
+
+/** Lo que se le dice a quien revisa una fila que completa un pallet. */
+export function avisoCompleta(p: PalletEnCamara, d: DatosIngreso): string {
+  const escrito = normalizarCodigo(d.codigo_pallet);
+  const kg = (n: number) => n.toLocaleString('es-PE', { maximumFractionDigits: 1 });
+  return `${AVISO_COMPLETA} ${p.codigo}` +
+    (escrito !== p.codigo ? ` (así figura en el sistema; aquí viene como ${escrito}, mismo número y mismo producto)` : '') +
+    `, que ya tiene ${p.bultos} bultos y ${kg(p.kg)} kg en ${p.donde}. Al registrar se suman estos ${d.bultos} bultos: ` +
+    `queda un solo pallet de ${p.bultos + d.bultos} bultos y ${kg(p.kg + d.peso_neto_kg)} kg en la cámara de esta fila, con la última fecha de producción.`;
 }
 
 /* ==========================================================================
@@ -583,8 +606,12 @@ export function revisarConjunto(
       errores.unshift({ columna: 'codigo_pallet', mensaje: `El pallet ${c} ya aparece en la fila ${pri} de este archivo: cada pallet va una sola vez.` });
     }
     const estado: EstadoFila = errores.length ? 'con_error' : 'valida';
-    if (estado !== f.estado || JSON.stringify(errores) !== JSON.stringify(f.errores) || forzar.has(f.id)) {
-      cambiadas.push({ ...f, errores, estado, resultado: forzar.has(f.id) ? null : f.resultado });
+    //  092 · Una fila lista que completa un pallet lo dice antes de registrar.
+    const completa = estado === 'valida' ? palletACompletar(interp.datos, ctx) : null;
+    const previo = forzar.has(f.id) || f.resultado?.startsWith(AVISO_COMPLETA) ? null : f.resultado;
+    const resultado = completa ? avisoCompleta(completa, interp.datos) : previo;
+    if (estado !== f.estado || JSON.stringify(errores) !== JSON.stringify(f.errores) || resultado !== f.resultado || forzar.has(f.id)) {
+      cambiadas.push({ ...f, errores, estado, resultado });
     }
   }
   return cambiadas;

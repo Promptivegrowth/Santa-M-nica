@@ -133,6 +133,9 @@ export const TEXTO_ESTADO_FILA: Record<EstadoFila, string> = {
   fallida: 'No se registró',
 };
 
+/** Así empieza el aviso de una fila lista que completa un pallet que ya está en cámara (092). */
+export const AVISO_COMPLETA = 'Completa el pallet';
+
 export const TEXTO_ESTADO_IMPORTACION: Record<string, string> = {
   revision: 'En revisión',
   lista: 'Lista para validar',

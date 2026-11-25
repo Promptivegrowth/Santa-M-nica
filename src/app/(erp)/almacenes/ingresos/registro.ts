@@ -56,10 +56,50 @@ export type ContextoIngreso = {
   existentes: Set<string>;
   /** Códigos que esperan como ingreso programado, con su fecha de llegada. */
   programados: Map<string, { id: number; fecha_llegada: string }>;
+  /** Pallets con stock que una fila puede completar (092): por su código y por su número sin prefijo. */
+  enCamara: PalletEnCamara[];
+};
+
+/** Un pallet que ya está en cámara (con stock) y al que se le pueden sumar bultos. */
+export type PalletEnCamara = {
+  lote_id: number; codigo: string; sku_presentacion_id: number; fecha_produccion: string;
+  bultos: number; kg: number; donde: string;
 };
 
 /** El código de pallet como se guarda: sin espacios en los extremos y en mayúsculas. */
 export const normalizarCodigo = (c: string) => String(c ?? '').trim().toUpperCase();
+
+/**
+ * «FL J23 26 32945» → «J23 26 32945»: el pallet sin su prefijo de producto.
+ * En su base el mismo pallet aparece a veces con otro prefijo (NU/FL) en una
+ * de sus partes; el número, el día y el año no cambian. null si el código no
+ * tiene esa forma (menos de tres partes).
+ */
+export const palletSinPrefijo = (c: string) => {
+  const t = normalizarCodigo(c).split(/\s+/);
+  return t.length >= 3 ? t.slice(1).join(' ') : null;
+};
+
+/**
+ * Dany (24/11): un pallet se arma en más de un día. Si la fila trae un pallet
+ * que YA está en cámara con el mismo producto, sus bultos lo completan: no es
+ * un pallet repetido. Primero por el código exacto; si no, por el número sin
+ * prefijo, cuando hay uno solo del mismo producto (así una parte escrita «FL»
+ * no crea un segundo pallet al lado del «NU»). null si no hay que completar.
+ */
+export function palletACompletar(d: DatosIngreso, ctx: ContextoIngreso): PalletEnCamara | null {
+  const codigo = normalizarCodigo(d.codigo_pallet);
+  const sku = Number(d.sku_presentacion_id);
+  if (!codigo || !sku) return null;
+  const exacto = ctx.enCamara.filter((p) => p.codigo === codigo);
+  if (exacto.length) return exacto.find((p) => p.sku_presentacion_id === sku) ?? null;
+  //  Un código que ya existe (aunque sin stock) no se cambia por otro.
+  if (ctx.existentes.has(codigo)) return null;
+  const resto = palletSinPrefijo(codigo);
+  if (!resto) return null;
+  const mismo = ctx.enCamara.filter((p) => p.sku_presentacion_id === sku && palletSinPrefijo(p.codigo) === resto);
+  return mismo.length === 1 ? mismo[0] : null;
+}
 
 const fechaDMA = (iso: string) => iso.split('-').reverse().join('/');
 
@@ -80,7 +120,10 @@ export async function cargarContexto(
   const unicos = [...new Set(codigos.map(normalizarCodigo).filter(Boolean))];
   const ids = [...new Set(skuIds.filter((x) => Number(x) > 0))];
 
-  const [{ data: bodegas }, { data: camaras }, productos, existentes, programados] = await Promise.all([
+  const restos = [...new Set(unicos.map(palletSinPrefijo).filter((x): x is string => Boolean(x)))];
+  const enRegex = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
+
+  const [{ data: bodegas }, { data: camaras }, productos, existentes, programados, enCamara] = await Promise.all([
     supabase.from('almacenes').select('id, nombre, activo, recibe_produccion, recibe_compras'),
     supabase.from('camaras').select('id, almacen_id, nombre').eq('activo', true),
     (async () => {
@@ -113,6 +156,41 @@ export async function cargarContexto(
       }
       return mapa;
     })(),
+    (async () => {
+      //  Los lotes con ese código, o con ese número y otro prefijo, y su stock.
+      const lotes = new Map<number, { codigo: string; sku: number; fecha: string }>();
+      const guardar = (data: Record<string, unknown>[] | null) => {
+        for (const l of data ?? []) {
+          lotes.set(Number(l.id), { codigo: normalizarCodigo(String(l.codigo_pallet)), sku: Number(l.sku_presentacion_id), fecha: String(l.fecha_produccion) });
+        }
+      };
+      for (const t of trozos(unicos)) {
+        const { data } = await supabase.from('lotes').select('id, codigo_pallet, sku_presentacion_id, fecha_produccion').in('codigo_pallet', t);
+        guardar(data);
+      }
+      for (const t of trozos(restos, 60)) {
+        const { data } = await supabase.from('lotes').select('id, codigo_pallet, sku_presentacion_id, fecha_produccion')
+          .filter('codigo_pallet', 'match', `^\\S+\\s+(${t.map(enRegex).join('|')})$`);
+        guardar(data);
+      }
+      const porLote = new Map<number, PalletEnCamara>();
+      for (const t of trozos([...lotes.keys()])) {
+        const { data } = await supabase.from('existencias').select('lote_id, bultos, peso_neto_kg, almacenes(nombre)').in('lote_id', t).gt('bultos', 0);
+        for (const e of data ?? []) {
+          const id = Number(e.lote_id);
+          const l = lotes.get(id)!;
+          const a = Array.isArray(e.almacenes) ? e.almacenes[0] : e.almacenes;
+          const p = porLote.get(id) ?? {
+            lote_id: id, codigo: l.codigo, sku_presentacion_id: l.sku, fecha_produccion: l.fecha, bultos: 0, kg: 0, donde: '',
+          };
+          p.bultos += Number(e.bultos);
+          p.kg += Number(e.peso_neto_kg);
+          p.donde = [p.donde, (a as { nombre?: string } | null)?.nombre ?? '?'].filter(Boolean).join(', ');
+          porLote.set(id, p);
+        }
+      }
+      return [...porLote.values()];
+    })(),
   ]);
 
   return {
@@ -125,6 +203,7 @@ export async function cargarContexto(
     productos,
     existentes,
     programados,
+    enCamara,
   };
 }
 
@@ -409,5 +488,49 @@ export async function crearProgramado(
     ok: true,
     id: Number(data.id),
     mensaje: `Pallet ${codigo} programado para llegar el ${fechaDMA(fechaLlegada)}. No mueve stock hasta confirmar su llegada.`,
+  };
+}
+
+/* ==========================================================================
+   COMPLETAR UN PALLET QUE YA ESTÁ EN CÁMARA (092)
+   --------------------------------------------------------------------------
+   Para la importación: la fila suma sus bultos al MISMO pallet, el saldo que
+   estaba en otra cámara de la planta pasa a la cámara de la fila y el pallet
+   toma la última fecha de producción. Lo hace la base en una sola operación.
+   Se llama DESPUÉS de revisar la fila y de palletACompletar().
+   ========================================================================== */
+export async function completarIngreso(
+  supabase: ClienteBase,
+  pallet: PalletEnCamara,
+  d: DatosIngreso,
+  extra: { documento?: string } = {}
+): Promise<ResultadoIngreso> {
+  const escrito = normalizarCodigo(d.codigo_pallet);
+  const detalle = [
+    escrito !== pallet.codigo ? `en el Excel figura como ${escrito}` : '',
+    d.observaciones?.trim(),
+    extra.documento,
+  ].filter(Boolean).join(' · ');
+  const { data, error } = await supabase.rpc('pallet_completar', {
+    p_lote_id: pallet.lote_id,
+    p_almacen_id: d.almacen_id,
+    p_camara_id: d.camara_id,
+    p_bultos: d.bultos,
+    p_peso_kg: d.peso_neto_kg,
+    p_fecha: d.fecha_produccion,
+    p_origen: d.origen_ingreso || 'produccion',
+    p_detalle: detalle || null,
+  });
+  if (error || !data) {
+    return { ok: false, mensaje: traducirErrorBase(error, { que: 'completar el pallet', quien: PUEDEN_INGRESAR }) };
+  }
+
+  const r = data as { documento: string; pallet: string; almacen: string; bultos_total: number; kg_total: number; fecha: string; aparte: string[] };
+  const kg = Number(r.kg_total).toLocaleString('es-PE', { maximumFractionDigits: 1 });
+  return {
+    ok: true, id: pallet.lote_id, codigo: r.pallet,
+    mensaje: `${r.documento}: pallet ${r.pallet} completado con ${d.bultos} bultos. Queda entero en ${r.almacen}: ` +
+      `${r.bultos_total} bultos, ${kg} kg, fecha de producción ${fechaDMA(r.fecha)}.` +
+      (r.aparte?.length ? ` Sigue aparte (otra bodega): ${r.aparte.join('; ')}.` : ''),
   };
 }

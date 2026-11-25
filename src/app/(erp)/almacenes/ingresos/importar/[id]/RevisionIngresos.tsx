@@ -25,7 +25,7 @@ import { Icono } from '@/components/estructura/Icono';
 import { accionSegura } from '@/lib/accionSegura';
 import { ResumenCarga } from '@/components/ui/ResumenCarga';
 import {
-  COLUMNAS_INGRESO, COLUMNAS_VISIBLES, MOTIVOS_INGRESO, TITULO_COLUMNA, TEXTO_ESTADO_FILA, TEXTO_ESTADO_IMPORTACION,
+  AVISO_COMPLETA, COLUMNAS_INGRESO, COLUMNAS_VISIBLES, MOTIVOS_INGRESO, TITULO_COLUMNA, TEXTO_ESTADO_FILA, TEXTO_ESTADO_IMPORTACION,
   type ErrorColumna, type EstadoFila,
 } from '../columnas';
 import { corregirFilaIngreso, descartarFilaIngreso, dejarListaParaValidar, validarYRegistrar } from '../acciones';
@@ -248,7 +248,9 @@ export function RevisionIngresos({
               <tbody key={f.id} data-fila={f.fila} data-estado={f.estado}>
                 <tr>
                   <td className="num mono">{f.fila}</td>
-                  <td><span className={`pill ${TONO[f.estado]}`}>{f.estado === 'valida' && f.programar ? 'Lista · programada' : TEXTO_ESTADO_FILA[f.estado]}</span></td>
+                  <td><span className={`pill ${TONO[f.estado]}`}>{f.estado === 'valida' && f.programar ? 'Lista · programada'
+                    : f.estado === 'valida' && f.resultado?.startsWith(AVISO_COMPLETA) ? 'Lista · completa pallet'
+                    : TEXTO_ESTADO_FILA[f.estado]}</span></td>
                   <td className="mono" style={{ whiteSpace: 'nowrap' }}>{f.datos.codigo_pallet || '—'}</td>
                   <td style={{ fontSize: '.76rem' }}>
                     {f.datos.producto || (f.datos.codigo ? `CODIGO ${f.datos.codigo}` : '—')}

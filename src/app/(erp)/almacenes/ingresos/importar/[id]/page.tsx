@@ -20,7 +20,7 @@ import { fechaHora } from '@/lib/formato';
 import { hoyEnLima } from '@/lib/fechas';
 import { leerFecha } from '@/lib/importacionExcel';
 import { PUEDEN_INGRESAR, PUEDEN_VALIDAR_IMPORTACION } from '../../tipos';
-import { cargarCatalogoIngresos, nombreAlmacen } from '../revision';
+import { cargarCatalogoIngresos, nombreAlmacen, revisarImportacion } from '../revision';
 import type { ErrorColumna, EstadoFila } from '../columnas';
 import { RevisionIngresos, type FilaRevision } from './RevisionIngresos';
 
@@ -35,6 +35,11 @@ export default async function PaginaRevisionIngresos(props: PageProps<'/almacene
   if (!(PUEDEN_INGRESAR as readonly string[]).includes(rol)) redirect('/almacenes/ingresos');
 
   const supabase = await crearClienteServidor();
+  /* Lo que estaba mal puede haber dejado de estarlo (o al revés): el stock
+     cambia, y una regla nueva —completar un pallet que ya está en cámara,
+     092— vale también para lo que se subió antes. Se revisa al abrir. */
+  const { data: tipo } = await supabase.from('importaciones_excel').select('tipo').eq('id', Number(id)).maybeSingle();
+  if (tipo?.tipo === 'ingresos') await revisarImportacion(supabase, Number(id));
   const [{ data: imp }, { data: filas }, cat] = await Promise.all([
     supabase
       .from('importaciones_excel')
