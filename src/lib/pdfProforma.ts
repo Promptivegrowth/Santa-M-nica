@@ -54,6 +54,7 @@ import { join } from 'node:path';
 import type { Documento, LineaDocumento } from './documentos';
 import { limpiarDocumento, cifra } from './textoPdf';
 import { pesoCorto } from './productoDocumento';
+import { textoPesosSaco } from './sacosAlternativos';
 
 const MARGEN = 40;
 const ANCHO_A4 = 595.28;
@@ -346,13 +347,13 @@ function cuerpo(doc: Lienzo, d: Documento, yInicial: number): number {
       y = Math.max(yFin, yFila + 9) + 1;
     }
 
-    /* ---- El resumen del empaque del grupo: «*BAGS OF 30 KG AND/OR 20 KG» ---- */
+    /* ---- El resumen del empaque del grupo: «*BAGS OF 30 KG AND/OR 20 KG»,
+            con los sacos alternativos de cada línea: «*BAGS OF 20 KG/28 KG» (093) ---- */
     asegurar(11);
-    const pesos = [...new Set(lineas.map((l) => l.pesoBultoKg).filter((k) => k > 0))]
-      .sort((a, b) => b - a).map((k) => `${pesoCorto(k)} KG`);
-    if (pesos.length) {
+    const pesos = textoPesosSaco(lineas.map((l) => ({ kg: l.pesoBultoKg, alternativos: l.sacosAlternativosKg })));
+    if (pesos) {
       doc.fillColor(NEGRO).font('Helvetica-Bold').fontSize(7)
-        .text(`*BAGS OF ${pesos.join(' AND/OR ')}`, xDesc + 4, y, { width: anchoTexto });
+        .text(`*BAGS OF ${pesos}`, xDesc + 4, y, { width: anchoTexto });
       y = doc.y;
     }
   }

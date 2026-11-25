@@ -38,6 +38,7 @@ import {
 import { resolverFirmante } from '@/lib/firmanteDocumento';
 //  085 · Los datos del cliente fijados en la cotización (y heredados por el pedido).
 import { clienteDelDocumento } from '@/lib/datosClienteDocumento';
+import { leerSacosAlternativos } from '@/lib/sacosAlternativos';
 
 export type TipoDocumento = 'cotizacion' | 'proforma' | 'factura' | 'boleta';
 
@@ -67,6 +68,8 @@ export type LineaDocumento = {
   /** Cuántos sacos. Es lo primero que cuenta el almacén del comprador. */
   bultos: number;
   pesoBultoKg: number;
+  /** 093 · Otros pesos de saco que el cliente acepta para esta línea («BAGS OF 20 KG/28 KG»). */
+  sacosAlternativosKg: number[];
   /** Cómo viene partido el saco por dentro. Puede faltar. */
   bloques: number | null;
   pesoBloqueKg: number | null;
@@ -383,7 +386,7 @@ export const CAMPOS_PRODUCTO =
  * donde se dibuja sería repetirlo tres veces y equivocarse en una.
  */
 function construirLinea(
-  fila: { cantidad_tm: unknown; precio_tm: unknown; descuento_pct?: unknown; sku_presentaciones?: unknown },
+  fila: { cantidad_tm: unknown; precio_tm: unknown; descuento_pct?: unknown; sku_presentaciones?: unknown; sacos_alternativos_kg?: unknown },
   n: number
 ): LineaDocumento {
   const sp = uno<Record<string, unknown>>(fila.sku_presentaciones);
@@ -430,6 +433,7 @@ function construirLinea(
     precioKg: Math.round((precioTm / 1000) * (1 - descuentoPct / 100) * 10000) / 10000,
     bultos,
     pesoBultoKg,
+    sacosAlternativosKg: leerSacosAlternativos(fila.sacos_alternativos_kg),
     bloques: pres?.bloques_por_bulto == null ? null : Number(pres.bloques_por_bulto),
     pesoBloqueKg: pres?.peso_bloque_kg == null ? null : Number(pres.peso_bloque_kg),
     talla: tallaImpresa(sku?.talla as string, sku?.corte as string),
@@ -752,7 +756,7 @@ async function cargarProforma(id: number): Promise<Documento> {
       .single(),
     supabase
       .from('pedido_lineas')
-      .select(`cantidad_tm, precio_tm, descuento_pct, orden, ${CAMPOS_PRODUCTO}`)
+      .select(`cantidad_tm, precio_tm, descuento_pct, orden, sacos_alternativos_kg, ${CAMPOS_PRODUCTO}`)
       .eq('pedido_id', id)
       .order('orden'),
     supabase.from('parametros').select('clave, valor').eq('clave', 'igv_porcentaje'),

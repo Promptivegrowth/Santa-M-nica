@@ -38,6 +38,8 @@ import { puedeFijarRestriccionPeso, puedeApartarStock, nombreRol, listaDeRoles }
 import { PUEDEN_FACTURAR, motivoNoFacturarCiclo } from '@/lib/permisosFinanzas';
 import { DocumentosApagados, puedeDescargarDocumentos } from '../../DocumentosApagados';
 import { RestriccionPeso } from './RestriccionPeso';
+import { SacosAlternativos } from './SacosAlternativos';
+import { leerSacosAlternativos } from '@/lib/sacosAlternativos';
 import { uno, campo } from '@/lib/relaciones';
 import { BotonFacturar } from './Facturar';
 import { CicloPedido } from './CicloPedido';
@@ -284,7 +286,7 @@ async function CuerpoPedido({
   ] = await Promise.all([
     supabase
       .from('pedido_lineas')
-      .select('id, cantidad_tm, precio_tm, precio_lista_tm, descuento_pct, costo_estimado_tm, orden, sku_presentaciones(id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg))')
+      .select('id, cantidad_tm, precio_tm, precio_lista_tm, descuento_pct, costo_estimado_tm, orden, sacos_alternativos_kg, sku_presentaciones(id, sku_id, skus(codigo, corte, especies(nombre), formatos(nombre)), presentaciones(descripcion, peso_bulto_kg, congelamiento))')
       .eq('pedido_id', pedidoId).order('orden'),
     supabase
       .from('reservas')
@@ -336,6 +338,26 @@ async function CuerpoPedido({
   const puedeCambiarNumero = puedeVender((usuario?.rol ?? 'consulta') as Rol);
   const comprobanteVigente = [...vigentes]
     .sort((a, b) => String(a.fecha_emision ?? '').localeCompare(String(b.fecha_emision ?? '')))[0]?.numero as string | undefined;
+  /* 093 · Isaac (25/11): los sacos alternativos se ELIGEN entre las otras
+     presentaciones activas del mismo producto y el mismo congelamiento
+     («este, o este, o este»), no se escriben a mano. */
+  const skuIds = [...new Set((lineas ?? []).map((l) => Number(uno(l.sku_presentaciones)?.sku_id)).filter((x) => x > 0))];
+  const { data: presDelSku } = pestana === 'productos' && skuIds.length
+    ? await supabase.from('sku_presentaciones')
+        .select('sku_id, presentaciones(descripcion, peso_bulto_kg, congelamiento)').in('sku_id', skuIds).eq('activo', true)
+    : { data: [] };
+  const opcionesSaco = (spLinea: unknown) => {
+    const sp = uno(spLinea as never) as Record<string, unknown> | undefined;
+    const propia = uno(sp?.presentaciones as never) as Record<string, unknown> | undefined;
+    const vistos = new Set<number>([Number(propia?.peso_bulto_kg ?? 0)]);
+    return (presDelSku ?? [])
+      .filter((x) => Number(x.sku_id) === Number(sp?.sku_id))
+      .map((x) => uno(x.presentaciones as never) as Record<string, unknown> | undefined)
+      .filter((p) => p && p.congelamiento === propia?.congelamiento)
+      .map((p) => ({ kg: Number(p!.peso_bulto_kg), descripcion: String(p!.descripcion) }))
+      .filter((o) => o.kg > 0 && !vistos.has(o.kg) && vistos.add(o.kg))
+      .sort((a, b) => a.kg - b.kg);
+  };
   const { count: contratosGenerados } = pestana === 'general' && puedeCambiarNumero
     ? await supabase.from('contratos').select('id', { count: 'exact', head: true }).eq('pedido_id', pedidoId)
     : { count: 0 };
@@ -655,7 +677,7 @@ async function CuerpoPedido({
             <table className="datos">
               <thead>
                 <tr>
-                  <th>SKU</th><th>Producto</th><th>Presentación</th>
+                  <th>SKU</th><th>Producto</th><th>Presentación</th><th>Sacos alternativos</th>
                   <th className="num">Cantidad</th>
                   {puedeVerCostos && <><th className="num">Precio lista</th><th className="num">Descuento</th><th className="num">Precio</th><th className="num">Venta</th><th className="num">Costo est. US$/TM</th></>}
                 </tr>
@@ -674,6 +696,17 @@ async function CuerpoPedido({
                         <span style={{ color: 'var(--tinta-3)', fontSize: '.74rem' }}>{campo(sku, 'corte')}</span>
                       </td>
                       <td className="mono">{campo(sp?.presentaciones, 'descripcion')}</td>
+                      <td>
+                        {/* 093 · Otros sacos que el cliente acepta: la proforma dirá «BAGS OF 20 KG/28 KG». */}
+                        <SacosAlternativos
+                          pedidoId={pedidoId}
+                          lineaId={Number(l.id)}
+                          sacoKg={Number(uno(sp?.presentaciones)?.peso_bulto_kg ?? 0)}
+                          alternativos={leerSacosAlternativos(l.sacos_alternativos_kg)}
+                          opciones={opcionesSaco(l.sku_presentaciones)}
+                          puede={puedeRestriccion && !['despachado', 'cerrado', 'cancelado'].includes(String(pedido.ciclo))}
+                        />
+                      </td>
                       <td className="num">{num(l.cantidad_tm, 3)} TM</td>
                       {puedeVerCostos && (
                         <>

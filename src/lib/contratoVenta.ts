@@ -33,6 +33,7 @@ import {
   nombreComercial, tallaImpresa, pesoCorto, puertoDestino, llevaCertificadoCaptura,
 } from '@/lib/productoDocumento';
 import { resolverFirmante } from '@/lib/firmanteDocumento';
+import { leerSacosAlternativos, textoPesosSaco } from '@/lib/sacosAlternativos';
 
 type Cliente = Awaited<ReturnType<typeof crearClienteServidor>>;
 
@@ -147,11 +148,11 @@ export function pagoBilingue(forma: FormaPago | null, adelantoPct: number, dias:
   return { en: libre, es: libre };
 }
 
-/** «sacos» → BAGS; el modelo dice «BAGS OF 21 KG AND/OR 20 KG». */
-function empaqueEn(tipo: string, kgs: number[]): string {
+/** «sacos» → BAGS; el modelo dice «BAGS OF 21 KG AND/OR 20 KG»; con alternativos (093), «BAGS OF 20 KG/28 KG». */
+function empaqueEn(tipo: string, sacos: { kg: number; alternativos: number[] }[]): string {
   const unidad = tipo === 'cajas' ? 'BOXES' : tipo === 'block' ? 'BLOCKS' : 'BAGS';
-  const pesos = [...new Set(kgs.filter((k) => k > 0))].sort((a, b) => b - a).map((k) => `${Number(k.toFixed(2))} KG`);
-  return pesos.length ? `${unidad} OF ${pesos.join(' AND/OR ')}` : '';
+  const pesos = textoPesosSaco(sacos);
+  return pesos ? `${unidad} OF ${pesos}` : '';
 }
 
 export type ResultadoArmado = { ok: true; datos: DatosContrato; revision: number } | { ok: false; mensaje: string };
@@ -163,7 +164,7 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
       .select('id, numero_proforma, cotizacion_id, creado_por, certificado_captura, fecha_tentativa_despacho, incoterm, moneda, mes_embarque, fecha_comprometida, tolerancia_pct, puerto_embarque, forma_pago, pago_adelanto_pct, dias_credito, condicion_pago, ciclo, cliente_razon_social, cliente_direccion, cliente_tax_id, cliente_etiqueta_tax_id, cliente_datos_en, clientes(razon_social, direccion, ruc_tax_id, etiqueta_tax_id, pais), destinos(puerto, pais)')
       .eq('id', pedidoId).maybeSingle(),
     supabase.from('pedido_lineas')
-      .select('cantidad_tm, precio_tm, descuento_pct, orden, sku_presentaciones(skus(corte, talla, empaque, formatos(descripcion_en, descripcion_es)), presentaciones(peso_bulto_kg))')
+      .select('cantidad_tm, precio_tm, descuento_pct, orden, sacos_alternativos_kg, sku_presentaciones(skus(corte, talla, empaque, formatos(descripcion_en, descripcion_es)), presentaciones(peso_bulto_kg))')
       .eq('pedido_id', pedidoId).order('orden'),
     supabase.from('parametros').select('clave, valor')
       .in('clave', ['empresa_razon_social', 'empresa_domicilio_fiscal', 'empresa_direccion_planta', 'puerto_embarque',
@@ -195,7 +196,7 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
    */
   let totalKg = 0;
   const items: { en: string; es: string; precios: { precio: number; saco: number }[] }[] = [];
-  const pesos: number[] = [];
+  const pesos: { kg: number; alternativos: number[] }[] = [];
   let tipoEmpaque = 'sacos';
   let todosReproductores = true;
   for (const l of lineas) {
@@ -213,7 +214,7 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
     let item = items.find((x) => x.en === en);
     if (!item) { item = { en, es, precios: [] }; items.push(item); }
     if (!item.precios.some((x) => Math.abs(x.precio - precio) < 0.00005)) item.precios.push({ precio, saco });
-    pesos.push(saco);
+    pesos.push({ kg: saco, alternativos: leerSacosAlternativos(l.sacos_alternativos_kg) });
     tipoEmpaque = String(sku?.empaque ?? tipoEmpaque);
   }
   //  Con un solo ítem no se numera: «(1)» suelto sobra.
@@ -280,7 +281,7 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
       cantidad: `${kg(totalKg)} KG${tol > 0 ? ` (+/- ${Number(tol.toFixed(2))}%)` : ''}`,
       precio,
       //  «BAGS OF 30 KG AND/OR 20 KG FOR SEXUAL TENTACLES», como el modelo, si todo son reproductores.
-      empaque: `${empaqueEn(tipoEmpaque, pesos)}${todosReproductores && pesos.some((k) => k > 0) ? ' FOR SEXUAL TENTACLES' : ''}`,
+      empaque: `${empaqueEn(tipoEmpaque, pesos)}${todosReproductores && pesos.some((p) => p.kg > 0) ? ' FOR SEXUAL TENTACLES' : ''}`,
       //  El mes: el de embarque; si no, el de la fecha tentativa de despacho; si no, el comprometido.
       periodo: periodoBilingue((ped.mes_embarque as string) ?? (ped.fecha_tentativa_despacho as string) ?? (ped.fecha_comprometida as string) ?? null),
       puertoCarga: String(ped.puerto_embarque ?? p.get('puerto_embarque') ?? 'PAITA, PERU').toUpperCase().replace(/,(?=\S)/g, ', '),
