@@ -68,11 +68,13 @@ const AVISO_BLOQUEO = 'Bloquear y desbloquear al cliente lo hacen Gerencia u Ope
  * quien tiene el permiso «Línea de crédito».
  */
 const VACIO: DatosCliente = {
-  codigo: '', razon_social: '', nombre_corto: '', tipo: 'final', pais: 'Perú',
+  codigo: '', razon_social: '', nombre_corto: '', tipo: 'final', pais: '',
   ruc_tax_id: '', contacto: '', email: '', telefono: '', vendedor_id: null,
   moneda: 'USD', linea_credito: null, dias_credito: 30, bloqueado: false, motivo_bloqueo: '',
-  //  Los de la lista BASC (punto 01). Un cliente nuevo nace en Perú: su identificación es el RUC.
-  direccion: '', etiqueta_tax_id: 'RUC', continente: 'America', web: '', condicion: '',
+  //  Los de la lista BASC (punto 01). El país no viene puesto (Isaac, 25/11): un
+  //  cliente chino que quedó «Perú» sin querer salía con proforma nacional e
+  //  IGV. La identificación (RUC, USCI…) se propone al elegirlo.
+  direccion: '', etiqueta_tax_id: '', continente: 'America', web: '', condicion: '',
   forma_pago: null, adelanto_pct: null, forma_pago_habitual: '', referencias_comerciales: '', productos_interes: '',
 };
 
@@ -129,6 +131,8 @@ export function FormularioCliente({
         const actual = previo.etiqueta_tax_id?.trim() ?? '';
         if (propuesta && (!actual || actual === anterior || actual === 'TAX ID')) {
           siguiente.etiqueta_tax_id = propuesta;
+        } else if (!propuesta && (!actual || actual === anterior)) {
+          siguiente.etiqueta_tax_id = String(v).trim() ? 'TAX ID' : '';
         }
       }
       return siguiente;

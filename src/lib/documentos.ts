@@ -233,6 +233,32 @@ function uno<T>(v: unknown): T | undefined {
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
 
+/**
+ * ¿La mercadería sale del país? Lo dice el DESTINO del pedido; el país del
+ * cliente solo si no hay destino. Isaac (25/11): SM26-391, a Shidao (China),
+ * salió con el formato nacional y con IGV porque el cliente chino quedó
+ * grabado como «Perú» (era lo que proponía el formulario de cliente).
+ */
+const esVentaAlExterior = (destinoPais: unknown, clientePais: unknown) => {
+  const destino = String(destinoPais ?? '').trim();
+  return destino ? destino !== 'Perú' : String(clientePais ?? '') !== 'Perú';
+};
+
+/**
+ * Lo que lleva un contenedor reefer de 40' en la práctica: 27 TM netas. En el
+ * Excel de Almacén (24-11) el 90 % de los 757 contenedores despachados va a
+ * 27 000 kg o menos, y 249 llevan más de 1 342 sacos: el límite es el peso,
+ * no los sacos (un saco de 30 kg no ocupa lo mismo que uno de 20).
+ */
+const TM_POR_CONTENEDOR = 27;
+
+/**
+ * Unos kilos de más no piden otro contenedor: hasta un 2 % sobre las 27 TM
+ * por contenedor entra en la tolerancia del contrato (±10 %). SM26-390:
+ * 675.7 TM son 25 FCL, no 26 por 0.7 TM (29 kg por contenedor).
+ */
+const HOLGURA_CONTENEDOR = 1.02;
+
 /** ¿Es un RUC peruano? Once dígitos, ni más ni menos. */
 const esRucPeruano = (id: string | null | undefined) => !!id && /^[0-9]{11}$/.test(id.trim());
 
@@ -655,7 +681,7 @@ async function cargarCotizacion(id: number): Promise<Documento> {
    * IGV que se aplicaría para que el cliente sepa a qué atenerse, salvo en
    * exportación, donde no hay.
    */
-  const esExportacion = String(cliente?.pais ?? '') !== 'Perú';
+  const esExportacion = esVentaAlExterior(uno<Record<string, unknown>>(cot.destinos)?.pais, cliente?.pais);
   const igv = esExportacion ? 0 : redondear(subtotal * (igvPct / 100));
 
   const validez = Number(cot.validez_dias ?? 15);
@@ -743,7 +769,7 @@ async function cargarProforma(id: number): Promise<Documento> {
   const destino = uno<Record<string, unknown>>(ped.destinos);
   const moneda = ped.moneda as 'USD' | 'PEN';
   const igvPct = Number(parametros?.[0]?.valor ?? 18);
-  const esExportacion = String(cliente?.pais ?? '') !== 'Perú';
+  const esExportacion = esVentaAlExterior(destino?.pais, cliente?.pais);
 
   const filas: LineaDocumento[] = (lineas ?? []).map((l, i) => construirLinea(l, i + 1));
 
@@ -768,17 +794,17 @@ async function cargarProforma(id: number): Promise<Documento> {
    *  · mes de embarque → el de la fecha tentativa de despacho o, si no, el de
    *    la fecha comprometida;
    *  · contenedores → los ya armados en packing; si aún no hay, se estiman por
-   *    sacos con la capacidad configurada (filas × sacos por fila). Para
-   *    SM26-623: 5 016 sacos / 1 342 = 4 contenedores, los mismos de la
-   *    proforma del modelo.
+   *    PESO, a 27 TM por contenedor con 2 % de holgura. Para SM26-623:
+   *    108 TM = 4 contenedores, los mismos de la proforma del modelo. Antes
+   *    se estimaban por sacos (filas × sacos por fila = 1 342) y 27 TM en
+   *    sacos de 20 kg (1 350 sacos) salían 02 FCL (Isaac, SM26-393, 25/11).
    */
-  const capacidadSacos = Number(expo.get('contenedor_filas') ?? 0) * Number(expo.get('contenedor_sacos_por_fila') ?? 0);
-  const sacos = filas.reduce((s, l) => s + l.bultos, 0);
+  const tmPedido = filas.reduce((s, l) => s + l.cantidadTm, 0);
   const contenedores = Number(ped.contenedores ?? 0) > 0
     ? Number(ped.contenedores)
     : (armados ?? 0) > 0
       ? Number(armados)
-      : capacidadSacos > 0 && sacos > 0 ? Math.ceil(sacos / capacidadSacos) : 0;
+      : tmPedido > 0 ? Math.ceil(tmPedido / (TM_POR_CONTENEDOR * HOLGURA_CONTENEDOR)) : 0;
   const tolerancia = ped.tolerancia_pct != null ? Number(ped.tolerancia_pct) : Number(expo.get('proforma_tolerancia_pct') ?? 0);
   const mes = (ped.mes_embarque as string) ?? (ped.fecha_tentativa_despacho as string) ?? (ped.fecha_comprometida as string) ?? null;
 
