@@ -69,6 +69,8 @@ export default async function PaginaEditarProducto(
     clasificacion_comercial: (sku.clasificacion_comercial as string) ?? '',
     empaque: (sku.empaque as 'sacos' | 'cajas' | 'block') ?? 'sacos',
     vida_util_meses: (sku.vida_util_meses as number) ?? null,
+    nombre_comercial_en: (sku.nombre_comercial_en as string) ?? '',
+    nombre_comercial_es: (sku.nombre_comercial_es as string) ?? '',
     presentaciones: (enlaces ?? [])
       .filter((e) => e.activo)
       .map((e) => e.presentacion_id as number),

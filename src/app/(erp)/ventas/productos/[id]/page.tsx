@@ -49,7 +49,7 @@ export default async function FichaProducto(props: PageProps<'/ventas/productos/
   const [{ data: u }, usuarioActual] = await Promise.all([
     supabase
       .from('sku_presentaciones')
-      .select('id, activo, skus(id, codigo, corte, clasificacion_comercial, empaque, vida_util_meses, activo, especies(nombre), formatos(nombre)), presentaciones(codigo, descripcion, congelamiento, peso_bulto_kg)')
+      .select('id, activo, skus(id, codigo, corte, clasificacion_comercial, empaque, vida_util_meses, activo, nombre_comercial_en, nombre_comercial_es, especies(nombre), formatos(nombre, descripcion_en, descripcion_es)), presentaciones(codigo, descripcion, congelamiento, peso_bulto_kg)')
       .eq('id', unidadId)
       .single(),
     obtenerUsuarioActual(),
@@ -214,6 +214,18 @@ async function CuerpoProducto({
             <div><dt>Peso por bulto</dt><dd>{num(pesoBulto, 2)} kg</dd></div>
             <div><dt>Clasificación</dt><dd>{campo(sku, 'clasificacion_comercial', '—')}</dd></div>
             <div><dt>Empaque</dt><dd>{campo(sku, 'empaque', '—')}</dd></div>
+            {/* 094 · Cómo sale en la proforma y el contrato: el nombre propio o, si no hay, el del formato. */}
+            <div>
+              <dt>En la proforma</dt>
+              <dd>
+                {String(sku?.nombre_comercial_en || campo(sku?.formatos, 'descripcion_en', '—')).toUpperCase()}
+                <br />
+                {String(sku?.nombre_comercial_es || campo(sku?.formatos, 'descripcion_es', '—')).toUpperCase()}
+                {!sku?.nombre_comercial_en && !sku?.nombre_comercial_es && (
+                  <><br /><small style={{ color: 'var(--tinta-3)' }}>El de su formato. Para cambiarlo: Editar › Nombre comercial.</small></>
+                )}
+              </dd>
+            </div>
             <div>
               <dt>Vida útil</dt>
               <dd>

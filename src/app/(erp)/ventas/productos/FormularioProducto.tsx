@@ -41,7 +41,7 @@ export type Presentacion = {
 
 const VACIO: DatosProducto = {
   codigo: '', especie_id: 0, formato_id: 0, corte: '',
-  clasificacion_comercial: '', empaque: 'sacos', vida_util_meses: 24, presentaciones: [],
+  clasificacion_comercial: '', empaque: 'sacos', vida_util_meses: 24, nombre_comercial_en: '', nombre_comercial_es: '', presentaciones: [],
 };
 
 export function FormularioProducto({
@@ -227,6 +227,24 @@ export function FormularioProducto({
                    value={d.vida_util_meses ?? ''} data-error={error('vida_util_meses')}
                    onChange={(e) => campo('vida_util_meses', e.target.value ? Number(e.target.value) : null)} />
             <small>Con esto se calcula el anticuamiento. En blanco usa el valor general configurado.</small>
+          </label>
+
+          {/* 094 · Isaac (25/11): el nombre con que sale en la proforma y el contrato, por producto. */}
+          <label className="form-campo form-campo-ancho">
+            <span>Nombre comercial (inglés)</span>
+            <input className="campo" value={d.nombre_comercial_en ?? ''} data-error={error('nombre_comercial_en')}
+                   onChange={(e) => campo('nombre_comercial_en', e.target.value)}
+                   placeholder="FROZEN GIANT SQUID CONES" maxLength={150} />
+          </label>
+          <label className="form-campo form-campo-ancho">
+            <span>Nombre comercial (castellano)</span>
+            <input className="campo" value={d.nombre_comercial_es ?? ''} data-error={error('nombre_comercial_es')}
+                   onChange={(e) => campo('nombre_comercial_es', e.target.value)}
+                   placeholder="CONOS DE POTA CONGELADOS" maxLength={150} />
+            <small>
+              Es como se llama el producto en la <b>proforma y el contrato</b>. En blanco sale el nombre de su
+              formato (familia), el mismo para todos los productos de ese formato.
+            </small>
           </label>
         </div>
       </fieldset>

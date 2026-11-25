@@ -372,7 +372,7 @@ const listaDeParametro = (v: string | undefined) =>
  * Supabase deduce los tipos del literal: partirlo rompe la inferencia.
  */
 export const CAMPOS_PRODUCTO =
-  'sku_presentaciones(skus(codigo, corte, talla, especies(nombre, nombre_cientifico, nombre_ingles), formatos(nombre, nombre_ingles, descripcion_es, descripcion_en)), presentaciones(descripcion, peso_bulto_kg, bloques_por_bulto, peso_bloque_kg))';
+  'sku_presentaciones(skus(codigo, corte, talla, nombre_comercial_en, nombre_comercial_es, especies(nombre, nombre_cientifico, nombre_ingles), formatos(nombre, nombre_ingles, descripcion_es, descripcion_en)), presentaciones(descripcion, peso_bulto_kg, bloques_por_bulto, peso_bloque_kg))';
 
 /**
  * Arma una línea completa a partir de la fila de la base.
@@ -414,6 +414,8 @@ function construirLinea(
     corte: sku?.corte as string,
     formatoEn: formato?.descripcion_en as string,
     formatoEs: formato?.descripcion_es as string,
+    propioEn: sku?.nombre_comercial_en as string,
+    propioEs: sku?.nombre_comercial_es as string,
   });
 
   return {

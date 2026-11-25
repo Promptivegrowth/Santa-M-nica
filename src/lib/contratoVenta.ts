@@ -164,7 +164,7 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
       .select('id, numero_proforma, cotizacion_id, creado_por, certificado_captura, fecha_tentativa_despacho, incoterm, moneda, mes_embarque, fecha_comprometida, tolerancia_pct, puerto_embarque, forma_pago, pago_adelanto_pct, dias_credito, condicion_pago, ciclo, cliente_razon_social, cliente_direccion, cliente_tax_id, cliente_etiqueta_tax_id, cliente_datos_en, clientes(razon_social, direccion, ruc_tax_id, etiqueta_tax_id, pais), destinos(puerto, pais)')
       .eq('id', pedidoId).maybeSingle(),
     supabase.from('pedido_lineas')
-      .select('cantidad_tm, precio_tm, descuento_pct, orden, sacos_alternativos_kg, sku_presentaciones(skus(corte, talla, empaque, formatos(descripcion_en, descripcion_es)), presentaciones(peso_bulto_kg))')
+      .select('cantidad_tm, precio_tm, descuento_pct, orden, sacos_alternativos_kg, sku_presentaciones(skus(corte, talla, empaque, nombre_comercial_en, nombre_comercial_es, formatos(descripcion_en, descripcion_es)), presentaciones(peso_bulto_kg))')
       .eq('pedido_id', pedidoId).order('orden'),
     supabase.from('parametros').select('clave, valor')
       .in('clave', ['empresa_razon_social', 'empresa_domicilio_fiscal', 'empresa_direccion_planta', 'puerto_embarque',
@@ -203,7 +203,10 @@ export async function armarDatosContrato(supabase: Cliente, pedidoId: number): P
     const sp = uno<Record<string, unknown>>(l.sku_presentaciones);
     const sku = uno<Record<string, unknown>>(sp?.skus);
     const f = uno<Record<string, unknown>>(sku?.formatos);
-    const nombre = nombreComercial({ corte: sku?.corte as string, formatoEn: f?.descripcion_en as string, formatoEs: f?.descripcion_es as string });
+    const nombre = nombreComercial({
+      corte: sku?.corte as string, formatoEn: f?.descripcion_en as string, formatoEs: f?.descripcion_es as string,
+      propioEn: sku?.nombre_comercial_en as string, propioEs: sku?.nombre_comercial_es as string,
+    });
     const talla = tallaImpresa(sku?.talla as string, sku?.corte as string) ?? '';
     const en = `${nombre.en}${talla ? `, SIZE: ${talla}` : ''}`;
     const es = `${nombre.es}${talla ? `, TALLAS: ${talla}` : ''}`;

@@ -45,6 +45,9 @@ export type DatosProducto = {
   clasificacion_comercial: string;
   empaque: 'sacos' | 'cajas' | 'block';
   vida_util_meses: number | null;
+  /** 094 · Nombre comercial propio para proforma y contrato. Vacío = el del formato. */
+  nombre_comercial_en?: string | null;
+  nombre_comercial_es?: string | null;
   /** Las presentaciones en las que se vende. Al menos una. */
   presentaciones: number[];
 };
@@ -75,6 +78,9 @@ function validar(d: DatosProducto): { mensaje: string; campo: string } | null {
   }
   if (d.vida_util_meses !== null && (d.vida_util_meses < 1 || d.vida_util_meses > 120)) {
     return { mensaje: 'La vida útil va de 1 a 120 meses.', campo: 'vida_util_meses' };
+  }
+  if ((d.nombre_comercial_en ?? '').trim().length > 150 || (d.nombre_comercial_es ?? '').trim().length > 150) {
+    return { mensaje: 'El nombre comercial no puede pasar de 150 caracteres.', campo: 'nombre_comercial_en' };
   }
   if (!d.presentaciones?.length) {
     return {
@@ -151,6 +157,8 @@ export async function crearProducto(d: DatosProducto): Promise<Resultado> {
       clasificacion_comercial: d.clasificacion_comercial.trim(),
       empaque: d.empaque,
       vida_util_meses: d.vida_util_meses,
+      nombre_comercial_en: d.nombre_comercial_en?.trim().toUpperCase() || null,
+      nombre_comercial_es: d.nombre_comercial_es?.trim().toUpperCase() || null,
       activo: true,
     })
     .select('id')
@@ -206,7 +214,7 @@ export async function actualizarProducto(id: number, d: DatosProducto): Promise<
 
   const supabase = await crearClienteServidor();
   const { data: antes } = await supabase
-    .from('skus').select('codigo, corte, vida_util_meses, empaque').eq('id', id).maybeSingle();
+    .from('skus').select('codigo, corte, vida_util_meses, empaque, nombre_comercial_en, nombre_comercial_es').eq('id', id).maybeSingle();
   if (!antes) return { ok: false, mensaje: 'Ese producto ya no existe.' };
 
   const { error } = await supabase
@@ -219,6 +227,8 @@ export async function actualizarProducto(id: number, d: DatosProducto): Promise<
       clasificacion_comercial: d.clasificacion_comercial.trim(),
       empaque: d.empaque,
       vida_util_meses: d.vida_util_meses,
+      nombre_comercial_en: d.nombre_comercial_en?.trim().toUpperCase() || null,
+      nombre_comercial_es: d.nombre_comercial_es?.trim().toUpperCase() || null,
     })
     .eq('id', id);
 
@@ -265,6 +275,10 @@ export async function actualizarProducto(id: number, d: DatosProducto): Promise<
   if (antes.codigo !== d.codigo.trim()) cambios.push(`código: ${antes.codigo} → ${d.codigo.trim()}`);
   if (antes.corte !== d.corte.trim()) cambios.push(`corte: «${antes.corte}» → «${d.corte.trim()}»`);
   if (antes.vida_util_meses !== d.vida_util_meses) cambios.push(`vida útil: ${antes.vida_util_meses ?? 'sin definir'} → ${d.vida_util_meses ?? 'sin definir'} meses`);
+  for (const [k, que] of [['nombre_comercial_en', 'nombre comercial (inglés)'], ['nombre_comercial_es', 'nombre comercial']] as const) {
+    const nuevo = d[k]?.trim().toUpperCase() || null;
+    if ((antes[k] ?? null) !== nuevo) cambios.push(`${que}: «${antes[k] ?? '—'}» → «${nuevo ?? '—'}»`);
+  }
   if (antes.empaque !== d.empaque) cambios.push(`empaque: ${antes.empaque} → ${d.empaque}`);
 
   await supabase.rpc('registrar_evento', {

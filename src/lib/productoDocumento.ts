@@ -79,8 +79,18 @@ export function nombreComercial(p: {
   corte: string | null | undefined;
   formatoEn: string | null | undefined;
   formatoEs: string | null | undefined;
+  /** 094 · El nombre comercial propio del producto (Ventas › Productos). Si está, manda. */
+  propioEn?: string | null;
+  propioEs?: string | null;
 }): { en: string; es: string; reproductor: boolean } {
   const corte = String(p.corte ?? '');
+  const propioEn = String(p.propioEn ?? '').trim().toUpperCase();
+  const propioEs = String(p.propioEs ?? '').trim().toUpperCase();
+  if (propioEn || propioEs) {
+    //  Si escribieron uno solo, el otro idioma sigue siendo el de siempre.
+    const base = nombreComercial({ corte: p.corte, formatoEn: p.formatoEn, formatoEs: p.formatoEs });
+    return { en: propioEn || base.en, es: propioEs || base.es, reproductor: base.reproductor };
+  }
   if (esReproductor(corte)) {
     const cual = punta(corte);
     return {
