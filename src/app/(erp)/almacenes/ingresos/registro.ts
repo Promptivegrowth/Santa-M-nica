@@ -52,6 +52,8 @@ export type ContextoIngreso = {
   camaras: Map<number, { id: number; almacen_id: number; nombre: string }>;
   /** Presentaciones activas (de un SKU activo) entre las pedidas. */
   productos: Set<number>;
+  /** Cómo se lee cada presentación pedida: «169 · 2 X 10 KG · PLACAS». */
+  nombres: Map<number, string>;
   /** Códigos de pallet que ya existen como lote. */
   existentes: Set<string>;
   /** Códigos que esperan como ingreso programado, con su fecha de llegada. */
@@ -64,7 +66,18 @@ export type ContextoIngreso = {
 export type PalletEnCamara = {
   lote_id: number; codigo: string; sku_presentacion_id: number; fecha_produccion: string;
   bultos: number; kg: number; donde: string;
+  /** El producto con que está en cámara, para decirlo si la fila trae otro. */
+  producto: string;
 };
+
+/** «169 · 2 X 10 KG · PLACAS», de una fila de sku_presentaciones con sus skus y presentaciones. */
+function nombreProducto(sp: unknown): string {
+  const uno = <T,>(x: T | T[] | null | undefined) => (Array.isArray(x) ? x[0] : x) ?? null;
+  const p = uno(sp as Record<string, unknown> | Record<string, unknown>[] | null);
+  const sku = uno(p?.skus as { codigo?: string } | null);
+  const pres = uno(p?.presentaciones as { descripcion?: string; congelamiento?: string } | null);
+  return [sku?.codigo, pres?.descripcion, pres?.congelamiento?.toUpperCase()].filter(Boolean).join(' · ');
+}
 
 /** El código de pallet como se guarda: sin espacios en los extremos y en mayúsculas. */
 export const normalizarCodigo = (c: string) => String(c ?? '').trim().toUpperCase();
@@ -123,19 +136,22 @@ export async function cargarContexto(
   const restos = [...new Set(unicos.map(palletSinPrefijo).filter((x): x is string => Boolean(x)))];
   const enRegex = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+');
 
-  const [{ data: bodegas }, { data: camaras }, productos, existentes, programados, enCamara] = await Promise.all([
+  const [{ data: bodegas }, { data: camaras }, [productos, nombres], existentes, programados, enCamara] = await Promise.all([
     supabase.from('almacenes').select('id, nombre, activo, recibe_produccion, recibe_compras'),
     supabase.from('camaras').select('id, almacen_id, nombre').eq('activo', true),
     (async () => {
       const set = new Set<number>();
+      const nombres = new Map<number, string>();
       for (const t of trozos(ids)) {
-        const { data } = await supabase.from('sku_presentaciones').select('id, activo, skus(activo)').in('id', t);
+        const { data } = await supabase.from('sku_presentaciones')
+          .select('id, activo, skus(activo, codigo), presentaciones(descripcion, congelamiento)').in('id', t);
         for (const p of data ?? []) {
           const sku = Array.isArray(p.skus) ? p.skus[0] : p.skus;
           if (p.activo && (sku as { activo?: boolean } | null)?.activo) set.add(Number(p.id));
+          nombres.set(Number(p.id), nombreProducto(p));
         }
       }
-      return set;
+      return [set, nombres] as const;
     })(),
     (async () => {
       const set = new Set<string>();
@@ -158,18 +174,22 @@ export async function cargarContexto(
     })(),
     (async () => {
       //  Los lotes con ese código, o con ese número y otro prefijo, y su stock.
-      const lotes = new Map<number, { codigo: string; sku: number; fecha: string }>();
+      const lotes = new Map<number, { codigo: string; sku: number; fecha: string; producto: string }>();
       const guardar = (data: Record<string, unknown>[] | null) => {
         for (const l of data ?? []) {
-          lotes.set(Number(l.id), { codigo: normalizarCodigo(String(l.codigo_pallet)), sku: Number(l.sku_presentacion_id), fecha: String(l.fecha_produccion) });
+          lotes.set(Number(l.id), {
+            codigo: normalizarCodigo(String(l.codigo_pallet)), sku: Number(l.sku_presentacion_id), fecha: String(l.fecha_produccion),
+            producto: nombreProducto(l.sku_presentaciones),
+          });
         }
       };
+      const columnas = 'id, codigo_pallet, sku_presentacion_id, fecha_produccion, sku_presentaciones(skus(codigo), presentaciones(descripcion, congelamiento))';
       for (const t of trozos(unicos)) {
-        const { data } = await supabase.from('lotes').select('id, codigo_pallet, sku_presentacion_id, fecha_produccion').in('codigo_pallet', t);
+        const { data } = await supabase.from('lotes').select(columnas).in('codigo_pallet', t);
         guardar(data);
       }
       for (const t of trozos(restos, 60)) {
-        const { data } = await supabase.from('lotes').select('id, codigo_pallet, sku_presentacion_id, fecha_produccion')
+        const { data } = await supabase.from('lotes').select(columnas)
           .filter('codigo_pallet', 'match', `^\\S+\\s+(${t.map(enRegex).join('|')})$`);
         guardar(data);
       }
@@ -181,7 +201,7 @@ export async function cargarContexto(
           const l = lotes.get(id)!;
           const a = Array.isArray(e.almacenes) ? e.almacenes[0] : e.almacenes;
           const p = porLote.get(id) ?? {
-            lote_id: id, codigo: l.codigo, sku_presentacion_id: l.sku, fecha_produccion: l.fecha, bultos: 0, kg: 0, donde: '',
+            lote_id: id, codigo: l.codigo, sku_presentacion_id: l.sku, fecha_produccion: l.fecha, bultos: 0, kg: 0, donde: '', producto: l.producto,
           };
           p.bultos += Number(e.bultos);
           p.kg += Number(e.peso_neto_kg);
@@ -201,6 +221,7 @@ export async function cargarContexto(
     }])),
     camaras: new Map((camaras ?? []).map((c) => [Number(c.id), { id: Number(c.id), almacen_id: Number(c.almacen_id), nombre: String(c.nombre) }])),
     productos,
+    nombres,
     existentes,
     programados,
     enCamara,

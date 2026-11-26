@@ -545,6 +545,23 @@ export function revisarFila(f: FilaInterpretada, ctx: ContextoIngreso): ErrorCol
     });
     ya.add('llega_el');
   }
+  //  Dany (26/11): el pallet está en cámara pero con OTRO producto (p. ej. la
+  //  parte que lo completa vino como TUNEL y en cámara está como PLACAS). No
+  //  es un pallet repetido: es una fila que no coincide, y se dice en qué.
+  const codigo = normalizarCodigo(f.datos.codigo_pallet);
+  const otro = !completa && f.datos.sku_presentacion_id && !ya.has('codigo_pallet')
+    ? ctx.enCamara.find((p) => p.codigo === codigo && p.sku_presentacion_id !== Number(f.datos.sku_presentacion_id))
+    : undefined;
+  if (otro) {
+    const fila = ctx.nombres.get(Number(f.datos.sku_presentacion_id)) || 'otro producto';
+    errores.push({
+      columna: 'codigo_pallet',
+      mensaje: `El pallet ${otro.codigo} ya está en ${otro.donde} con ${otro.bultos} bultos de ${otro.producto}, pero esta fila trae ` +
+        `${fila}. Un pallet es un solo producto: si esta fila es la parte que lo completa, corrija el CODIGO, la PRESENTACION ` +
+        'o el TIPO DE CONGELAMIENTO para que coincidan y se sumará al pallet. Si es otro pallet, cámbiele el N°PALLET.',
+    });
+    ya.add('codigo_pallet');
+  }
   for (const p of revisarIngreso(f.datos, ctx, { fechaLlegada: f.fechaLlegada })) {
     if (completa && p.campo === 'codigo_pallet' && ctx.existentes.has(normalizarCodigo(f.datos.codigo_pallet))) continue;
     const columna = COLUMNA_DE_CAMPO[p.campo] ?? p.campo;
