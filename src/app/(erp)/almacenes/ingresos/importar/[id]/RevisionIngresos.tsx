@@ -324,10 +324,13 @@ export function RevisionIngresos({
           .tabla-importacion :global(tbody > tr:first-child > td) { border-bottom: none; }
           .tabla-importacion :global(tr.fila-detalle > td) { padding-bottom: .7rem; }
         `}</style>
-        <p className="pie-explicativo" style={{ padding: '.6rem 1rem 1rem', margin: 0 }}>
-          ¿Muchas filas con el mismo error? También puede corregir el Excel y volver a subirlo desde «Importar desde Excel»:
-          queda como otra importación y esta se conserva tal como está.
-        </p>
+        {/* Dany (26/11): sin filas con error, esta pista confunde («¿qué error?»). */}
+        {c('con_error') > 1 && (
+          <p className="pie-explicativo" style={{ padding: '.6rem 1rem 1rem', margin: 0 }}>
+            ¿Muchas filas con el mismo error? También puede corregir el Excel y volver a subirlo desde «Importar desde Excel»:
+            queda como otra importación y esta se conserva tal como está.
+          </p>
+        )}
       </section>
     </div>
   );
